@@ -1,0 +1,40 @@
+# Режим разработки: горячая перезагрузка бэкенда, воркера и фронтенда, открытые порты БД и Redis.
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  db:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  backend:
+    command: sh -c "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      # Изменения файлов с хоста Windows/macOS не доходят до контейнера через inotify.
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+  worker:
+    command: ["arq", "app.worker.WorkerSettings", "--watch", "app"]
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      VITE_PROXY_TARGET: http://backend:8000
+      VITE_USE_POLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports: !override
+      - "${FRONTEND_DEV_PORT:-5173}:5173"

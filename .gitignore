@@ -1,0 +1,22 @@
+# Окружение
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# IDE и ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+~$*.pptx

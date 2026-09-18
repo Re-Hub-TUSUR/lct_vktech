@@ -1,0 +1,23 @@
+name: template_parser
+title: Декомпозиция шаблона
+version: 0.1.0
+kind: skill
+runtime: code
+stage: template
+model: null
+description: >
+  Разбирает .pptx без привязки к конкретному шаблону: тема (цвета и шрифты),
+  фактически используемая палитра, гарнитуры, типографическая шкала, макеты
+  с плейсхолдерами и роли макетов (титул, раздел, контент, две колонки, фото, финал).
+params:
+  # Регулярные выражения по названию макета. Порядок важен: первое совпадение задаёт роль.
+  role_patterns:
+    closing: "спасиб|финал|thank|q\\s*&\\s*a|вопрос|\\bend\\b"
+    section: "раздел|section|divider"
+    agenda: "содержан|оглавлен|agenda|contents"
+    title: "титул|обложк|title slide|cover"
+  two_columns_hint: "колон|column|2 объекта|два|two"
+  image_hint: "фото|photo|picture|image|изображ|картин"
+  palette_size: 12
+  fonts_limit: 8
+  type_scale_limit: 14

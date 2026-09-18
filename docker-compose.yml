@@ -1,0 +1,86 @@
+name: slide-designer
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@db:5432/${POSTGRES_DB:-slides}
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_DIR: /data
+  BUILTIN_TEMPLATES_DIR: /builtin_templates
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
+  MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+  MOCK_SPEED: ${MOCK_SPEED:-1}
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-slides}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment: *backend-env
+    # Миграции → регистрация встроенных шаблонов → API.
+    command: sh -c "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    volumes:
+      - storage:/data
+      - ./shablon:/builtin_templates:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    environment: *backend-env
+    command: ["arq", "app.worker.WorkerSettings"]
+    volumes:
+      - storage:/data
+      - ./shablon:/builtin_templates:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  storage:

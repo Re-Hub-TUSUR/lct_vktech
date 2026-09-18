@@ -1,0 +1,316 @@
+/* Слайд: контейнер с container queries, все размеры в cqw — масштабируется от миниатюры до полного экрана.
+   Цвета и шрифты приходят из токенов шаблона через CSS-переменные (см. SlideView). */
+.slide {
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+  overflow: hidden;
+  background: var(--slide-bg);
+  color: var(--slide-text);
+  font-family: var(--slide-body-font);
+  line-height: 1.3;
+  user-select: none;
+}
+.slide__inner {
+  position: absolute;
+  inset: 0;
+  padding: 5cqw 6cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 2.4cqw;
+}
+.slide__number {
+  position: absolute;
+  right: 2.2cqw;
+  bottom: 1.6cqw;
+  font-size: 1.3cqw;
+  opacity: 0.5;
+}
+
+.slide__title {
+  font-family: var(--slide-heading-font);
+  font-size: 3.2cqw;
+  font-weight: 700;
+  line-height: 1.15;
+  margin: 0;
+}
+
+/* Обложка, разделитель, финал */
+.slide__cover {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2cqw;
+  height: 100%;
+  max-width: 80%;
+}
+.slide__cover-title {
+  font-family: var(--slide-heading-font);
+  font-size: 5.2cqw;
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 0;
+}
+.slide__subtitle {
+  font-size: 2.2cqw;
+  opacity: 0.85;
+  margin: 0;
+}
+.slide__section-number {
+  font-family: var(--slide-heading-font);
+  font-size: 9cqw;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0.35;
+  margin: 0;
+}
+.slide--title::after,
+.slide--closing::after {
+  content: '';
+  position: absolute;
+  right: -8cqw;
+  bottom: -14cqw;
+  width: 42cqw;
+  height: 42cqw;
+  border-radius: 50%;
+  background: var(--slide-accent);
+  opacity: 0.25;
+}
+
+/* Списки */
+.slide__bullets {
+  margin: 0;
+  padding-left: 2.4cqw;
+  font-size: 1.9cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+}
+.slide__bullets li::marker {
+  color: var(--slide-accent);
+}
+.slide__agenda {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6cqw;
+  font-size: 2.4cqw;
+}
+.slide__agenda li {
+  display: flex;
+  gap: 2.4cqw;
+  align-items: baseline;
+}
+.slide__agenda span {
+  font-family: var(--slide-heading-font);
+  font-weight: 800;
+  color: var(--slide-accent);
+}
+
+.slide__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4cqw;
+}
+.slide__columns h3 {
+  font-family: var(--slide-heading-font);
+  font-size: 2.1cqw;
+  color: var(--slide-accent);
+  margin: 0 0 1.2cqw;
+}
+
+/* Диаграмма */
+.slide__caption {
+  font-size: 1.5cqw;
+  color: var(--slide-muted);
+  margin: -1cqw 0 0;
+}
+.slide__chart {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.slide-chart {
+  width: 100%;
+  height: 100%;
+}
+.slide-chart__grid {
+  stroke: var(--slide-text);
+  opacity: 0.08;
+}
+.slide-chart__axis {
+  stroke: var(--slide-text);
+  opacity: 0.35;
+}
+.slide-chart__label,
+.slide-chart__value,
+.slide-chart__unit {
+  fill: var(--slide-text);
+  font-size: 15px;
+  font-family: var(--slide-body-font);
+}
+.slide-chart__value {
+  font-weight: 700;
+}
+.slide-chart__unit {
+  opacity: 0.6;
+}
+
+/* Таблица */
+.slide__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.55cqw;
+}
+.slide__table th {
+  background: var(--slide-accent);
+  color: #fff;
+  text-align: left;
+  font-weight: 700;
+}
+.slide__table th,
+.slide__table td {
+  padding: 0.9cqw 1.2cqw;
+}
+.slide__table tbody tr:nth-child(even) td {
+  background: var(--slide-surface);
+}
+
+/* KPI */
+.slide__kpis {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2.4cqw;
+  margin-top: 1cqw;
+}
+.slide__kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 1cqw;
+  padding: 2.6cqw;
+  border-radius: 1.4cqw;
+  background: var(--slide-surface);
+}
+.slide__kpi strong {
+  font-family: var(--slide-heading-font);
+  font-size: 5cqw;
+  line-height: 1;
+  color: var(--slide-accent);
+}
+.slide__kpi span {
+  font-size: 1.6cqw;
+}
+
+/* Таймлайн */
+.slide__timeline {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2cqw;
+  margin-top: 3cqw;
+  padding-top: 2.4cqw;
+  border-top: 0.35cqw solid var(--slide-accent);
+}
+.slide__timeline > div {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5cqw;
+  font-size: 1.5cqw;
+}
+.slide__timeline > div::before {
+  content: '';
+  position: absolute;
+  top: -3.55cqw;
+  left: 0;
+  width: 1.9cqw;
+  height: 1.9cqw;
+  border-radius: 50%;
+  background: var(--slide-accent);
+}
+.slide__timeline b {
+  color: var(--slide-accent);
+}
+.slide__timeline strong {
+  font-size: 1.9cqw;
+}
+.slide__timeline p {
+  margin: 0;
+  color: var(--slide-muted);
+}
+
+/* Цитата */
+.slide__quote {
+  margin: auto 0;
+  max-width: 85%;
+  font-family: var(--slide-heading-font);
+  font-size: 3.6cqw;
+  font-style: italic;
+  line-height: 1.25;
+}
+.slide__quote footer {
+  margin-top: 2cqw;
+  font-size: 1.7cqw;
+  font-style: normal;
+  color: var(--slide-muted);
+}
+
+/* Текст и изображение */
+.slide__image-text {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 4cqw;
+}
+.slide__image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1cqw;
+  padding: 2cqw;
+  border-radius: 1.4cqw;
+  background: var(--slide-surface);
+  color: var(--slide-muted);
+  font-size: 1.3cqw;
+  text-align: center;
+}
+.slide__image svg {
+  width: 4cqw;
+  height: 4cqw;
+  color: var(--slide-accent);
+}
+.slide__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* Подсветка проблем аудита */
+.flagged {
+  outline: 0.3cqw solid var(--flag-color);
+  outline-offset: 0.35cqw;
+  border-radius: 0.4cqw;
+}
+.slide.flagged {
+  outline-offset: -0.3cqw;
+  border-radius: 0;
+}
+.flag-error {
+  --flag-color: #e0343d;
+}
+.flag-warning {
+  --flag-color: #f0a000;
+}
+.flag-info {
+  --flag-color: #3d8bff;
+}
+.flag-active {
+  outline-width: 0.55cqw;
+  box-shadow: 0 0 0 1.2cqw color-mix(in srgb, var(--flag-color) 25%, transparent);
+}

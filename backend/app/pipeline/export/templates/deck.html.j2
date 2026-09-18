@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+  :root {
+    --bg: {{ theme.background }};
+    --text: {{ theme.text }};
+    --muted: {{ theme.muted }};
+    --accent: {{ theme.accent }};
+    --surface: {{ theme.surface }};
+    --heading: "{{ theme.heading_font }}", "Segoe UI", Arial, sans-serif;
+    --body: "{{ theme.body_font }}", "Segoe UI", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #1d1f24; font-family: var(--body); }
+  .deck { display: flex; flex-direction: column; align-items: center; gap: 32px; padding: 32px 16px 64px; }
+  .slide {
+    position: relative; width: min(1120px, 100%); aspect-ratio: {{ theme.aspect }};
+    background: var(--bg); color: var(--text); container-type: inline-size;
+    border-radius: 6px; overflow: hidden; box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+  }
+  .inner { position: absolute; inset: 0; padding: 5.5cqw 6cqw; display: flex; flex-direction: column; gap: 2.4cqw; }
+  .inverse .inner { justify-content: center; }
+  h1, h2, h3 { font-family: var(--heading); margin: 0; line-height: 1.15; }
+  h1 { font-size: 5cqw; }
+  h2 { font-size: 3.1cqw; }
+  h3 { font-size: 2cqw; color: var(--accent); }
+  .subtitle { font-size: 2.2cqw; opacity: .85; margin: 0; }
+  .section-number { font-size: 8cqw; font-weight: 700; opacity: .35; margin: 0; }
+  ul { margin: 0; padding-left: 2.4cqw; font-size: 1.9cqw; line-height: 1.4; }
+  li { margin-bottom: .8cqw; }
+  li::marker { color: var(--accent); }
+  .agenda { list-style: none; padding: 0; counter-reset: item; }
+  .agenda li { counter-increment: item; display: flex; gap: 2cqw; font-size: 2.3cqw; }
+  .agenda li::before { content: counter(item, decimal-leading-zero); color: var(--accent); font-weight: 700; }
+  .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 4cqw; }
+  .columns > div { display: flex; flex-direction: column; gap: 1.2cqw; }
+  .image-text { display: grid; grid-template-columns: 1.1fr 1fr; gap: 4cqw; flex: 1; min-height: 0; }
+  .image { border-radius: 1.2cqw; background: var(--surface); color: var(--muted); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; padding: 2cqw; font-size: 1.3cqw; gap: .8cqw; }
+  .kpis { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2.4cqw; margin-top: 1cqw; }
+  .kpi { background: var(--surface); border-radius: 1.2cqw; padding: 2.4cqw; }
+  .kpi b { display: block; font-family: var(--heading); font-size: 4.6cqw; color: var(--accent); }
+  .kpi span { font-size: 1.6cqw; }
+  .timeline { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2cqw; border-top: .3cqw solid var(--accent);
+    padding-top: 2cqw; margin-top: 2cqw; }
+  .timeline div { position: relative; font-size: 1.5cqw; }
+  .timeline div::before { content: ""; position: absolute; top: -3.1cqw; left: 0; width: 1.6cqw; height: 1.6cqw;
+    border-radius: 50%; background: var(--accent); }
+  .timeline b { display: block; color: var(--accent); }
+  .timeline strong { display: block; font-size: 1.9cqw; margin: .4cqw 0; }
+  .timeline p { margin: 0; color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; font-size: 1.6cqw; }
+  th { background: var(--accent); color: #fff; text-align: left; }
+  th, td { padding: 1cqw 1.4cqw; border-bottom: .1cqw solid var(--surface); }
+  tr:nth-child(even) td { background: var(--surface); }
+  .chart-caption { font-size: 1.5cqw; color: var(--muted); margin: 0; }
+  .chart { width: 100%; flex: 1; min-height: 0; }
+  blockquote { margin: auto 0; font-family: var(--heading); font-size: 3.4cqw; font-style: italic; }
+  blockquote footer { font-size: 1.6cqw; font-style: normal; color: var(--muted); margin-top: 2cqw; }
+  .number { position: absolute; right: 2.4cqw; bottom: 1.6cqw; font-size: 1.2cqw; opacity: .5; }
+  @media print {
+    @page { size: landscape; margin: 0; }
+    body { background: none; }
+    .deck { padding: 0; gap: 0; }
+    .slide { width: 100vw; border-radius: 0; box-shadow: none; break-after: page; }
+  }
+</style>
+</head>
+<body>
+<main class="deck">
+{% for slide in slides %}
+  <section class="slide{% if slide.kind in ["title", "section", "closing"] %} inverse{% endif %}" id="slide-{{ loop.index }}" style="{{ colors(slide) }}">
+    <div class="inner">
+    {% if slide.kind == "title" or slide.kind == "closing" %}
+      <h1>{{ slide.title }}</h1>
+      {% if slide.subtitle %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
+    {% elif slide.kind == "section" %}
+      {% if slide.subtitle %}<p class="section-number">{{ slide.subtitle }}</p>{% endif %}
+      <h1>{{ slide.title }}</h1>
+    {% else %}
+      <h2>{{ slide.title }}</h2>
+      {% if slide.kind == "agenda" %}
+        <ul class="agenda">{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% elif slide.kind == "two_columns" %}
+        <div class="columns">
+        {% for column in slide.columns %}
+          <div><h3>{{ column.title }}</h3><ul>{% for item in column.bullets %}<li>{{ item }}</li>{% endfor %}</ul></div>
+        {% endfor %}
+        </div>
+      {% elif slide.kind == "image_text" %}
+        <div class="image-text">
+          <ul>{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+          <div class="image">
+            {% if slide.image and slide.image.url %}<img src="{{ slide.image.url }}" alt="">{% else %}
+            <b>Изображение будет сгенерировано</b><span>{{ slide.image.prompt if slide.image else "" }}</span>{% endif %}
+          </div>
+        </div>
+      {% elif slide.kind == "chart" and slide.chart %}
+        {% if slide.chart.caption %}<p class="chart-caption">{{ slide.chart.caption }}</p>{% endif %}
+        {{ chart(slide) }}
+      {% elif slide.kind == "table" and slide.table %}
+        <table>
+          <thead><tr>{% for cell in slide.table.columns %}<th>{{ cell }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for row in slide.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        </table>
+      {% elif slide.kind == "kpi" %}
+        <div class="kpis">{% for kpi in slide.kpis %}<div class="kpi"><b>{{ kpi.value }}</b><span>{{ kpi.label }}</span></div>{% endfor %}</div>
+      {% elif slide.kind == "timeline" %}
+        <div class="timeline">
+        {% for item in slide.timeline %}
+          <div><b>{{ item.date }}</b><strong>{{ item.title }}</strong>{% if item.text %}<p>{{ item.text }}</p>{% endif %}</div>
+        {% endfor %}
+        </div>
+      {% elif slide.kind == "quote" and slide.quote %}
+        <blockquote>«{{ slide.quote.text }}»{% if slide.quote.author %}<footer>— {{ slide.quote.author }}</footer>{% endif %}</blockquote>
+      {% else %}
+        <ul>{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% endif %}
+    {% endif %}
+    </div>
+    <span class="number">{{ loop.index }}</span>
+  </section>
+{% endfor %}
+</main>
+<script>
+  // ← / → — переход между слайдами.
+  const slides = [...document.querySelectorAll(".slide")];
+  document.addEventListener("keydown", (event) => {
+    if (!["ArrowRight", "ArrowLeft", "PageDown", "PageUp"].includes(event.key)) return;
+    const middle = window.innerHeight / 2;
+    const current = slides.findIndex((s) => s.getBoundingClientRect().bottom > middle);
+    const step = event.key === "ArrowRight" || event.key === "PageDown" ? 1 : -1;
+    const next = slides[Math.min(Math.max(current + step, 0), slides.length - 1)];
+    next?.scrollIntoView({ behavior: "smooth", block: "center" });
+    event.preventDefault();
+  });
+</script>
+</body>
+</html>

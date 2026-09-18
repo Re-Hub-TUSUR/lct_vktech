@@ -1,0 +1,260 @@
+import uuid
+from collections import defaultdict
+from pathlib import Path
+
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from sqlalchemy import delete, select
+from sqlalchemy.orm import selectinload
+
+from app.api.deps import (
+    Arq,
+    CurrentUser,
+    DbSession,
+    get_presentation_for_user,
+    get_template_for_user,
+)
+from app.api.serializers import content_file_out, generation_out, presentation_out, variant_out
+from app.core.storage import remove_dir, remove_file, save_upload, storage_path
+from app.models import ContentFile, Generation, Presentation, Variant
+from app.pipeline.layout.composer import axis_config
+from app.pipeline.skills import get_skill
+from app.pipeline.stages import initial_stages
+from app.pipeline.theme import slide_theme
+from app.schemas.generation import AxisInfo, GenerationOut, VariantsResponse
+from app.schemas.presentation import (
+    ContentFileOut,
+    GenerationSettings,
+    PresentationCreate,
+    PresentationListItem,
+    PresentationOut,
+    PresentationUpdate,
+    SelectVariantRequest,
+)
+from app.schemas.slide import Slide
+from app.schemas.template import SlideTheme
+from app.services.audit import issue_counts
+
+router = APIRouter(prefix="/presentations", tags=["presentations"])
+
+
+def _content_extensions() -> set[str]:
+    return set(get_skill("content_analyzer").params.get("extensions") or [])
+
+
+@router.get("", response_model=list[PresentationListItem])
+async def list_presentations(user: CurrentUser, db: DbSession) -> list[PresentationListItem]:
+    presentations = list(
+        await db.scalars(
+            select(Presentation)
+            .where(Presentation.owner_id == user.id)
+            .options(selectinload(Presentation.template))
+            .order_by(Presentation.updated_at.desc())
+        )
+    )
+    variants_by_presentation: dict[uuid.UUID, list[Variant]] = defaultdict(list)
+    if presentations:
+        variants = await db.scalars(
+            select(Variant)
+            .where(Variant.presentation_id.in_([p.id for p in presentations]))
+            .order_by(Variant.position)
+        )
+        for variant in variants:
+            variants_by_presentation[variant.presentation_id].append(variant)
+
+    items = []
+    for presentation in presentations:
+        variants = variants_by_presentation.get(presentation.id, [])
+        shown = next((v for v in variants if v.id == presentation.selected_variant_id), variants[0] if variants else None)
+        template = presentation.template
+        items.append(
+            PresentationListItem(
+                id=presentation.id,
+                title=presentation.title,
+                purpose=presentation.purpose,
+                status=presentation.status,
+                template_name=template.name if template else None,
+                theme=SlideTheme(**slide_theme(template.tokens)) if template and template.tokens else None,
+                cover=Slide.model_validate(shown.slides[0]) if shown and shown.slides else None,
+                slides_count=len(shown.slides) if shown else None,
+                selected_variant_id=presentation.selected_variant_id,
+                updated_at=presentation.updated_at,
+            )
+        )
+    return items
+
+
+@router.post("", response_model=PresentationOut, status_code=status.HTTP_201_CREATED)
+async def create_presentation(payload: PresentationCreate, user: CurrentUser, db: DbSession) -> PresentationOut:
+    await get_template_for_user(db, payload.template_id, user)
+    presentation = Presentation(
+        owner_id=user.id,
+        template_id=payload.template_id,
+        title=payload.title.strip(),
+        purpose=payload.purpose,
+        brief=payload.brief.strip(),
+        settings=payload.settings.model_dump(),
+        status="draft",
+    )
+    db.add(presentation)
+    await db.commit()
+    presentation = await get_presentation_for_user(db, presentation.id, user)
+    return presentation_out(presentation, [])
+
+
+@router.get("/{presentation_id}", response_model=PresentationOut)
+async def get_presentation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> PresentationOut:
+    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
+    return presentation_out(presentation, presentation.files)
+
+
+@router.patch("/{presentation_id}", response_model=PresentationOut)
+async def update_presentation(
+    presentation_id: uuid.UUID, payload: PresentationUpdate, user: CurrentUser, db: DbSession
+) -> PresentationOut:
+    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("template_id"):
+        await get_template_for_user(db, changes["template_id"], user)
+    for field, value in changes.items():
+        if value is not None:
+            setattr(presentation, field, value.strip() if isinstance(value, str) else value)
+    await db.commit()
+    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
+    return presentation_out(presentation, presentation.files)
+
+
+@router.delete("/{presentation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_presentation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
+    presentation = await get_presentation_for_user(db, presentation_id, user)
+    await db.delete(presentation)
+    await db.commit()
+    remove_dir("content", str(presentation_id))
+
+
+@router.post("/{presentation_id}/files", response_model=list[ContentFileOut], status_code=status.HTTP_201_CREATED)
+async def upload_content_files(
+    presentation_id: uuid.UUID, user: CurrentUser, db: DbSession, files: list[UploadFile] = File(...)
+) -> list[ContentFileOut]:
+    presentation = await get_presentation_for_user(db, presentation_id, user)
+    allowed = _content_extensions()
+    created: list[ContentFile] = []
+    try:
+        for upload in files:
+            filename = Path(upload.filename or "file").name
+            extension = Path(filename).suffix.lower()
+            if extension not in allowed:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Формат «{extension or filename}» не поддерживается. Можно: {', '.join(sorted(allowed))}",
+                )
+            content_file = ContentFile(
+                presentation_id=presentation.id,
+                filename=filename[:500],
+                content_type=upload.content_type or "application/octet-stream",
+                path="",
+            )
+            db.add(content_file)
+            await db.flush()
+            dest = storage_path("content", str(presentation.id), f"{content_file.id}{extension}")
+            content_file.path = str(dest)
+            created.append(content_file)
+            content_file.size = await save_upload(upload, dest)
+    except BaseException:
+        for content_file in created:
+            remove_file(content_file.path)
+        raise
+    await db.commit()
+    return [content_file_out(file) for file in created]
+
+
+@router.delete("/{presentation_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_content_file(presentation_id: uuid.UUID, file_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
+    await get_presentation_for_user(db, presentation_id, user)
+    content_file = await db.scalar(
+        select(ContentFile).where(ContentFile.id == file_id, ContentFile.presentation_id == presentation_id)
+    )
+    if content_file is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл не найден")
+    path = content_file.path
+    await db.delete(content_file)
+    await db.commit()
+    remove_file(path)
+
+
+@router.post("/{presentation_id}/generate", response_model=GenerationOut, status_code=status.HTTP_202_ACCEPTED)
+async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> GenerationOut:
+    presentation = await get_presentation_for_user(db, presentation_id, user)
+    template = presentation.template
+    if template is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Выберите шаблон презентации")
+    if template.status == "failed":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Шаблон не удалось разобрать — выберите другой")
+
+    active = await db.scalar(
+        select(Generation).where(
+            Generation.presentation_id == presentation.id, Generation.status.in_(("queued", "running"))
+        )
+    )
+    if active is not None:
+        return generation_out(active)
+
+    options = GenerationSettings.model_validate(presentation.settings or {})
+    await db.execute(delete(Variant).where(Variant.presentation_id == presentation.id))
+    generation = Generation(
+        presentation_id=presentation.id,
+        status="queued",
+        progress=0,
+        stages=initial_stages(generate_images=options.generate_images),
+    )
+    db.add(generation)
+    presentation.status = "generating"
+    presentation.selected_variant_id = None
+    await db.commit()
+    await arq.enqueue_job("run_generation_job", str(generation.id), _job_id=f"generation:{generation.id}")
+    return generation_out(generation)
+
+
+@router.get("/{presentation_id}/generation", response_model=GenerationOut)
+async def latest_generation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> GenerationOut:
+    await get_presentation_for_user(db, presentation_id, user)
+    generation = await db.scalar(
+        select(Generation)
+        .where(Generation.presentation_id == presentation_id)
+        .order_by(Generation.created_at.desc())
+        .limit(1)
+    )
+    if generation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Генерация ещё не запускалась")
+    return generation_out(generation)
+
+
+@router.get("/{presentation_id}/variants", response_model=VariantsResponse)
+async def list_variants(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> VariantsResponse:
+    presentation = await get_presentation_for_user(db, presentation_id, user)
+    variants = list(
+        await db.scalars(select(Variant).where(Variant.presentation_id == presentation.id).order_by(Variant.position))
+    )
+    counts = await issue_counts(db, [v.id for v in variants])
+    axis_key = variants[0].axis if variants else (presentation.settings or {}).get("variant_axis", "density")
+    axis_key, axis = axis_config(axis_key)
+    template = presentation.template
+    return VariantsResponse(
+        theme=SlideTheme(**slide_theme(template.tokens if template else None)),
+        axis=AxisInfo(key=axis_key, title=axis["title"], description=axis.get("description", "")),
+        variants=[variant_out(v, counts.get(v.id), presentation.selected_variant_id) for v in variants],
+    )
+
+
+@router.post("/{presentation_id}/select-variant", response_model=PresentationOut)
+async def select_variant(
+    presentation_id: uuid.UUID, payload: SelectVariantRequest, user: CurrentUser, db: DbSession
+) -> PresentationOut:
+    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
+    variant = await db.scalar(
+        select(Variant).where(Variant.id == payload.variant_id, Variant.presentation_id == presentation.id)
+    )
+    if variant is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Вариант не найден")
+    presentation.selected_variant_id = variant.id
+    await db.commit()
+    return presentation_out(presentation, presentation.files)

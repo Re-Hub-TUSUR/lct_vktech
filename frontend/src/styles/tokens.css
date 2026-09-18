@@ -1,0 +1,48 @@
+/* Дизайн-токены интерфейса. Меняйте здесь — компоненты используют только переменные. */
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  --color-bg: #f3f5f8;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f7f8fa;
+  --color-border: #e3e7ed;
+  --color-border-strong: #cfd6df;
+  --color-text: #17191c;
+  --color-text-muted: #6b7380;
+  --color-text-subtle: #9aa2ae;
+
+  --color-primary: #0077ff;
+  --color-primary-hover: #0066db;
+  --color-primary-soft: #e8f1ff;
+  --color-success: #1a9d5a;
+  --color-success-soft: #e6f6ed;
+  --color-warning: #c77800;
+  --color-warning-soft: #fff4e0;
+  --color-danger: #e0343d;
+  --color-danger-soft: #fdecec;
+  --color-info: #0077ff;
+  --color-info-soft: #e8f1ff;
+  --color-purple: #7a4de8;
+  --color-purple-soft: #f1ebff;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 16px 48px rgba(16, 24, 40, 0.18);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --page-width: 1360px;
+  --topbar-height: 64px;
+}
