@@ -29,3 +29,14 @@ def test_slide_theme_is_readable(parsed):
     for role in ("cover", "section", "closing"):
         assert contrast_ratio(theme[role]["text"], theme[role]["background"]) >= 3.0
     assert theme["accents"]
+
+
+def test_layout_frames_and_title_style(parsed):
+    _, result = parsed
+    content = next(layout for layout in result.layouts if layout["key"] == result.roles["content"])
+    title = content["frames"]["title"]
+    body = content["frames"]["body"]
+    assert title and body
+    assert all(0 <= value <= 1 for value in title + body)
+    assert body[1] > title[1], "контент должен начинаться ниже заголовка"
+    assert set(content["title_style"]) == {"size_pt", "color", "anchor", "align", "bold"}

@@ -21,6 +21,7 @@ STAGES: tuple[StageDef, ...] = (
     StageDef("layout", "Вёрстка трёх вариантов", "layout_composer", 2.5),
     StageDef("visuals", "Графики, таблицы и инфографика", "visualizer", 1.5),
     StageDef("images", "Генерация изображений", "image_generator", 1.5),
+    StageDef("render", "Сборка слайдов по шаблону", None, 0.0),
     StageDef("audit", "Аудит слайдов", "auditor", 2.0),
 )
 STAGE_BY_KEY = {stage.key: stage for stage in STAGES}

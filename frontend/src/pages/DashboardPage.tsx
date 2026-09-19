@@ -24,7 +24,11 @@ function PresentationCard({ item }: { item: PresentationListItem }) {
     <Link to={presentationLink(item)} className="presentation-card">
       <div className="presentation-card__cover">
         {item.cover && item.theme ? (
-          <SlideView slide={item.cover} theme={item.theme} />
+          <SlideView
+            slide={item.cover}
+            theme={item.theme}
+            render={item.cover_image ? { image: item.cover_image, targets: {} } : undefined}
+          />
         ) : (
           <div className="presentation-card__placeholder">
             {item.status === 'generating' ? <Spinner /> : <PresentationIcon size={28} />}

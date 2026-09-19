@@ -25,5 +25,20 @@ class Settings(BaseSettings):
     # Множитель длительности стадий-заглушек пайплайна: 0 — без задержек, 1 — «реалистичный» темп.
     mock_speed: float = 1.0
 
+    # Рендер .pptx → PDF через LibreOffice headless. Пусто — ищем soffice в PATH.
+    soffice_path: str | None = None
+    render_timeout_seconds: int = 180
+    # Параллельных процессов LibreOffice на один процесс приложения (каждый — сотни МБ памяти).
+    render_concurrency: int = 2
+
+    # VLM для разметки паттернов слайдов: любой OpenAI-совместимый API (VK Inference с Qwen3.8-27B,
+    # Yandex AI Studio, Cloud.ru Foundation Models, свой vLLM/SGLang). Пусто — только эвристики.
+    vlm_base_url: str | None = None
+    vlm_api_key: str | None = None
+    vlm_model: str | None = None
+    vlm_timeout_seconds: float = 90
+    vlm_max_patterns: int = 40
+    vlm_concurrency: int = 4
+
 
 settings = Settings()

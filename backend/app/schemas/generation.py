@@ -50,6 +50,20 @@ class VariantStats(BaseModel):
     warnings: int
 
 
+class SlideRender(BaseModel):
+    """Рендер слайда из собранного .pptx и рамки его элементов (доли слайда) для подсветки аудита."""
+
+    image: str
+    targets: dict[str, list[float]] = {}
+
+
+class VariantRenders(BaseModel):
+    # ready — картинки соответствуют текущим слайдам; pending — пересобираются в фоне;
+    # failed — рендер не удался; unavailable — нет LibreOffice или файла шаблона.
+    status: Literal["ready", "pending", "failed", "unavailable"]
+    slides: list[SlideRender] = []
+
+
 class VariantOut(BaseModel):
     id: uuid.UUID
     position: int
@@ -61,6 +75,7 @@ class VariantOut(BaseModel):
     slides: list[Slide]
     stats: VariantStats
     is_selected: bool
+    renders: VariantRenders
 
 
 class AxisInfo(BaseModel):

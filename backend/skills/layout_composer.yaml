@@ -1,13 +1,15 @@
 name: layout_composer
 title: Композитор вариантов вёрстки
-version: 0.1.0
+version: 0.2.0
 kind: skill
 runtime: code
 stage: layout
 model: null
 description: >
-  Собирает из плана три варианта вёрстки на макетах выбранного шаблона. Варианты различаются
-  по одной оси, которую выбирает пользователь, и одинаково следуют правилам шаблона.
+  Собирает из плана три варианта вёрстки выбранного шаблона. Каждый слайд получает паттерн —
+  слайд-пример шаблона с подходящими слотами (карточки, KPI, таймлайн, таблица, текст), который
+  при экспорте клонируется и заполняется; без подходящего паттерна слайд верстается на макете.
+  Варианты различаются по одной оси, которую выбирает пользователь, и разными паттернами.
 params:
   default_axis: density
 
@@ -15,7 +17,7 @@ params:
   #   max_bullets  — сколько тезисов оставить на слайде;
   #   titles       — topic (заголовок-тема) | insight (заголовок-вывод);
   #   data_view    — как показывать данные: chart | kpi | table;
-  #   layout_style — как верстать гибкие тезисы: bullets | columns | image;
+  #   layout_style — как верстать гибкие тезисы: bullets | cards | columns | image;
   #   order        — linear | summary_first (итоги сразу после обложки) | sections (с разделителями).
   #
   # demo_defects — ТОЛЬКО ДЛЯ МАКЕТА: намеренные дефекты, чтобы аудиту было что найти.
@@ -28,8 +30,8 @@ params:
       variants:
         - letter: A
           name: Лаконичный
-          description: До трёх тезисов, выводы в заголовках, цифры — крупными KPI.
-          profile: {max_bullets: 3, titles: insight, data_view: kpi, layout_style: bullets, order: linear}
+          description: Короткие карточки вместо списков, выводы в заголовках, цифры — крупными KPI.
+          profile: {max_bullets: 3, titles: insight, data_view: kpi, layout_style: cards, order: linear}
           demo_defects: [speaker_note]
         - letter: B
           name: Сбалансированный
@@ -92,9 +94,9 @@ params:
           profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: bullets, order: linear}
           demo_defects: [speaker_note]
         - letter: B
-          name: Две колонки
-          description: Сравнения и тезисы разложены в две колонки.
-          profile: {max_bullets: 6, titles: insight, data_view: chart, layout_style: columns, order: linear}
+          name: Карточки и колонки
+          description: Тезисы разложены по карточкам и колонкам из слайдов-примеров шаблона.
+          profile: {max_bullets: 6, titles: insight, data_view: chart, layout_style: cards, order: linear}
           demo_defects: [long_bullet]
         - letter: C
           name: Текст и изображение

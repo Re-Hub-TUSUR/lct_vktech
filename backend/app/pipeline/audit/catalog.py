@@ -31,6 +31,8 @@ class AuditContext:
     sources_text: str = ""
     language: str = "ru"
     limits: dict[str, Any] = field(default_factory=dict)
+    # Паттерны шаблона по id: у слайда с паттерном ёмкость известна точно — по его слотам.
+    patterns: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass

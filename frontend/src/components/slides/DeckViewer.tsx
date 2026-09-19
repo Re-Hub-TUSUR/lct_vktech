@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { Slide, SlideTheme } from '../../api/types'
+import type { Slide, SlideTheme, VariantRenders } from '../../api/types'
 import { SLIDE_KIND_LABELS } from '../../lib/labels'
 import { Modal } from '../Modal'
 import { SlideView } from './SlideView'
@@ -11,17 +11,21 @@ export function DeckViewer({
   title,
   slides,
   theme,
+  renders,
   startIndex = 0,
   onClose,
 }: {
   title: string
   slides: Slide[]
   theme: SlideTheme
+  /** Рендеры собранного .pptx — показываются вместо отрисовки, если актуальны. */
+  renders?: VariantRenders
   startIndex?: number
   onClose: () => void
 }) {
   const [index, setIndex] = useState(startIndex)
   const slide = slides[index]
+  const renderAt = (i: number) => (renders?.status === 'ready' && renders.slides.length === slides.length ? renders.slides[i] : undefined)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -47,7 +51,7 @@ export function DeckViewer({
           >
             <ChevronLeft size={28} />
           </button>
-          <SlideView slide={slide} theme={theme} number={index + 1} className="deck-viewer__slide" />
+          <SlideView slide={slide} theme={theme} number={index + 1} className="deck-viewer__slide" render={renderAt(index)} />
           <button
             type="button"
             className="icon-btn deck-viewer__nav"
@@ -62,7 +66,11 @@ export function DeckViewer({
           <span>
             Слайд {index + 1} из {slides.length} · {SLIDE_KIND_LABELS[slide.kind]}
           </span>
-          {slide.layout_name && <span>Макет шаблона: «{slide.layout_name}»</span>}
+          {slide.pattern_id ? (
+            <span>Собран из слайда-примера шаблона №{slide.pattern_id.replace(/^s/, '')}</span>
+          ) : (
+            slide.layout_name && <span>Макет шаблона: «{slide.layout_name}»</span>
+          )}
         </div>
         {slide.notes && <p className="deck-viewer__notes">Заметки докладчика: {slide.notes}</p>}
         <div className="deck-viewer__strip">
@@ -74,7 +82,7 @@ export function DeckViewer({
               onClick={() => setIndex(i)}
               aria-label={`Слайд ${i + 1}`}
             >
-              <SlideView slide={item} theme={theme} />
+              <SlideView slide={item} theme={theme} render={renderAt(i)} />
             </button>
           ))}
         </div>

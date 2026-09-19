@@ -49,3 +49,5 @@ class Variant(UUIDPk, Timestamps, Base):
     profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))
     # Слайды, схема — app.schemas.slide.Slide.
     slides: Mapped[list[Any]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    # Рендеры слайдов из собранного .pptx: {rev, slides: [{image, targets}]}; rev — хеш слайдов.
+    renders: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default=text("'{}'::jsonb"))

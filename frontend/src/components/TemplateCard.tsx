@@ -25,8 +25,10 @@ function coverSlide(template: TemplateSummary): Slide {
     quote: null,
     image: null,
     notes: null,
-    layout_key: null,
+    // Обложка шаблона рисуется на рендере его титульного макета.
+    layout_key: template.theme?.roles.title ?? null,
     layout_name: null,
+    pattern_id: null,
   }
 }
 

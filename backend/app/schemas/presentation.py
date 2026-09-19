@@ -73,6 +73,8 @@ class PresentationListItem(BaseModel):
     template_name: str | None
     theme: SlideTheme | None
     cover: Slide | None
+    # Рендер обложки выбранного варианта, если он актуален.
+    cover_image: str | None = None
     slides_count: int | None
     selected_variant_id: uuid.UUID | None
     updated_at: datetime

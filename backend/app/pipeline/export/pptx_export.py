@@ -1,14 +1,15 @@
-"""Экспорт в .pptx нативными объектами на макетах исходного шаблона.
+"""Экспорт в .pptx нативными объектами на основе исходного шаблона.
 
-Берём сам файл шаблона (мастера, макеты, тема, шрифты), удаляем его слайды
-и собираем новые: заголовки и тезисы — в плейсхолдеры макета или текстовые
-поля, данные — в нативные диаграммы, таблицы и фигуры. Растровых слайдов нет.
-
-Геометрия пока простая: область контента под заголовком макета. Точную
-раскладку по сетке шаблона сделает слой вёрстки.
+Берём сам файл шаблона (мастера, макеты, тема, шрифты) и собираем новые слайды.
+Слайд с паттерном — клон слайда-примера шаблона с заполненными слотами
+(pattern_fill.py): карточки, KPI, таймлайны и таблицы выглядят как в шаблоне.
+Остальные — на макете шаблона: заголовки и тезисы в плейсхолдеры или текстовые
+поля, данные в нативные диаграммы, таблицы и фигуры. В конце слайды-примеры
+удаляются. Растровых слайдов нет.
 """
 
-from dataclasses import dataclass, replace
+import math
+from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 
@@ -18,10 +19,13 @@ from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE, MSO_SHAPE_TYPE, PP_PLACEHOLDER
-from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
+from app.pipeline.export.pattern_fill import clone_slide, fill_pattern
+from app.pipeline.geometry import content_frame
+from app.pipeline.layout.matcher import fits
 from app.pipeline.parsing.template_parser import extract_theme, layout_background
 from app.pipeline.theme import mix, text_on
 from app.schemas.slide import Slide
@@ -36,8 +40,32 @@ CHART_TYPES = {
 }
 
 
+# Рамка элемента в долях слайда: [x, y, w, h]; адреса — как target в проверках аудита.
+Targets = dict[str, list[float]]
+# Где на слайде стоит содержимое каждого типа (для подсветки аудита на макетном пути).
+CONTENT_TARGET = {
+    "bullets": "bullets",
+    "agenda": "bullets",
+    "two_columns": "columns",
+    "cards": "columns",
+    "chart": "chart",
+    "table": "table",
+    "kpi": "kpis",
+    "timeline": "timeline",
+    "quote": "quote",
+    "image_text": "bullets",
+}
+
+
 class ExportError(RuntimeError):
     pass
+
+
+@dataclass
+class DeckBuild:
+    data: bytes
+    # Рамки элементов каждого слайда — для подсветки проблем аудита на рендере.
+    targets: list[Targets] = field(default_factory=list)
 
 
 @dataclass
@@ -61,9 +89,19 @@ class _Ctx:
         return RGBColor.from_string(color.lstrip("#"))
 
 
-def build_pptx(template_path: str | Path, slides: list[Slide], *, roles: dict, theme: dict) -> bytes:
+def build_pptx(
+    template_path: str | Path, slides: list[Slide], *, roles: dict, theme: dict, patterns: list[dict] | None = None
+) -> bytes:
+    return build_deck(template_path, slides, roles=roles, theme=theme, patterns=patterns).data
+
+
+def build_deck(
+    template_path: str | Path, slides: list[Slide], *, roles: dict, theme: dict, patterns: list[dict] | None = None
+) -> DeckBuild:
     prs = Presentation(str(template_path))
-    _drop_slides(prs)
+    # Слайды-примеры нужны как источники паттернов до конца сборки, потом удаляются.
+    sources = list(prs.slides)
+    by_id = {pattern["id"]: pattern for pattern in patterns or [] if pattern.get("usable")}
     layouts = {
         f"{mi}:{li}": layout
         for mi, master in enumerate(prs.slide_masters)
@@ -73,7 +111,13 @@ def build_pptx(template_path: str | Path, slides: list[Slide], *, roles: dict, t
     theme_colors = extract_theme(prs)["colors"]
     ctx = _Ctx(width=int(prs.slide_width), height=int(prs.slide_height), theme=theme)
 
+    targets: list[Targets] = []
     for spec in slides:
+        pattern = by_id.get(spec.pattern_id or "")
+        if pattern is not None and pattern["slide_index"] < len(sources) and fits(spec, pattern):
+            slide = clone_slide(prs, sources[pattern["slide_index"]])
+            targets.append(fill_pattern(slide, pattern, spec))
+            continue
         key = spec.layout_key if spec.layout_key in layouts else fallback_key
         layout = layouts[key]
         background = layout_background(layout, theme_colors) or theme["background"]
@@ -81,18 +125,20 @@ def build_pptx(template_path: str | Path, slides: list[Slide], *, roles: dict, t
         slide_ctx = replace(
             ctx, fg=fg, muted=mix(fg, background, 0.45), surface=mix(theme["accent"], background, 0.88)
         )
-        _render(prs.slides.add_slide(layout), spec, slide_ctx)
+        targets.append(_render(prs.slides.add_slide(layout), spec, slide_ctx))
+    clear_slides(prs, len(sources))
 
     buffer = BytesIO()
     prs.save(buffer)
     data = buffer.getvalue()
     _verify(data, expected=len(slides))
-    return data
+    return DeckBuild(data=data, targets=targets)
 
 
-def _drop_slides(prs) -> None:
+def clear_slides(prs, count: int | None = None) -> None:
+    """Удаляет слайды шаблона (первые count, по умолчанию все), оставляя мастера, макеты и тему."""
     slide_ids = prs.slides._sldIdLst
-    for slide_id in list(slide_ids):
+    for slide_id in list(slide_ids)[:count]:
         prs.part.drop_rel(slide_id.rId)
         slide_ids.remove(slide_id)
     # Разделы (p14:sectionLst) ссылаются на удалённые слайды — PowerPoint предложит «восстановить» файл.
@@ -118,7 +164,12 @@ def _verify(data: bytes, *, expected: int) -> None:
 # --- отрисовка слайда ------------------------------------------------------------
 
 
-def _render(slide, spec: Slide, ctx: _Ctx) -> None:
+def _fraction(rect: tuple[int, int, int, int], ctx: _Ctx) -> list[float]:
+    x, y, w, h = rect
+    return [round(x / ctx.width, 4), round(y / ctx.height, 4), round(w / ctx.width, 4), round(h / ctx.height, 4)]
+
+
+def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     placeholders = list(slide.placeholders)
     title_ph = next((p for p in placeholders if p.placeholder_format.type in TITLE_TYPES), None)
     bodies = sorted(
@@ -127,17 +178,24 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> None:
     )
     used: set[int] = set()
 
+    targets: Targets = {}
     if title_ph is not None:
         title_ph.text_frame.text = spec.title
+        # Длинный заголовок ужимается в рамку макета, а не наезжает на декор (как автоподбор в PowerPoint).
+        title_ph.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
         used.add(title_ph.shape_id)
+        if None not in (title_ph.left, title_ph.top, title_ph.width, title_ph.height):
+            targets["title"] = _fraction((title_ph.left, title_ph.top, title_ph.width, title_ph.height), ctx)
     else:
-        box = slide.shapes.add_textbox(
-            int(ctx.width * 0.06), int(ctx.height * 0.07), int(ctx.width * 0.88), int(ctx.height * 0.14)
-        )
+        rect = (int(ctx.width * 0.06), int(ctx.height * 0.07), int(ctx.width * 0.88), int(ctx.height * 0.14))
+        box = slide.shapes.add_textbox(*rect)
         _write(box.text_frame, [spec.title], ctx, size=30, bold=True)
+        targets["title"] = _fraction(rect, ctx)
 
     area = _content_area(title_ph, ctx)
     kind = spec.kind
+    if kind in CONTENT_TARGET:
+        targets[CONTENT_TARGET[kind]] = _fraction(area, ctx)
 
     if kind in {"title", "section", "closing"}:
         if spec.subtitle:
@@ -155,6 +213,8 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> None:
         _bullets_box(slide, area, items, ctx, bullets=kind == "bullets")
     elif kind == "two_columns":
         _two_columns(slide, spec, area, ctx)
+    elif kind == "cards":
+        _cards(slide, spec, area, ctx)
     elif kind == "image_text":
         _image_text(slide, spec, area, ctx)
     elif kind == "chart" and spec.chart:
@@ -180,19 +240,14 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> None:
     for placeholder in list(slide.placeholders):
         if placeholder.shape_id not in used:
             placeholder._element.getparent().remove(placeholder._element)
+    return targets
 
 
 def _content_area(title_ph, ctx: _Ctx) -> tuple[int, int, int, int]:
-    width, height = ctx.width, ctx.height
-    margin = int(width * 0.06)
-    top = int(height * 0.24)
-    if title_ph is not None and None not in (title_ph.left, title_ph.top, title_ph.height):
-        margin = max(int(title_ph.left), int(width * 0.03))
-        top = int(title_ph.top + title_ph.height + height * 0.06)
-        if top > height * 0.5:
-            top = int(height * 0.26)
-    bottom = int(height * 0.9)
-    return margin, top, width - 2 * margin, max(bottom - top, int(height * 0.3))
+    title = None
+    if title_ph is not None and None not in (title_ph.left, title_ph.top, title_ph.width, title_ph.height):
+        title = (int(title_ph.left), int(title_ph.top), int(title_ph.width), int(title_ph.height))
+    return content_frame(title, ctx.width, ctx.height)
 
 
 def _run(
@@ -260,6 +315,42 @@ def _two_columns(slide, spec: Slide, area, ctx: _Ctx) -> None:
         header = slide.shapes.add_textbox(left, y, column_width, int(h * 0.16))
         _write(header.text_frame, [column.title], ctx, size=22, bold=True, color=ctx.theme["accent"])
         _bullets_box(slide, (left, y + int(h * 0.18), column_width, int(h * 0.82)), column.bullets, ctx, size=18)
+
+
+def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
+    """Сетка карточек: заголовок акцентным цветом и короткий текст на подложке."""
+    if not spec.columns:
+        return
+    x, y, w, h = area
+    count = len(spec.columns)
+    per_row = count if count <= 4 else math.ceil(count / 2)
+    rows = math.ceil(count / per_row)
+    gap = int(w * 0.025)
+    card_width = (w - gap * (per_row - 1)) // per_row
+    card_height = min((h - gap * (rows - 1)) // rows, int(ctx.height * 0.36))
+    for i, card_spec in enumerate(spec.columns):
+        row, col = divmod(i, per_row)
+        card = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            x + col * (card_width + gap),
+            y + row * (card_height + gap),
+            card_width,
+            card_height,
+        )
+        card.adjustments[0] = 0.08
+        card.fill.solid()
+        card.fill.fore_color.rgb = ctx.rgb(ctx.surface)
+        card.line.fill.background()
+        frame = card.text_frame
+        frame.word_wrap = True
+        frame.vertical_anchor = MSO_ANCHOR.TOP
+        _run(frame.paragraphs[0], card_spec.title, ctx, size=20, bold=True, color=ctx.theme["accent"])
+        for bullet in card_spec.bullets:
+            paragraph = frame.add_paragraph()
+            paragraph.space_before = Pt(6 * ctx.scale)
+            _run(paragraph, bullet, ctx, size=15)
+        for paragraph in frame.paragraphs:
+            paragraph.alignment = PP_ALIGN.LEFT
 
 
 def _image_text(slide, spec: Slide, area, ctx: _Ctx) -> None:

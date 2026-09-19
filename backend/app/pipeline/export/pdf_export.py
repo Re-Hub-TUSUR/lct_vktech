@@ -1,7 +1,8 @@
-"""Экспорт в .pdf — ЗАГЛУШКА: упрощённая отрисовка слайдов через PyMuPDF.
+"""Запасной экспорт в .pdf: упрощённая отрисовка слайдов через PyMuPDF.
 
-В продукте PDF нужно получать конвертацией собранного .pptx (LibreOffice headless),
-чтобы PDF совпадал с .pptx один в один. Здесь — лёгкий вариант без внешних зависимостей.
+Основной путь — конвертация собранного .pptx через LibreOffice (export/render.py),
+он сохраняет оформление шаблона. Этот рендер рисует только цвета темы и тексты
+и используется, лишь когда LibreOffice недоступен (например, локально без Docker).
 """
 
 from html import escape
@@ -40,7 +41,7 @@ def _list(items: list[str]) -> str:
 
 def _columns_html(slide: Slide) -> list[str]:
     """Колонки, которые раскладываются по ширине слайда отдельными блоками."""
-    if slide.kind == "two_columns":
+    if slide.kind in {"two_columns", "cards"}:
         return [f"<h3>{escape(c.title)}</h3>{_list(c.bullets)}" for c in slide.columns]
     if slide.kind == "kpi":
         return [f'<div class="kpi">{escape(k.value)}</div><p>{escape(k.label)}</p>' for k in slide.kpis]
@@ -109,14 +110,14 @@ def _draw_bars(page, rect: pymupdf.Rect, slide: Slide, theme: dict) -> None:
         )
 
 
-def build_pdf(slides: list[Slide], theme: dict, *, width_in: float = 13.333, height_in: float = 7.5) -> bytes:
+def build_simple_pdf(slides: list[Slide], theme: dict, *, width_in: float = 13.333, height_in: float = 7.5) -> bytes:
     width, height = width_in * POINTS_PER_INCH, height_in * POINTS_PER_INCH
     pad = width * 0.06
     doc = pymupdf.open()
     for number, slide in enumerate(slides, start=1):
         page = doc.new_page(width=width, height=height)
         inverse = slide.kind in INVERSE_KINDS
-        background, fg = colors_for(theme, slide.kind)
+        background, fg = colors_for(theme, slide.kind, slide.layout_key)
         page.draw_rect(page.rect, color=None, fill=_rgb(background))
         css = _css(theme, fg)
 

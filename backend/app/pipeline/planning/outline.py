@@ -68,5 +68,8 @@ def build_outline(*, title: str, purpose: str, brief: str, today: date | None = 
         # Тезисы брифа важнее заготовки: берём их, если их хватает на слайд.
         if spec.get("use_brief") and len(theses) >= 4:
             spec["bullets"] = theses[1:7]
+            # Заготовленные карточки и колонки описывают сценарий-пример, а не бриф.
+            spec.pop("cards", None)
+            spec.pop("columns", None)
         specs.append(spec)
     return specs

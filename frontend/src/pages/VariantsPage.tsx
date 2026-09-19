@@ -9,7 +9,7 @@ import { queryKeys, usePresentation, useVariants } from '../api/queries'
 import type { Presentation, SlideTheme, Variant } from '../api/types'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { DeckViewer } from '../components/slides/DeckViewer'
-import { SlideView } from '../components/slides/SlideView'
+import { SlideView, slideRender } from '../components/slides/SlideView'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
@@ -51,8 +51,16 @@ function VariantCard({
 
       <div className="variant-card__preview-wrapper" style={{ position: 'relative' }}>
         <button type="button" className="variant-card__preview" onClick={() => onOpen(preview)}>
-          <SlideView slide={variant.slides[preview]} theme={theme} number={preview + 1} />
+          <SlideView
+            slide={variant.slides[preview]}
+            theme={theme}
+            number={preview + 1}
+            render={slideRender(variant, preview)}
+          />
         </button>
+        {variant.renders.status === 'pending' && (
+          <span className="variant-card__render-status">Собираем превью по шаблону…</span>
+        )}
         <div className="variant-card__reroll-wrap">
           <button
             type="button"
@@ -75,7 +83,7 @@ function VariantCard({
       <div className="variant-card__strip">
         {variant.slides.map((slide, index) => (
           <button key={slide.id} type="button" className="thumb" onClick={() => onOpen(index)} aria-label={`Слайд ${index + 1}`}>
-            <SlideView slide={slide} theme={theme} />
+            <SlideView slide={slide} theme={theme} render={slideRender(variant, index)} />
           </button>
         ))}
       </div>
@@ -188,7 +196,10 @@ export function VariantsPage() {
       {header}
       <div className="axis-banner">
         <strong>Ось различий: {axis.title}</strong>
-        <span>{axis.description} Все три варианта собраны на макетах одного шаблона и по его правилам.</span>
+        <span>
+          {axis.description} Слайды собраны из паттернов шаблона — его слайдов-примеров с карточками, KPI и
+          таймлайнами, — поэтому превью совпадает с экспортом в .pptx. Кубик пересобирает вариант с другими паттернами.
+        </span>
       </div>
       <div className="variants-grid">
         {variants.data.variants.map((variant) => (
@@ -209,6 +220,7 @@ export function VariantsPage() {
           title={`Вариант ${viewer.variant.letter} · ${viewer.variant.name} — ${countLabel(viewer.variant.slides.length, ['слайд', 'слайда', 'слайдов'])}`}
           slides={viewer.variant.slides}
           theme={theme}
+          renders={variants.data.variants.find((v) => v.id === viewer.variant.id)?.renders ?? viewer.variant.renders}
           startIndex={viewer.index}
           onClose={() => setViewer(null)}
         />

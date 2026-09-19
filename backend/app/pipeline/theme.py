@@ -1,6 +1,7 @@
 """Цвета и шрифты для отрисовки слайдов из дизайн-токенов шаблона + расчёт контраста (WCAG 2.1)."""
 
 import re
+from collections.abc import Callable
 from typing import Any
 
 HEX_RX = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -53,7 +54,16 @@ def text_on(background: str, dark: str, light: str = WHITE, minimum: float = 4.5
     return max((dark, light), key=lambda color: contrast_ratio(color, background))
 
 
-def slide_theme(tokens: dict[str, Any] | None) -> dict[str, Any]:
+def slide_theme(
+    tokens: dict[str, Any] | None,
+    layouts: list[dict[str, Any]] | None = None,
+    roles: dict[str, Any] | None = None,
+    image_url: Callable[[dict[str, Any]], str] | None = None,
+    extra_keys: set[str] | None = None,
+) -> dict[str, Any]:
+    """Тема отрисовки слайдов. С макетами и ролями добавляет «скины» макетов, на которых верстаются слайды:
+    фон (цвет и картинка-рендер), цвета текста, области заголовка и контента, стиль заголовка.
+    extra_keys — макеты слайдов-примеров, по которым верстаются паттерны."""
     tokens = tokens or {}
     theme = tokens.get("theme") or {}
     colors = theme.get("colors") or {}
@@ -65,7 +75,8 @@ def slide_theme(tokens: dict[str, Any] | None) -> dict[str, Any]:
         light, dark = dark, light
 
     background = _valid(backgrounds.get("content")) or light
-    text = text_on(background, dark, light if relative_luminance(light) > 0.7 else WHITE)
+    light_text = light if relative_luminance(light) > 0.7 else WHITE
+    text = text_on(background, dark, light_text)
 
     accents: list[str] = []
     for key in ("accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "dk2"):
@@ -92,6 +103,42 @@ def slide_theme(tokens: dict[str, Any] | None) -> dict[str, Any]:
     size = tokens.get("slide_size") or {}
     aspect = size["width_emu"] / size["height_emu"] if size.get("height_emu") else 16 / 9
 
+    skins: dict[str, Any] = {}
+    roles = roles or {}
+    role_keys = {key for key in roles.values() if key} | (extra_keys or set())
+    # Макеты обложки, разделителя и финала, которые не служат контентными: на них только крупный текст.
+    cover_keys = {roles.get(role) for role in ("title", "section", "closing")} - {roles.get("content")}
+    width_pt = (size.get("width_emu") or 12192000) / 12700
+    for layout in layouts or []:
+        if layout.get("key") not in role_keys:
+            continue
+        bg = _valid(layout.get("background")) or background
+        if layout["key"] in cover_keys:
+            fg = WHITE if contrast_ratio(WHITE, bg) >= 3.0 else text_on(bg, dark, minimum=3.0)
+        else:
+            fg = text_on(bg, dark, light_text)
+        style = layout.get("title_style") or {}
+        title_color = _valid(style.get("color"))
+        if title_color is None or contrast_ratio(title_color, bg) < 3.0:
+            title_color = fg
+        size_pt = style.get("size_pt")
+        skins[layout["key"]] = {
+            "background": bg,
+            "text": fg,
+            "muted": mix(fg, bg, 0.45),
+            "surface": mix(accent, bg, 0.88),
+            "image": image_url(layout) if image_url and layout.get("image") else None,
+            "frames": layout.get("frames"),
+            "title": {
+                "color": title_color,
+                # Кегль в % ширины слайда — так он масштабируется вместе с превью (единицы cqw).
+                "size": round(size_pt / width_pt * 100, 2) if size_pt else None,
+                "anchor": style.get("anchor"),
+                "align": style.get("align"),
+                "bold": style.get("bold"),
+            },
+        }
+
     return {
         "background": background,
         "text": text,
@@ -105,11 +152,16 @@ def slide_theme(tokens: dict[str, Any] | None) -> dict[str, Any]:
         "heading_font": heading_font,
         "body_font": body_font,
         "aspect": round(aspect, 4),
+        "layouts": skins,
+        "roles": dict(roles),
     }
 
 
-def colors_for(theme: dict[str, Any], kind: str) -> tuple[str, str]:
-    """Фон и цвет текста слайда данного типа."""
+def colors_for(theme: dict[str, Any], kind: str, layout_key: str | None = None) -> tuple[str, str]:
+    """Фон и цвет текста слайда: по макету шаблона, если он известен, иначе по типу слайда."""
+    skin = (theme.get("layouts") or {}).get(layout_key or "")
+    if skin:
+        return skin["background"], skin["text"]
     role = COVER_ROLE_BY_KIND.get(kind)
     if role:
         return theme[role]["background"], theme[role]["text"]

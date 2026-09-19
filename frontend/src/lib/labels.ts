@@ -1,4 +1,13 @@
-import type { CheckKind, CheckStatus, PresentationStatus, Purpose, Severity, SlideKind } from '../api/types'
+import type {
+  CheckKind,
+  CheckStatus,
+  PatternCategory,
+  PatternType,
+  PresentationStatus,
+  Purpose,
+  Severity,
+  SlideKind,
+} from '../api/types'
 
 export const PURPOSE_LABELS: Record<Purpose, string> = {
   feature: 'Фича',
@@ -39,6 +48,7 @@ export const SLIDE_KIND_LABELS: Record<SlideKind, string> = {
   agenda: 'Содержание',
   bullets: 'Тезисы',
   two_columns: 'Две колонки',
+  cards: 'Карточки',
   chart: 'Диаграмма',
   table: 'Таблица',
   kpi: 'KPI',
@@ -57,6 +67,33 @@ export const ROLE_LABELS: Record<string, string> = {
   image: 'С изображением',
   closing: 'Финал',
   blank: 'Пустой',
+}
+
+export const PATTERN_TYPE_LABELS: Record<PatternType, string> = {
+  text: 'Текст',
+  cards: 'Карточки',
+  two_columns: 'Две колонки',
+  kpi: 'KPI',
+  timeline: 'Шаги / таймлайн',
+  table: 'Таблица',
+  image_text: 'Текст и изображение',
+  agenda: 'Оглавление',
+  title_only: 'Только заголовок',
+  people: 'Люди',
+  diagram: 'Схема',
+  chart: 'Диаграмма',
+  complex: 'Сложный',
+}
+
+export const PATTERN_CATEGORY_LABELS: Record<PatternCategory, string> = {
+  content: 'Контент',
+  cover: 'Обложка',
+  section: 'Разделитель',
+  closing: 'Финал',
+  profile: 'Визитка',
+  code: 'Код',
+  quote: 'Цитата',
+  library: 'Витрина',
 }
 
 export const STATUS_TONES: Record<PresentationStatus, string> = {

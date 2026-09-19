@@ -812,6 +812,14 @@ input[type='checkbox'] {
   max-height: 460px;
   overflow: auto;
 }
+.layout-thumb {
+  display: block;
+  width: 112px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
 .dot {
   display: inline-block;
   width: 14px;
@@ -1558,6 +1566,8 @@ a:hover > .template-card,
 }
 .variant-card__preview {
   position: relative;
+  display: block;
+  width: 100%;
   padding: 0;
   border: none;
   background: none;
@@ -1566,11 +1576,11 @@ a:hover > .template-card,
   overflow: hidden;
   box-shadow: var(--shadow-md);
 }
+/* Кубик в углу превью: в центре он закрывал бы текст слайда (превью — рендер настоящего .pptx). */
 .variant-card__reroll-wrap {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  top: 10px;
+  right: 10px;
   z-index: 5;
 }
 .variant-card__reroll {
@@ -1600,8 +1610,8 @@ a:hover > .template-card,
 .variant-card__tip {
   position: absolute;
   top: calc(100% + 12px);
-  left: 50%;
-  transform: translate(-50%, 4px);
+  right: 0;
+  transform: translateY(4px);
   padding: 10px 18px;
   border: 1px solid var(--color-border);
   border-radius: 14px;
@@ -1621,19 +1631,19 @@ a:hover > .template-card,
   content: '';
   position: absolute;
   top: -6px;
-  left: 50%;
+  right: 18px;
   width: 10px;
   height: 10px;
   background: var(--color-surface);
   border-top: 1px solid var(--color-border);
   border-left: 1px solid var(--color-border);
-  transform: translateX(-50%) rotate(45deg);
+  transform: rotate(45deg);
 }
 .variant-card__reroll-wrap:hover .variant-card__tip,
 .variant-card__reroll-wrap:focus-within .variant-card__tip {
   opacity: 1;
   visibility: visible;
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 .variant-card__reroll:disabled {
   cursor: not-allowed;
@@ -2047,3 +2057,123 @@ a:hover > .template-card,
   background: var(--color-primary-soft);
   color: var(--color-primary);
 }
+
+/* Паттерны слайдов на странице шаблона */
+.pattern-gallery__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+.pattern-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.pattern-card.is-disabled .pattern-card__image {
+  opacity: 0.55;
+}
+.pattern-card__image {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pattern-card__image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pattern-card__number {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.pattern-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.pattern-card__roles,
+.pattern-card__purpose {
+  font-size: 12px;
+  line-height: 1.35;
+}
+.pattern-box {
+  position: absolute;
+  border: 1.5px solid;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.pattern-box--title,
+.pattern-legend__title {
+  border-color: #3d8bff;
+  background: rgba(61, 139, 255, 0.14);
+}
+.pattern-box--item,
+.pattern-legend__item {
+  border-color: #1a9d5a;
+  background: rgba(26, 157, 90, 0.12);
+}
+.pattern-box--slot,
+.pattern-legend__slot {
+  border-color: #f0a000;
+  border-style: dashed;
+  background: rgba(240, 160, 0, 0.12);
+}
+.pattern-box--frame,
+.pattern-legend__frame {
+  border-color: #7a4de8;
+  background: rgba(122, 77, 232, 0.12);
+}
+.pattern-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.pattern-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border: 1.5px solid;
+  border-radius: 2px;
+  margin-left: 8px;
+}
+
+/* Статус сборки превью варианта */
+.variant-card__render-status {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 2px 8px;
+  pointer-events: none;
+}
+

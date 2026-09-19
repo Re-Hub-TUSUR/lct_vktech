@@ -6,11 +6,11 @@ import { exportUrl } from '../api/client'
 import { useAudit, usePresentation, useVariant } from '../api/queries'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { DeckViewer } from '../components/slides/DeckViewer'
-import { SlideView } from '../components/slides/SlideView'
+import { SlideView, slideRender } from '../components/slides/SlideView'
 import { Button, Card, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
 
-const FORMATS: { key: 'pptx' | 'pdf' | 'html'; title: string; text: string; icon: ReactNode; note?: string }[] = [
+const FORMATS: { key: 'pptx' | 'pdf' | 'html'; title: string; text: string; icon: ReactNode }[] = [
   {
     key: 'pptx',
     title: 'PowerPoint (.pptx)',
@@ -20,14 +20,13 @@ const FORMATS: { key: 'pptx' | 'pdf' | 'html'; title: string; text: string; icon
   {
     key: 'pdf',
     title: 'PDF',
-    text: 'Для рассылки и печати.',
+    text: 'Для рассылки и печати. Рендер того же .pptx через LibreOffice — оформление шаблона совпадает один в один.',
     icon: <FileText size={28} />,
-    note: 'Заглушка: упрощённая отрисовка. В продукте — конвертация .pptx через LibreOffice.',
   },
   {
     key: 'html',
     title: 'HTML',
-    text: 'Автономная веб-версия: открывается в браузере, листается стрелками.',
+    text: 'Автономная веб-версия на фонах макетов шаблона: открывается в браузере, листается стрелками.',
     icon: <FileCode size={28} />,
   },
 ]
@@ -91,7 +90,6 @@ export function ExportPage() {
             <div className="export-format__icon">{format.icon}</div>
             <h2>{format.title}</h2>
             <p>{format.text}</p>
-            {format.note && <small className="muted">{format.note}</small>}
             <a className="btn btn-primary btn-md" href={exportUrl(deck.id, format.key)} download>
               <Download size={16} /> Скачать .{format.key}
             </a>
@@ -109,7 +107,7 @@ export function ExportPage() {
         <div className="grid grid-slides">
           {deck.slides.map((slide, index) => (
             <button key={slide.id} type="button" className="thumb thumb-large" onClick={() => setViewerIndex(index)}>
-              <SlideView slide={slide} theme={theme} number={index + 1} />
+              <SlideView slide={slide} theme={theme} number={index + 1} render={slideRender(deck, index)} />
             </button>
           ))}
         </div>
@@ -120,6 +118,7 @@ export function ExportPage() {
           title={`${presentation.data.title} — вариант ${deck.letter}`}
           slides={deck.slides}
           theme={theme}
+          renders={deck.renders}
           startIndex={viewerIndex}
           onClose={() => setViewerIndex(null)}
         />

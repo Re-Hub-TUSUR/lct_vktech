@@ -1,7 +1,8 @@
 """Модель слайда — общий контракт генерации, вёрстки, аудита, экспорта и фронтенда.
 
-Слайд описывает смысл и тип визуализации, а не координаты: геометрию задаёт
-макет шаблона (layout_key), на котором слайд верстается при экспорте в .pptx.
+Слайд описывает смысл и тип визуализации, а не координаты. Геометрию задаёт
+паттерн шаблона (pattern_id — слайд-пример, который клонируется и заполняется),
+а если подходящего паттерна нет — макет шаблона (layout_key).
 """
 
 from typing import Literal
@@ -15,6 +16,7 @@ SlideKind = Literal[
     "agenda",
     "bullets",
     "two_columns",
+    "cards",
     "chart",
     "table",
     "kpi",
@@ -33,6 +35,8 @@ def new_slide_id() -> str:
 
 
 class Column(BaseModel):
+    """Колонка (two_columns) или карточка (cards): заголовок и тезисы."""
+
     title: str = ""
     bullets: list[str] = Field(default_factory=list)
 
@@ -99,3 +103,5 @@ class Slide(BaseModel):
     notes: str | None = None
     layout_key: str | None = None
     layout_name: str | None = None
+    # Паттерн шаблона (id слайда-примера, см. parsing/patterns.py); None — вёрстка на макете.
+    pattern_id: str | None = None

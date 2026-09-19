@@ -9,9 +9,11 @@ from pptx import Presentation
 from app.pipeline.audit.catalog import AuditContext, limits
 from app.pipeline.audit.runner import run_checks
 from app.pipeline.export.html_export import build_html
-from app.pipeline.export.pdf_export import build_pdf
+from app.pipeline.export.pdf_export import build_simple_pdf
 from app.pipeline.export.pptx_export import build_pptx
+from app.pipeline.export.render import libreoffice_available, pptx_to_pdf
 from app.pipeline.layout.composer import axis_config, compose_single_variant, compose_variants
+from app.pipeline.parsing.renders import render_template
 from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.theme import slide_theme
 
@@ -76,9 +78,9 @@ def test_exports(parsed):
     assert deck.slides[0].shapes.title.text == slides[0].title
 
     html = build_html(slides, theme, title="Тест")
-    assert html.count('class="slide') == len(slides)
+    assert html.count('class="slide ') == len(slides)
 
-    pdf = pymupdf.open(stream=build_pdf(slides, theme), filetype="pdf")
+    pdf = pymupdf.open(stream=build_simple_pdf(slides, theme), filetype="pdf")
     assert pdf.page_count == len(slides)
 
 
@@ -110,3 +112,42 @@ def test_compose_single_variant(parsed):
     assert draft1.letter == "B"
     assert draft2.letter == "B"
     assert len(draft1.slides) == len(draft2.slides)
+
+
+def test_layout_skins_cover_all_roles(parsed):
+    _, result = parsed
+    theme = slide_theme(result.tokens, result.layouts, result.roles, image_url=lambda layout: layout["key"])
+    for role, key in result.roles.items():
+        if key:
+            skin = theme["layouts"][key]
+            assert skin["frames"]["body"], f"у макета роли {role} нет области контента"
+            assert skin["title"]["color"].startswith("#")
+
+
+needs_libreoffice = pytest.mark.skipif(not libreoffice_available(), reason="LibreOffice не установлен")
+
+
+@needs_libreoffice
+def test_pdf_keeps_template_design(parsed):
+    """Регрессия «пустого фона»: PDF рендерится из .pptx и содержит оформление мастеров и макетов."""
+    path, result = parsed
+    theme = slide_theme(result.tokens)
+    slides = compose(parsed)[0].slides
+    pdf = pymupdf.open(stream=pptx_to_pdf(build_pptx(path, slides, roles=result.roles, theme=theme)), filetype="pdf")
+    assert pdf.page_count == len(slides)
+    cover = pdf[0]
+    # Упрощённый рендер давал ровно один прямоугольник фона и ни одной картинки.
+    assert len(cover.get_images()) + len(cover.get_drawings()) > 1
+
+
+@needs_libreoffice
+def test_template_renders(parsed, tmp_path):
+    path, result = parsed
+    renders = render_template(path, tmp_path / "slides", tmp_path / "layouts")
+    assert len(renders.slides) == result.slides_count
+    assert set(renders.layouts) == {layout["key"] for layout in result.layouts}
+    assert (tmp_path / "layouts" / renders.layouts[result.roles["title"]]).stat().st_size > 5_000
+    theme = slide_theme(result.tokens, result.layouts, result.roles)
+    images = {key: (tmp_path / "layouts" / name).read_bytes() for key, name in renders.layouts.items()}
+    html = build_html(compose(parsed)[0].slides, theme, title="Тест", images=images)
+    assert "data:image/jpeg;base64," in html

@@ -6,11 +6,7 @@
 <title>{{ title }}</title>
 <style>
   :root {
-    --bg: {{ theme.background }};
-    --text: {{ theme.text }};
-    --muted: {{ theme.muted }};
     --accent: {{ theme.accent }};
-    --surface: {{ theme.surface }};
     --heading: "{{ theme.heading_font }}", "Segoe UI", Arial, sans-serif;
     --body: "{{ theme.body_font }}", "Segoe UI", Arial, sans-serif;
   }
@@ -19,17 +15,24 @@
   .deck { display: flex; flex-direction: column; align-items: center; gap: 32px; padding: 32px 16px 64px; }
   .slide {
     position: relative; width: min(1120px, 100%); aspect-ratio: {{ theme.aspect }};
-    background: var(--bg); color: var(--text); container-type: inline-size;
-    border-radius: 6px; overflow: hidden; box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
+    container-type: inline-size; overflow: hidden; border-radius: 6px;
+    background-size: cover; background-position: center; box-shadow: 0 12px 40px rgba(0, 0, 0, .35);
   }
+{% for class_name, uri in backgrounds.items() %}
+  .{{ class_name }} { background-image: url({{ uri }}); }
+{% endfor %}
   .inner { position: absolute; inset: 0; padding: 5.5cqw 6cqw; display: flex; flex-direction: column; gap: 2.4cqw; }
   .inverse .inner { justify-content: center; }
+  .frame { position: absolute; display: flex; flex-direction: column; overflow: hidden; }
+  .frame-title { font-family: var(--heading); line-height: 1.12; }
+  .frame-title h1, .frame-title h2 { font: inherit; margin: 0; }
+  .frame-body { gap: 1.6cqw; }
   h1, h2, h3 { font-family: var(--heading); margin: 0; line-height: 1.15; }
-  h1 { font-size: 5cqw; }
-  h2 { font-size: 3.1cqw; }
+  .inner h1 { font-size: 5cqw; }
+  .inner h2 { font-size: 3.1cqw; }
   h3 { font-size: 2cqw; color: var(--accent); }
   .subtitle { font-size: 2.2cqw; opacity: .85; margin: 0; }
-  .section-number { font-size: 8cqw; font-weight: 700; opacity: .35; margin: 0; }
+  .section-number { font-size: 8cqw; font-weight: 700; opacity: .35; margin: 0; line-height: 1; }
   ul { margin: 0; padding-left: 2.4cqw; font-size: 1.9cqw; line-height: 1.4; }
   li { margin-bottom: .8cqw; }
   li::marker { color: var(--accent); }
@@ -38,10 +41,15 @@
   .agenda li::before { content: counter(item, decimal-leading-zero); color: var(--accent); font-weight: 700; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 4cqw; }
   .columns > div { display: flex; flex-direction: column; gap: 1.2cqw; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(18cqw, 1fr)); gap: 2cqw; }
+  .cards > div { background: var(--surface); border-radius: 1.2cqw; padding: 2cqw; display: flex; flex-direction: column; gap: .8cqw; }
+  .cards p { margin: 0; font-size: 1.6cqw; line-height: 1.35; }
+  .shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .image-text { display: grid; grid-template-columns: 1.1fr 1fr; gap: 4cqw; flex: 1; min-height: 0; }
   .image { border-radius: 1.2cqw; background: var(--surface); color: var(--muted); display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center; padding: 2cqw; font-size: 1.3cqw; gap: .8cqw; }
-  .kpis { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2.4cqw; margin-top: 1cqw; }
+  .kpis { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2.4cqw; }
   .kpi { background: var(--surface); border-radius: 1.2cqw; padding: 2.4cqw; }
   .kpi b { display: block; font-family: var(--heading); font-size: 4.6cqw; color: var(--accent); }
   .kpi span { font-size: 1.6cqw; }
@@ -66,14 +74,85 @@
     @page { size: landscape; margin: 0; }
     body { background: none; }
     .deck { padding: 0; gap: 0; }
-    .slide { width: 100vw; border-radius: 0; box-shadow: none; break-after: page; }
+    .slide { width: 100vw; border-radius: 0; box-shadow: none; break-after: page;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   }
 </style>
 </head>
 <body>
+{% macro content(slide) %}
+  {% if slide.kind == "agenda" %}
+    <ul class="agenda">{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% elif slide.kind == "two_columns" %}
+    <div class="columns">
+    {% for column in slide.columns %}
+      <div><h3>{{ column.title }}</h3><ul>{% for item in column.bullets %}<li>{{ item }}</li>{% endfor %}</ul></div>
+    {% endfor %}
+    </div>
+  {% elif slide.kind == "cards" %}
+    <div class="cards">
+    {% for card in slide.columns %}
+      <div><h3>{{ card.title }}</h3>{% for item in card.bullets %}<p>{{ item }}</p>{% endfor %}</div>
+    {% endfor %}
+    </div>
+  {% elif slide.kind == "image_text" %}
+    <div class="image-text">
+      <ul>{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+      <div class="image">
+        {% if slide.image and slide.image.url %}<img src="{{ slide.image.url }}" alt="">{% else %}
+        <b>Изображение будет сгенерировано</b><span>{{ slide.image.prompt if slide.image else "" }}</span>{% endif %}
+      </div>
+    </div>
+  {% elif slide.kind == "chart" and slide.chart %}
+    {% if slide.chart.caption %}<p class="chart-caption">{{ slide.chart.caption }}</p>{% endif %}
+    {{ chart(slide) }}
+  {% elif slide.kind == "table" and slide.table %}
+    <table>
+      <thead><tr>{% for cell in slide.table.columns %}<th>{{ cell }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for row in slide.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+  {% elif slide.kind == "kpi" %}
+    <div class="kpis">{% for kpi in slide.kpis %}<div class="kpi"><b>{{ kpi.value }}</b><span>{{ kpi.label }}</span></div>{% endfor %}</div>
+  {% elif slide.kind == "timeline" %}
+    <div class="timeline">
+    {% for item in slide.timeline %}
+      <div><b>{{ item.date }}</b><strong>{{ item.title }}</strong>{% if item.text %}<p>{{ item.text }}</p>{% endif %}</div>
+    {% endfor %}
+    </div>
+  {% elif slide.kind == "quote" and slide.quote %}
+    <blockquote>«{{ slide.quote.text }}»{% if slide.quote.author %}<footer>— {{ slide.quote.author }}</footer>{% endif %}</blockquote>
+  {% else %}
+    <ul>{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% endif %}
+{% endmacro %}
 <main class="deck">
 {% for slide in slides %}
-  <section class="slide{% if slide.kind in ["title", "section", "closing"] %} inverse{% endif %}" id="slide-{{ loop.index }}" style="{{ colors(slide) }}">
+  {% if shots %}
+  <section class="slide" id="slide-{{ loop.index }}">
+    <img class="shot" src="{{ shots[loop.index0] }}" alt="{{ slide.title }}">
+    <div class="sr-only">
+      {% if slide.kind in inverse_kinds %}<h1>{{ slide.title }}</h1>{% if slide.subtitle %}<p>{{ slide.subtitle }}</p>{% endif %}
+      {% else %}<h2>{{ slide.title }}</h2>{{ content(slide) }}{% endif %}
+    </div>
+  </section>
+  {% else %}
+  {% set layout = frame(slide) %}
+  {% set cover = slide.kind in inverse_kinds %}
+  <section class="slide {{ background_class(slide) }}{% if cover %} inverse{% endif %}" id="slide-{{ loop.index }}" style="{{ slide_style(slide) }}">
+  {% if layout %}
+    <div class="frame frame-title" style="{{ layout.title }}">
+      {% if cover %}<h1>{{ slide.title }}</h1>{% else %}<h2>{{ slide.title }}</h2>{% endif %}
+    </div>
+    {% if cover %}
+      {% if slide.subtitle %}
+      <div class="frame" style="{{ layout.subtitle }}">
+        {% if slide.kind == "section" %}<p class="section-number">{{ slide.subtitle }}</p>{% else %}<p class="subtitle">{{ slide.subtitle }}</p>{% endif %}
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="frame frame-body" style="{{ layout.body }}">{{ content(slide) }}</div>
+    {% endif %}
+  {% else %}
     <div class="inner">
     {% if slide.kind == "title" or slide.kind == "closing" %}
       <h1>{{ slide.title }}</h1>
@@ -83,47 +162,13 @@
       <h1>{{ slide.title }}</h1>
     {% else %}
       <h2>{{ slide.title }}</h2>
-      {% if slide.kind == "agenda" %}
-        <ul class="agenda">{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
-      {% elif slide.kind == "two_columns" %}
-        <div class="columns">
-        {% for column in slide.columns %}
-          <div><h3>{{ column.title }}</h3><ul>{% for item in column.bullets %}<li>{{ item }}</li>{% endfor %}</ul></div>
-        {% endfor %}
-        </div>
-      {% elif slide.kind == "image_text" %}
-        <div class="image-text">
-          <ul>{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
-          <div class="image">
-            {% if slide.image and slide.image.url %}<img src="{{ slide.image.url }}" alt="">{% else %}
-            <b>Изображение будет сгенерировано</b><span>{{ slide.image.prompt if slide.image else "" }}</span>{% endif %}
-          </div>
-        </div>
-      {% elif slide.kind == "chart" and slide.chart %}
-        {% if slide.chart.caption %}<p class="chart-caption">{{ slide.chart.caption }}</p>{% endif %}
-        {{ chart(slide) }}
-      {% elif slide.kind == "table" and slide.table %}
-        <table>
-          <thead><tr>{% for cell in slide.table.columns %}<th>{{ cell }}</th>{% endfor %}</tr></thead>
-          <tbody>{% for row in slide.table.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}</tbody>
-        </table>
-      {% elif slide.kind == "kpi" %}
-        <div class="kpis">{% for kpi in slide.kpis %}<div class="kpi"><b>{{ kpi.value }}</b><span>{{ kpi.label }}</span></div>{% endfor %}</div>
-      {% elif slide.kind == "timeline" %}
-        <div class="timeline">
-        {% for item in slide.timeline %}
-          <div><b>{{ item.date }}</b><strong>{{ item.title }}</strong>{% if item.text %}<p>{{ item.text }}</p>{% endif %}</div>
-        {% endfor %}
-        </div>
-      {% elif slide.kind == "quote" and slide.quote %}
-        <blockquote>«{{ slide.quote.text }}»{% if slide.quote.author %}<footer>— {{ slide.quote.author }}</footer>{% endif %}</blockquote>
-      {% else %}
-        <ul>{% for item in slide.bullets %}<li>{{ item }}</li>{% endfor %}</ul>
-      {% endif %}
+      {{ content(slide) }}
     {% endif %}
     </div>
+  {% endif %}
     <span class="number">{{ loop.index }}</span>
   </section>
+  {% endif %}
 {% endfor %}
 </main>
 <script>

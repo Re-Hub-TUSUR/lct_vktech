@@ -22,6 +22,7 @@ export type SlideKind =
   | 'agenda'
   | 'bullets'
   | 'two_columns'
+  | 'cards'
   | 'chart'
   | 'table'
   | 'kpi'
@@ -57,11 +58,28 @@ export interface Slide {
   notes: string | null
   layout_key: string | null
   layout_name: string | null
+  /** Паттерн шаблона (слайд-пример, из которого собран слайд); null — вёрстка на макете. */
+  pattern_id: string | null
 }
 
 export interface SurfaceColors {
   background: string
   text: string
+}
+
+/** Прямоугольник в долях слайда: [left, top, width, height]. */
+export type FrameRect = [number, number, number, number]
+
+export interface LayoutSkin {
+  background: string
+  text: string
+  muted: string
+  surface: string
+  /** Рендер макета шаблона (фон, логотипы, декор) — подложка слайда. */
+  image: string | null
+  frames: { title: FrameRect | null; subtitle: FrameRect | null; body: FrameRect | null } | null
+  /** size — кегль заголовка в % ширины слайда. */
+  title: { color: string; size: number | null; anchor: string | null; align: string | null; bold: boolean | null }
 }
 
 export interface SlideTheme {
@@ -77,6 +95,9 @@ export interface SlideTheme {
   heading_font: string
   body_font: string
   aspect: number
+  /** Ключ макета → оформление (только макеты, назначенные ролям). */
+  layouts: Record<string, LayoutSkin>
+  roles: Record<string, string | null>
 }
 
 // --- Шаблоны --------------------------------------------------------------
@@ -107,6 +128,8 @@ export interface LayoutInfo {
   used_by: number
   role: string
   background: string | null
+  /** Имя файла рендера макета: /api/templates/{id}/layouts/{image} */
+  image?: string | null
   assigned_roles: string[]
   placeholders: { type: string; idx: number; name: string }[]
 }
@@ -118,6 +141,61 @@ export interface DesignTokens {
   fonts?: { name: string; count: number }[]
   type_scale?: { size_pt: number; count: number }[]
   stats?: Record<string, number>
+  /** Число паттернов под контент по типам. */
+  patterns?: Record<string, number>
+  /** Статистика разметки паттернов VLM (если она включена). */
+  vlm?: { model: string; requested: number; labeled: number; failed: number }
+}
+
+export type PatternType =
+  | 'text'
+  | 'cards'
+  | 'two_columns'
+  | 'kpi'
+  | 'timeline'
+  | 'table'
+  | 'image_text'
+  | 'agenda'
+  | 'title_only'
+  | 'people'
+  | 'diagram'
+  | 'chart'
+  | 'complex'
+
+export type PatternCategory = 'content' | 'cover' | 'section' | 'closing' | 'profile' | 'code' | 'quote' | 'library'
+
+export interface PatternSlot {
+  id: number
+  role: string
+  bbox: FrameRect
+  size: number | null
+  /** Ёмкость слота в знаках при его кегле. */
+  chars: number
+  paragraphs: number
+  sample: string
+}
+
+/** Паттерн — слайд-пример шаблона, разобранный на слоты (см. backend/app/pipeline/parsing/patterns.py). */
+export interface SlidePattern {
+  id: string
+  slide_index: number
+  layout_key: string | null
+  type: PatternType
+  category: PatternCategory
+  usable: boolean
+  items_count: number
+  title: PatternSlot | null
+  slots: PatternSlot[]
+  items: { bbox: FrameRect; group: number | null; shapes: number[]; slots: PatternSlot[]; image: number | null }[]
+  frames: Record<string, { id: number; bbox: FrameRect }>
+  images: { id: number; bbox: FrameRect }[]
+  /** rules — эвристики парсера, vlm — уточнено моделью по рендеру слайда. */
+  source: 'rules' | 'vlm'
+  /** Имя файла рендера слайда-примера: /api/templates/{id}/slides/{render} */
+  render?: string | null
+  purpose?: string
+  usage?: string
+  confidence?: number
 }
 
 export interface TemplateDetail extends TemplateSummary {
@@ -126,6 +204,7 @@ export interface TemplateDetail extends TemplateSummary {
   tokens: DesignTokens
   layouts: LayoutInfo[]
   layout_roles: Record<string, string | null>
+  patterns: SlidePattern[]
 }
 
 // --- Презентации ----------------------------------------------------------
@@ -176,6 +255,8 @@ export interface PresentationListItem {
   template_name: string | null
   theme: SlideTheme | null
   cover: Slide | null
+  /** Рендер обложки выбранного варианта (если превью готово). */
+  cover_image: string | null
   slides_count: number | null
   selected_variant_id: Uuid | null
   updated_at: string
@@ -225,6 +306,18 @@ export interface Generation {
   finished_at: string | null
 }
 
+/** Рендер слайда из собранного .pptx: превью совпадает с экспортом. */
+export interface SlideRender {
+  image: string
+  /** Рамки элементов (адрес как в target аудита → [x, y, w, h] в долях слайда). */
+  targets: Record<string, FrameRect>
+}
+
+export interface VariantRenders {
+  status: 'ready' | 'pending' | 'failed' | 'unavailable'
+  slides: SlideRender[]
+}
+
 export interface Variant {
   id: Uuid
   position: number
@@ -244,6 +337,7 @@ export interface Variant {
     warnings: number
   }
   is_selected: boolean
+  renders: VariantRenders
 }
 
 export interface VariantsResponse {

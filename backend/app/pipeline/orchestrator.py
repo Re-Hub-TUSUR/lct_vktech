@@ -27,13 +27,13 @@ from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
 from app.pipeline.content.ingest import extract_text, split_sentences
 from app.pipeline.layout.composer import axis_config, compose_variants
-from app.pipeline.parsing.template_parser import parse_template
 from app.pipeline.planning.outline import build_outline, group_labels, purpose_label
 from app.pipeline.skills import skills_snapshot
 from app.pipeline.stages import STAGE_BY_KEY
 from app.schemas.presentation import GenerationSettings
 from app.services.audit import build_audit_context, refresh_audit
-from app.services.templates import apply_parsed
+from app.services.renders import render_variant, renders_supported
+from app.services.templates import analyze_template, apply_parsed, needs_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,15 @@ async def _publish_generation_update(generation: Generation) -> None:
 
 class PipelineError(RuntimeError):
     pass
+
+
+async def _keep_alive(generation_id: uuid.UUID, work):
+    """Долгая реальная работа внутри стадии: heartbeat обновляется, пока она идёт."""
+    task = asyncio.ensure_future(work)
+    while not task.done():
+        await touch_heartbeat(redis_client, generation_id)
+        await asyncio.wait({task}, timeout=5)
+    return task.result()
 
 
 @dataclass
@@ -166,12 +175,13 @@ async def _run_stages(
     async with tracker.stage("template") as stage:
         if template is None:
             raise PipelineError("Для презентации не выбран шаблон")
-        if template.status != "ready" or not template.layouts:
-            apply_parsed(template, await asyncio.to_thread(parse_template, template.file_path))
+        if needs_analysis(template):
+            apply_parsed(template, await asyncio.to_thread(analyze_template, template.id, template.file_path))
         fonts = ", ".join(font["name"] for font in (template.tokens.get("fonts") or [])[:2]) or "—"
+        usable = sum(1 for pattern in template.patterns or [] if pattern.get("usable"))
         stage.detail = (
-            f"{len(template.layouts)} макетов · {len(template.tokens.get('palette') or [])} цветов палитры · "
-            f"шрифты: {fonts}"
+            f"{len(template.layouts)} макетов · паттернов слайдов: {usable} · "
+            f"{len(template.tokens.get('palette') or [])} цветов палитры · шрифты: {fonts}"
         )
 
     async with tracker.stage("content") as stage:
@@ -201,9 +211,16 @@ async def _run_stages(
             layouts=template.layouts,
             roles=template.layout_roles,
             groups=group_labels(),
+            patterns=template.patterns,
         )
         axis_title = axis_config(options.variant_axis)[1]["title"]
-        stage.detail = f"Ось «{axis_title}»: " + ", ".join(f"{d.letter} — {len(d.slides)} сл." for d in drafts)
+        total = sum(len(d.slides) for d in drafts)
+        patterned = sum(1 for d in drafts for slide in d.slides if slide.pattern_id)
+        stage.detail = (
+            f"Ось «{axis_title}»: "
+            + ", ".join(f"{d.letter} — {len(d.slides)} сл." for d in drafts)
+            + f" · по паттернам шаблона {patterned} из {total}"
+        )
 
     async with tracker.stage("visuals") as stage:
         kinds = Counter(slide.kind for draft in drafts for slide in draft.slides)
@@ -237,6 +254,18 @@ async def _run_stages(
     ]
     db.add_all(variants)
     await db.flush()
+
+    async with tracker.stage("render") as stage:
+        if renders_supported(template):
+            results = await _keep_alive(
+                tracker.generation.id, asyncio.gather(*(render_variant(v, template) for v in variants))
+            )
+            for variant, renders in zip(variants, results):
+                variant.renders = renders
+            ready = sum(1 for renders in results if renders["status"] == "ready")
+            stage.detail = f"Варианты собраны в .pptx шаблона, превью готовы: {ready} из {len(variants)}"
+        else:
+            stage.detail = "LibreOffice не найден — превью в упрощённой отрисовке, экспорт .pptx работает"
 
     async with tracker.stage("audit") as stage:
         ctx = await build_audit_context(db, presentation, template)

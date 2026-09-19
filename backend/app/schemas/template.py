@@ -10,6 +10,35 @@ class SurfaceColors(BaseModel):
     text: str
 
 
+class LayoutFrames(BaseModel):
+    """Области макета в долях слайда: [left, top, width, height]."""
+
+    title: list[float] | None = None
+    subtitle: list[float] | None = None
+    body: list[float] | None = None
+
+
+class TitleSkin(BaseModel):
+    color: str
+    # Кегль заголовка в % ширины слайда (единицы cqw на фронтенде).
+    size: float | None = None
+    anchor: str | None = None
+    align: str | None = None
+    bold: bool | None = None
+
+
+class LayoutSkin(BaseModel):
+    """Оформление макета шаблона для превью: фон-рендер, цвета и области."""
+
+    background: str
+    text: str
+    muted: str
+    surface: str
+    image: str | None = None
+    frames: LayoutFrames | None = None
+    title: TitleSkin
+
+
 class SlideTheme(BaseModel):
     """Цвета и шрифты для отрисовки слайдов, вычисленные из токенов шаблона."""
 
@@ -26,6 +55,9 @@ class SlideTheme(BaseModel):
     heading_font: str
     body_font: str
     aspect: float
+    # Ключ макета → оформление; только макеты, назначенные ролям.
+    layouts: dict[str, LayoutSkin] = {}
+    roles: dict[str, str | None] = {}
 
 
 class TemplateSummary(BaseModel):
@@ -50,3 +82,4 @@ class TemplateDetail(TemplateSummary):
     tokens: dict[str, Any]
     layouts: list[dict[str, Any]]
     layout_roles: dict[str, Any]
+    patterns: list[dict[str, Any]]

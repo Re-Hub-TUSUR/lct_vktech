@@ -1,8 +1,9 @@
 """Сборка трёх вариантов вёрстки из плана.
 
 Варианты различаются по оси, выбранной пользователем (профили — в
-skills/layout_composer.yaml), и привязываются к макетам шаблона по ролям,
-найденным парсером. Поэтому один и тот же код работает с любым шаблоном.
+skills/layout_composer.yaml). Каждый слайд получает паттерн шаблона — слайд-пример,
+который при экспорте клонируется и заполняется (layout/matcher.py), а если подходящего
+нет — макет шаблона по роли. Поэтому один и тот же код работает с любым шаблоном.
 """
 
 import copy
@@ -11,6 +12,7 @@ import random
 from dataclasses import dataclass
 from typing import Any
 
+from app.pipeline.layout.matcher import assign_patterns
 from app.pipeline.skills import get_skill
 from app.schemas.slide import (
     ChartData,
@@ -105,6 +107,7 @@ def compose_single_variant(
     roles: dict[str, Any],
     groups: dict[str, str],
     seed: int | None = None,
+    patterns: list[dict[str, Any]] | None = None,
 ) -> VariantDraft:
     axis_key, axis = axis_config(axis_key)
     layout_names = {layout["key"]: layout["name"] for layout in layouts}
@@ -134,7 +137,9 @@ def compose_single_variant(
     _fill_agenda(slides, groups)
     slides = _apply_order(slides, profile["order"], groups)
     slides = _inject_demo_defects(slides, cfg.get("demo_defects") or [])
-    _assign_layouts(slides, roles, layout_names)
+    assign_layouts(slides, roles, layout_names)
+    # Рерол (seed задан) берёт другой паттерн из равноценных — вёрстка меняется, а не только порядок тезисов.
+    assign_patterns(slides, patterns, position=position, layout_names=layout_names, seed=seed)
 
     return VariantDraft(
         position=position,
@@ -156,6 +161,7 @@ def compose_variants(
     layouts: list[dict[str, Any]],
     roles: dict[str, Any],
     groups: dict[str, str],
+    patterns: list[dict[str, Any]] | None = None,
 ) -> list[VariantDraft]:
     axis_key, axis = axis_config(axis_key)
     drafts: list[VariantDraft] = []
@@ -171,6 +177,7 @@ def compose_variants(
                 layouts=layouts,
                 roles=roles,
                 groups=groups,
+                patterns=patterns,
             )
         )
     return drafts
@@ -200,7 +207,10 @@ def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool
         _fill_data(slide, spec.get("data") or {}, profile["data_view"])
     elif kind == "bullets":
         style = profile["layout_style"] if spec.get("flexible") else "bullets"
-        if style == "columns" and spec.get("columns"):
+        if style == "cards" and spec.get("cards"):
+            slide.kind = "cards"
+            slide.columns = _cards(spec["cards"], max_bullets)
+        elif style in {"cards", "columns"} and spec.get("columns"):
             slide.kind = "two_columns"
             slide.columns = _columns(spec["columns"], max_bullets)
         elif style == "image":
@@ -231,6 +241,14 @@ def _columns(columns: list[dict[str, Any]], max_bullets: int) -> list[Column]:
     return [
         Column(title=str(column.get("title", "")), bullets=_strs(column.get("bullets"))[:per_column])
         for column in columns[:2]
+    ]
+
+
+def _cards(cards: list[dict[str, Any]], max_bullets: int) -> list[Column]:
+    """Карточки: заголовок и короткий текст. Карточек не меньше трёх — иначе это колонки."""
+    return [
+        Column(title=str(card.get("title", "")), bullets=[str(card["text"])] if card.get("text") else [])
+        for card in cards[: max(3, max_bullets)]
     ]
 
 
@@ -348,7 +366,7 @@ def _inject_demo_defects(slides: list[Slide], defects: list[str]) -> list[Slide]
     return slides
 
 
-def _assign_layouts(slides: list[Slide], roles: dict[str, Any], layout_names: dict[str, str]) -> None:
+def assign_layouts(slides: list[Slide], roles: dict[str, Any], layout_names: dict[str, str]) -> None:
     for slide in slides:
         role = ROLE_BY_KIND.get(slide.kind, "content")
         key = roles.get(role) or roles.get("content") or roles.get("title")

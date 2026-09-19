@@ -11,6 +11,8 @@ from app.models.base import utcnow
 from app.pipeline.audit.catalog import AuditContext, catalog_by_id, categories, limits, load_catalog
 from app.pipeline.audit.fixes import FixContext, IssueRef, apply_fixes
 from app.pipeline.audit.runner import run_checks, runnable_checks
+from app.pipeline.layout.composer import assign_layouts
+from app.pipeline.layout.matcher import assign_patterns
 from app.schemas.audit import AuditIssueOut, AuditReport, AuditSummary, CheckOut
 from app.schemas.slide import Slide
 from app.services.templates import template_theme
@@ -27,6 +29,7 @@ async def build_audit_context(db: AsyncSession, presentation: Presentation, temp
         sources_text=sources,
         language=(presentation.settings or {}).get("language", "ru"),
         limits=limits(),
+        patterns={p["id"]: p for p in (template.patterns if template else None) or [] if p.get("usable")},
     )
 
 
@@ -95,6 +98,12 @@ async def resolve_issues(
         refs,
         FixContext(limits=ctx.limits, content_layout_key=content_key, content_layout_name=content_name),
     )
+    if template is not None:
+        # После правок содержимое могло перестать помещаться в паттерн (или начать помещаться в другой):
+        # подходящие паттерны сохраняются, остальные слайды подбираются заново.
+        names = {layout["key"]: layout["name"] for layout in template.layouts or []}
+        assign_layouts(slides, roles, names)
+        assign_patterns(slides, template.patterns, position=variant.position, layout_names=names, keep=True)
     variant.slides = [slide.model_dump(mode="json") for slide in slides]
     applied_ids = set(applied)
     for issue in issues:

@@ -87,11 +87,16 @@ export function useGeneration(presentationId: string | undefined) {
   })
 }
 
+// Пока превью варианта пересобирается (после правок аудита, рерола), опрашиваем сервер.
+const RENDER_POLL_MS = 2000
+
 export function useVariants(presentationId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: queryKeys.variants(presentationId ?? ''),
     queryFn: () => api.get<VariantsResponse>(`/presentations/${presentationId}/variants`),
     enabled: Boolean(presentationId) && enabled,
+    refetchInterval: (query) =>
+      query.state.data?.variants.some((v) => v.renders.status === 'pending') ? RENDER_POLL_MS : false,
   })
 }
 
@@ -100,6 +105,7 @@ export function useVariant(variantId: string | null | undefined) {
     queryKey: queryKeys.variant(variantId ?? ''),
     queryFn: () => api.get<VariantDetail>(`/variants/${variantId}`),
     enabled: Boolean(variantId),
+    refetchInterval: (query) => (query.state.data?.variant.renders.status === 'pending' ? RENDER_POLL_MS : false),
   })
 }
 

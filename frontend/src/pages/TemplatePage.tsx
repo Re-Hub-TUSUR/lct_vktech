@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, useTemplate } from '../api/queries'
+import { PatternGallery } from '../components/PatternGallery'
 import { TemplatePreview } from '../components/TemplateCard'
 import { useToast } from '../components/Toast'
 import { Badge, Button, Card, ErrorState, FullPageSpinner } from '../components/ui'
@@ -76,10 +77,18 @@ export function TemplatePage() {
               <div><dt>Картинок</dt><dd>{tokens.stats.pictures}</dd></div>
               <div><dt>Таблиц</dt><dd>{tokens.stats.tables}</dd></div>
               <div><dt>Диаграмм</dt><dd>{tokens.stats.charts}</dd></div>
+              <div><dt>Паттернов</dt><dd>{tokens.stats.patterns ?? '—'}</dd></div>
             </dl>
           )}
         </div>
       </div>
+
+      {template.status === 'ready' && (template.patterns ?? []).length > 0 && (
+        <Card>
+          <h2>Паттерны слайдов</h2>
+          <PatternGallery template={template} />
+        </Card>
+      )}
 
       {template.status === 'ready' && (
         <div className="grid grid-2">
@@ -139,9 +148,9 @@ export function TemplatePage() {
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th>Рендер</th>
                     <th>Макет</th>
                     <th>Роль</th>
-                    <th>Фон</th>
                     <th>Слайдов</th>
                     <th>Плейсхолдеры</th>
                   </tr>
@@ -149,9 +158,20 @@ export function TemplatePage() {
                 <tbody>
                   {template.layouts.map((layout) => (
                     <tr key={layout.key} className={layout.assigned_roles.length ? 'is-highlighted' : undefined}>
+                      <td>
+                        {layout.image ? (
+                          <img
+                            className="layout-thumb"
+                            src={`/api/templates/${template.id}/layouts/${layout.image}`}
+                            alt=""
+                            loading="lazy"
+                          />
+                        ) : (
+                          layout.background && <span className="dot" style={{ background: layout.background }} title={layout.background} />
+                        )}
+                      </td>
                       <td>{layout.name}</td>
                       <td>{ROLE_LABELS[layout.role] ?? layout.role}</td>
-                      <td>{layout.background && <span className="dot" style={{ background: layout.background }} title={layout.background} />}</td>
                       <td>{layout.used_by}</td>
                       <td className="muted">{layout.placeholders.map((p) => p.type.toLowerCase()).join(', ') || '—'}</td>
                     </tr>

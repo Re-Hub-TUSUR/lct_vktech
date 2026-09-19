@@ -16,9 +16,11 @@ from lxml import etree
 from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
+from app.pipeline.geometry import content_frame, to_fractions
+from app.pipeline.parsing.patterns import extract_patterns, pattern_summary
 from app.pipeline.skills import get_skill
 
-PARSER_VERSION = "0.1.0"
+PARSER_VERSION = "0.4.1"
 
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -43,6 +45,8 @@ class ParsedTemplate:
     tokens: dict[str, Any]
     layouts: list[dict[str, Any]]
     roles: dict[str, str | None]
+    # Паттерны слайдов-примеров (см. parsing/patterns.py).
+    patterns: list[dict[str, Any]]
 
 
 def parse_template(path: str | Path) -> ParsedTemplate:
@@ -59,6 +63,7 @@ def parse_template(path: str | Path) -> ParsedTemplate:
         layout["assigned_roles"] = sorted(role for role, key in roles.items() if key == layout["key"])
 
     usage = _usage(path, theme, params)
+    patterns = extract_patterns(prs, slide_layout_keys, {layout["key"]: layout["name"] for layout in layouts})
     tokens = {
         "slide_size": {
             "width_emu": width,
@@ -82,7 +87,9 @@ def parse_template(path: str | Path) -> ParsedTemplate:
             "slides": len(prs.slides),
             "layouts": len(layouts),
             "masters": len(prs.slide_masters),
+            "patterns": sum(1 for pattern in patterns if pattern["usable"]),
         },
+        "patterns": pattern_summary(patterns),
     }
     return ParsedTemplate(
         slide_width=width,
@@ -91,6 +98,7 @@ def parse_template(path: str | Path) -> ParsedTemplate:
         tokens=tokens,
         layouts=layouts,
         roles=roles,
+        patterns=patterns,
     )
 
 
@@ -222,10 +230,78 @@ def _layouts(prs, theme: dict[str, Any], params: dict[str, Any]) -> tuple[list[d
                     "used_by": usage.get(partname, 0),
                     "role": _classify(layout.name, placeholders, params),
                     "background": layout_background(layout, theme["colors"]),
+                    "frames": _frames(placeholders, int(prs.slide_width), int(prs.slide_height)),
+                    "title_style": _title_style(layout, theme["colors"]),
                     "placeholders": placeholders,
                 }
             )
     return layouts, partname_to_key
+
+
+def _rect(placeholder: dict[str, Any]) -> tuple[int, int, int, int] | None:
+    dims = (placeholder["left"], placeholder["top"], placeholder["width"], placeholder["height"])
+    return None if None in dims else dims  # type: ignore[return-value]
+
+
+def _frames(placeholders: list[dict[str, Any]], width: int, height: int) -> dict[str, list[float] | None]:
+    """Области макета в долях слайда: заголовок, подзаголовок (первое тело) и контент под заголовком."""
+    title = next((r for p in placeholders if p["type"] in TITLE_TYPES and (r := _rect(p))), None)
+    bodies = sorted((p for p in placeholders if p["type"] in BODY_TYPES and _rect(p)), key=lambda p: p["idx"])
+    return {
+        "title": to_fractions(title, width, height),
+        "subtitle": to_fractions(_rect(bodies[0]), width, height) if bodies else None,
+        "body": to_fractions(content_frame(title, width, height), width, height),
+    }
+
+
+def _placeholder_sp(element, types: set[str]):
+    for sp in element.iter(f"{{{NS_P}}}sp"):
+        ph = sp.find(f"{{{NS_P}}}nvSpPr/{{{NS_P}}}nvPr/{{{NS_P}}}ph")
+        if ph is not None and ph.get("type", "obj") in types:
+            return sp
+    return None
+
+
+def _fill_color(props, theme_colors: dict[str, str], clr_map: dict[str, str]) -> str | None:
+    fill = props.find(f"{{{NS_A}}}solidFill") if props is not None else None
+    if fill is None:
+        return None
+    return next(
+        (color for child in fill if isinstance(child.tag, str) and (color := _resolve_color(child, theme_colors, clr_map))),
+        None,
+    )
+
+
+def _title_style(layout, theme_colors: dict[str, str]) -> dict[str, Any]:
+    """Эффективный стиль заголовка по цепочке наследования: плейсхолдер макета → мастер → titleStyle."""
+    master = layout.slide_master
+    clr_map_el = master._element.find(f"{{{NS_P}}}clrMap")
+    clr_map = dict(clr_map_el.attrib) if clr_map_el is not None else {}
+    style: dict[str, Any] = {"size_pt": None, "color": None, "anchor": None, "align": None, "bold": None}
+
+    levels = []
+    for sp in (_placeholder_sp(layout._element, {"title", "ctrTitle"}), _placeholder_sp(master._element, {"title"})):
+        if sp is None:
+            continue
+        body_pr = sp.find(f"{{{NS_P}}}txBody/{{{NS_A}}}bodyPr")
+        if style["anchor"] is None and body_pr is not None:
+            style["anchor"] = body_pr.get("anchor")
+        levels.append(sp.find(f"{{{NS_P}}}txBody/{{{NS_A}}}lstStyle/{{{NS_A}}}lvl1pPr"))
+    levels.append(master._element.find(f"{{{NS_P}}}txStyles/{{{NS_P}}}titleStyle/{{{NS_A}}}lvl1pPr"))
+
+    for level in levels:
+        if level is None:
+            continue
+        style["align"] = style["align"] or level.get("algn")
+        props = level.find(f"{{{NS_A}}}defRPr")
+        if props is None:
+            continue
+        if style["size_pt"] is None and (size := props.get("sz")) and size.isdigit():
+            style["size_pt"] = int(size) / 100
+        if style["bold"] is None and props.get("b") is not None:
+            style["bold"] = props.get("b") in {"1", "true"}
+        style["color"] = style["color"] or _fill_color(props, theme_colors, clr_map)
+    return style
 
 
 def _has_title(layout: dict[str, Any]) -> bool:

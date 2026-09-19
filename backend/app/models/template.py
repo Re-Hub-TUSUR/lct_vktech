@@ -42,3 +42,5 @@ class Template(UUIDPk, Timestamps, Base):
     layout_roles: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, server_default=text("'{}'::jsonb")
     )
+    # Паттерны слайдов-примеров: тип, слоты, повторяющиеся элементы, рендер.
+    patterns: Mapped[list[Any]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))

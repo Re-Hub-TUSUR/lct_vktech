@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator
 
 from app.pipeline.audit.catalog import AuditContext, Finding
+from app.pipeline.layout.matcher import text_capacity
 from app.pipeline.theme import colors_for, contrast_ratio
 from app.schemas.slide import INVERSE_KINDS, Slide
 
@@ -34,6 +35,7 @@ TEXT_CAPACITY = {
     "bullets": 420,
     "agenda": 320,
     "two_columns": 480,
+    "cards": 420,
     "image_text": 260,
     "quote": 220,
     "timeline": 360,
@@ -114,8 +116,17 @@ def words(text: str) -> int:
 
 @check("layout.text_overflow")
 def text_overflow(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
-    max_title = int(ctx.limits.get("max_title_chars", 100))
+    default_title = int(ctx.limits.get("max_title_chars", 100))
     for slide in slides:
+        pattern = ctx.patterns.get(slide.pattern_id or "")
+        if pattern is not None:
+            # Слайд собран из слайда-примера шаблона: ёмкость — по его слотам (с запасом на автоподбор кегля).
+            title_chars, body_capacity = text_capacity(slide, pattern)
+            max_title = min(default_title, int(title_chars * 1.2)) if title_chars else default_title
+            capacity = int(body_capacity * 1.2) or None
+            frame = f"слоты паттерна {pattern['id']}"
+        else:
+            max_title, capacity, frame = default_title, TEXT_CAPACITY.get(slide.kind), "рамку макета"
         if len(slide.title) > max_title:
             yield Finding(
                 "layout.text_overflow",
@@ -124,15 +135,14 @@ def text_overflow(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
                 f"Заголовок из {len(slide.title)} знаков не помещается в рамку (≈{max_title})",
                 slide.title,
             )
-        capacity = TEXT_CAPACITY.get(slide.kind)
         chars = body_chars(slide)
         if capacity and chars > capacity:
-            target = "columns" if slide.kind == "two_columns" else "bullets" if slide.bullets else "slide"
+            target = "columns" if slide.kind in {"two_columns", "cards"} else "bullets" if slide.bullets else "slide"
             yield Finding(
                 "layout.text_overflow",
                 slide.id,
                 target,
-                f"Текст ≈{chars} знаков не помещается в рамку макета (ёмкость ≈{capacity})",
+                f"Текст ≈{chars} знаков не помещается в {frame} (ёмкость ≈{capacity})",
             )
 
 
@@ -156,7 +166,7 @@ def contrast(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     body_min = float(ctx.limits.get("min_contrast", 4.5))
     large_min = float(ctx.limits.get("min_contrast_large", 3.0))
     for slide in slides:
-        bg, fg = colors_for(ctx.theme, slide.kind)
+        bg, fg = colors_for(ctx.theme, slide.kind, slide.layout_key)
         # На обложке, разделителе и финале только крупный текст — для него порог ниже.
         minimum = large_min if slide.kind in INVERSE_KINDS else body_min
         ratio = contrast_ratio(fg, bg)

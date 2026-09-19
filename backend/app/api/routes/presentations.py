@@ -25,7 +25,6 @@ from app.models.base import utcnow
 from app.pipeline.layout.composer import axis_config
 from app.pipeline.skills import get_skill
 from app.pipeline.stages import initial_stages
-from app.pipeline.theme import slide_theme
 from app.schemas.generation import AxisInfo, GenerationOut, VariantsResponse
 from app.schemas.presentation import (
     ContentFileOut,
@@ -39,6 +38,8 @@ from app.schemas.presentation import (
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme
 from app.services.audit import issue_counts
+from app.services.renders import render_state, schedule_render
+from app.services.templates import template_theme
 
 router = APIRouter(prefix="/presentations", tags=["presentations"])
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
         variants = variants_by_presentation.get(presentation.id, [])
         shown = next((v for v in variants if v.id == presentation.selected_variant_id), variants[0] if variants else None)
         template = presentation.template
+        renders = render_state(shown, template) if shown else {"slides": []}
         items.append(
             PresentationListItem(
                 id=presentation.id,
@@ -80,8 +82,9 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
                 purpose=presentation.purpose,
                 status=presentation.status,
                 template_name=template.name if template else None,
-                theme=SlideTheme(**slide_theme(template.tokens)) if template and template.tokens else None,
+                theme=SlideTheme(**template_theme(template)) if template and template.tokens else None,
                 cover=Slide.model_validate(shown.slides[0]) if shown and shown.slides else None,
+                cover_image=renders["slides"][0]["image"] if renders["slides"] else None,
                 slides_count=len(shown.slides) if shown else None,
                 selected_variant_id=presentation.selected_variant_id,
                 updated_at=presentation.updated_at,
@@ -133,9 +136,12 @@ async def update_presentation(
 @router.delete("/{presentation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_presentation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
     presentation = await get_presentation_for_user(db, presentation_id, user)
+    variant_ids = list(await db.scalars(select(Variant.id).where(Variant.presentation_id == presentation.id)))
     await db.delete(presentation)
     await db.commit()
     remove_dir("content", str(presentation_id))
+    for variant_id in variant_ids:
+        remove_dir("variants", str(variant_id))
 
 
 @router.post("/{presentation_id}/files", response_model=list[ContentFileOut], status_code=status.HTTP_201_CREATED)
@@ -206,6 +212,7 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
         return generation_out(active)
 
     options = GenerationSettings.model_validate(presentation.settings or {})
+    old_variants = list(await db.scalars(select(Variant.id).where(Variant.presentation_id == presentation.id)))
     await db.execute(delete(Variant).where(Variant.presentation_id == presentation.id))
     generation = Generation(
         presentation_id=presentation.id,
@@ -217,6 +224,8 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
     presentation.status = "generating"
     presentation.selected_variant_id = None
     await db.commit()
+    for variant_id in old_variants:
+        remove_dir("variants", str(variant_id))
     await arq.enqueue_job("run_generation_job", str(generation.id), _job_id=f"generation:{generation.id}")
     return generation_out(generation)
 
@@ -319,19 +328,23 @@ async def generation_events(presentation_id: uuid.UUID, user: CurrentUser, db: D
 
 
 @router.get("/{presentation_id}/variants", response_model=VariantsResponse)
-async def list_variants(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> VariantsResponse:
+async def list_variants(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> VariantsResponse:
     presentation = await get_presentation_for_user(db, presentation_id, user)
     variants = list(
         await db.scalars(select(Variant).where(Variant.presentation_id == presentation.id).order_by(Variant.position))
     )
+    # Превью, отставшие от слайдов (например, после обновления парсера), пересобираются в фоне.
+    scheduled = [await schedule_render(db, arq, variant, presentation.template) for variant in variants]
+    if any(scheduled):
+        await db.commit()
     counts = await issue_counts(db, [v.id for v in variants])
     axis_key = variants[0].axis if variants else (presentation.settings or {}).get("variant_axis", "density")
     axis_key, axis = axis_config(axis_key)
     template = presentation.template
     return VariantsResponse(
-        theme=SlideTheme(**slide_theme(template.tokens if template else None)),
+        theme=SlideTheme(**template_theme(template)),
         axis=AxisInfo(key=axis_key, title=axis["title"], description=axis.get("description", "")),
-        variants=[variant_out(v, counts.get(v.id), presentation.selected_variant_id) for v in variants],
+        variants=[variant_out(v, counts.get(v.id), presentation.selected_variant_id, template) for v in variants],
     )
 
 

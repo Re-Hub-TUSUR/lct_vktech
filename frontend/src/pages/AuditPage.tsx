@@ -8,7 +8,7 @@ import { api } from '../api/client'
 import { queryKeys, useAudit, usePresentation, useVariant } from '../api/queries'
 import type { AuditCheck, AuditIssue, AuditReport, CheckKind, ResolveResponse, Severity, VariantDetail } from '../api/types'
 import { PresentationHeader } from '../components/PresentationHeader'
-import { SlideView, type Highlights } from '../components/slides/SlideView'
+import { SlideView, slideRender, type Highlights } from '../components/slides/SlideView'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner, Segmented } from '../components/ui'
 import { countLabel } from '../lib/format'
@@ -208,7 +208,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
                 }}
               >
                 <span className="audit-slide__number">{index + 1}</span>
-                <SlideView slide={slide} theme={theme} />
+                <SlideView slide={slide} theme={theme} render={slideRender(variant, index)} />
                 {severity && <span className={clsx('audit-slide__badge', `badge-${SEVERITY_TONES[severity]}`)}>{issues.length}</span>}
               </button>
             )
@@ -218,11 +218,21 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
         <section className="audit-stage">
           {currentSlide && (
             <>
-              <SlideView slide={currentSlide} theme={theme} number={slideIndex + 1} highlights={highlights} activeTarget={activeTarget} />
+              <SlideView
+                slide={currentSlide}
+                theme={theme}
+                number={slideIndex + 1}
+                highlights={highlights}
+                activeTarget={activeTarget}
+                render={slideRender(variant, slideIndex)}
+              />
               <div className="audit-stage__meta">
                 <span>
                   {SLIDE_KIND_LABELS[currentSlide.kind]}
-                  {currentSlide.layout_name && ` · макет «${currentSlide.layout_name}»`}
+                  {currentSlide.pattern_id
+                    ? ` · слайд-пример шаблона №${currentSlide.pattern_id.replace(/^s/, '')}`
+                    : currentSlide.layout_name && ` · макет «${currentSlide.layout_name}»`}
+                  {variant.renders.status === 'pending' && ' · пересобираем превью…'}
                 </span>
                 <span className="legend">
                   <i className="legend__error" /> ошибка <i className="legend__warning" /> предупреждение <i className="legend__info" /> совет

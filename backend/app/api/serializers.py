@@ -3,11 +3,12 @@
 from collections import Counter
 
 from app.models import ContentFile, Generation, Presentation, Template, Variant
-from app.pipeline.theme import slide_theme
-from app.schemas.generation import GenerationOut, VariantOut, VariantStats
+from app.schemas.generation import GenerationOut, VariantOut, VariantRenders, VariantStats
 from app.schemas.presentation import ContentFileOut, GenerationSettings, PresentationOut
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme, TemplateDetail, TemplateSummary
+from app.services.renders import render_state
+from app.services.templates import template_theme
 
 
 def template_summary(template: Template) -> TemplateSummary:
@@ -25,7 +26,7 @@ def template_summary(template: Template) -> TemplateSummary:
         aspect_ratio=(tokens.get("slide_size") or {}).get("aspect"),
         palette=[color["hex"] for color in (tokens.get("palette") or [])[:8]],
         fonts=[font["name"] for font in (tokens.get("fonts") or [])[:3]],
-        theme=SlideTheme(**slide_theme(tokens)) if ready else None,
+        theme=SlideTheme(**template_theme(template)) if ready else None,
         created_at=template.created_at,
     )
 
@@ -38,6 +39,7 @@ def template_detail(template: Template) -> TemplateDetail:
         tokens=template.tokens or {},
         layouts=template.layouts or [],
         layout_roles=template.layout_roles or {},
+        patterns=template.patterns or [],
     )
 
 
@@ -88,7 +90,7 @@ def generation_out(generation: Generation) -> GenerationOut:
 VISUAL_KINDS = {"chart", "table", "kpi", "timeline", "image_text"}
 
 
-def variant_out(variant: Variant, counts: Counter[str] | None, selected_id) -> VariantOut:
+def variant_out(variant: Variant, counts: Counter[str] | None, selected_id, template: Template | None = None) -> VariantOut:
     slides = [Slide.model_validate(slide) for slide in variant.slides or []]
     words = 0
     for slide in slides:
@@ -114,4 +116,5 @@ def variant_out(variant: Variant, counts: Counter[str] | None, selected_id) -> V
             warnings=counts.get("warning", 0),
         ),
         is_selected=variant.id == selected_id,
+        renders=VariantRenders(**render_state(variant, template)),
     )
