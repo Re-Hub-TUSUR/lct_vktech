@@ -1454,6 +1454,7 @@ a:hover > .template-card,
   font-weight: 700;
 }
 .variant-card__preview {
+  position: relative;
   padding: 0;
   border: none;
   background: none;
@@ -1462,6 +1463,43 @@ a:hover > .template-card,
   overflow: hidden;
   box-shadow: var(--shadow-md);
 }
+.variant-card__reroll {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--color-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+}
+.variant-card__reroll:hover:not(:disabled) {
+  transform: translate(-50%, -50%) scale(1.1);
+  background: #ffffff;
+  color: var(--color-primary);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+.variant-card__reroll:active:not(:disabled) {
+  transform: translate(-50%, -50%) scale(0.95);
+}
+.variant-card__reroll:disabled {
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+.variant-card__reroll-icon.is-spinning {
+  animation: spin 1s linear infinite;
+}
+
 .variant-card__strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

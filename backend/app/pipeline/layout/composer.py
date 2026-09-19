@@ -7,6 +7,7 @@ skills/layout_composer.yaml), и привязываются к макетам ш
 
 import copy
 import math
+import random
 from dataclasses import dataclass
 from typing import Any
 
@@ -93,6 +94,59 @@ def fit_specs(specs: list[dict[str, Any]], target: int) -> list[dict[str, Any]]:
     return result
 
 
+def compose_single_variant(
+    specs: list[dict[str, Any]],
+    *,
+    axis_key: str,
+    position: int,
+    slides_count: int,
+    speaker_notes: bool,
+    layouts: list[dict[str, Any]],
+    roles: dict[str, Any],
+    groups: dict[str, str],
+    seed: int | None = None,
+) -> VariantDraft:
+    axis_key, axis = axis_config(axis_key)
+    layout_names = {layout["key"]: layout["name"] for layout in layouts}
+    variants_cfg = (axis.get("variants") or [])[:3]
+    cfg = variants_cfg[position] if 0 <= position < len(variants_cfg) else {}
+    profile = {**DEFAULT_PROFILE, **(cfg.get("profile") or {})}
+
+    # Разделители в варианте «по разделам» тоже занимают место в колоде.
+    dividers = len({s.get("group") for s in specs if s.get("group")}) if profile["order"] == "sections" else 0
+    fitted = fit_specs(specs, slides_count - dividers)
+
+    # При реролле (когда seed задан или при вариативности) можно варьировать представление данных или порядок тезисов
+    if seed is not None:
+        local_random = random.Random(seed)
+        modified_specs = []
+        for s in fitted:
+            sc = copy.deepcopy(s)
+            bullets = sc.get("bullets")
+            if bullets and isinstance(bullets, list) and len(bullets) > 2:
+                # Мягкое вращение списка тезисов или перемешивание для свежести
+                rotate_by = local_random.randint(0, len(bullets) - 1)
+                sc["bullets"] = bullets[rotate_by:] + bullets[:rotate_by]
+            modified_specs.append(sc)
+        fitted = modified_specs
+
+    slides = [_to_slide(spec, profile, speaker_notes) for spec in fitted]
+    _fill_agenda(slides, groups)
+    slides = _apply_order(slides, profile["order"], groups)
+    slides = _inject_demo_defects(slides, cfg.get("demo_defects") or [])
+    _assign_layouts(slides, roles, layout_names)
+
+    return VariantDraft(
+        position=position,
+        letter=cfg.get("letter", "ABC"[position] if position < 3 else str(position + 1)),
+        name=cfg.get("name", f"Вариант {position + 1}"),
+        description=cfg.get("description", ""),
+        axis=axis_key,
+        profile=profile,
+        slides=slides,
+    )
+
+
 def compose_variants(
     specs: list[dict[str, Any]],
     *,
@@ -104,27 +158,19 @@ def compose_variants(
     groups: dict[str, str],
 ) -> list[VariantDraft]:
     axis_key, axis = axis_config(axis_key)
-    layout_names = {layout["key"]: layout["name"] for layout in layouts}
     drafts: list[VariantDraft] = []
-    for position, cfg in enumerate((axis.get("variants") or [])[:3]):
-        profile = {**DEFAULT_PROFILE, **(cfg.get("profile") or {})}
-        # Разделители в варианте «по разделам» тоже занимают место в колоде.
-        dividers = len({s.get("group") for s in specs if s.get("group")}) if profile["order"] == "sections" else 0
-        fitted = fit_specs(specs, slides_count - dividers)
-        slides = [_to_slide(spec, profile, speaker_notes) for spec in fitted]
-        _fill_agenda(slides, groups)
-        slides = _apply_order(slides, profile["order"], groups)
-        slides = _inject_demo_defects(slides, cfg.get("demo_defects") or [])
-        _assign_layouts(slides, roles, layout_names)
+    variants_cfg = (axis.get("variants") or [])[:3]
+    for position in range(len(variants_cfg)):
         drafts.append(
-            VariantDraft(
+            compose_single_variant(
+                specs,
+                axis_key=axis_key,
                 position=position,
-                letter=cfg.get("letter", "ABC"[position]),
-                name=cfg.get("name", f"Вариант {position + 1}"),
-                description=cfg.get("description", ""),
-                axis=axis_key,
-                profile=profile,
-                slides=slides,
+                slides_count=slides_count,
+                speaker_notes=speaker_notes,
+                layouts=layouts,
+                roles=roles,
+                groups=groups,
             )
         )
     return drafts

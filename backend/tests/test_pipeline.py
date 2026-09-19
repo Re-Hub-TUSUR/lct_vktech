@@ -11,7 +11,7 @@ from app.pipeline.audit.runner import run_checks
 from app.pipeline.export.html_export import build_html
 from app.pipeline.export.pdf_export import build_pdf
 from app.pipeline.export.pptx_export import build_pptx
-from app.pipeline.layout.composer import axis_config, compose_variants
+from app.pipeline.layout.composer import axis_config, compose_single_variant, compose_variants
 from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.theme import slide_theme
 
@@ -80,3 +80,33 @@ def test_exports(parsed):
 
     pdf = pymupdf.open(stream=build_pdf(slides, theme), filetype="pdf")
     assert pdf.page_count == len(slides)
+
+
+def test_compose_single_variant(parsed):
+    _, result = parsed
+    specs = build_outline(title="Цифровой дизайнер презентаций", purpose="product", brief=BRIEF)
+    draft1 = compose_single_variant(
+        specs,
+        axis_key="density",
+        position=1,
+        slides_count=12,
+        speaker_notes=True,
+        layouts=result.layouts,
+        roles=result.roles,
+        groups=group_labels(),
+        seed=42,
+    )
+    draft2 = compose_single_variant(
+        specs,
+        axis_key="density",
+        position=1,
+        slides_count=12,
+        speaker_notes=True,
+        layouts=result.layouts,
+        roles=result.roles,
+        groups=group_labels(),
+        seed=99,
+    )
+    assert draft1.letter == "B"
+    assert draft2.letter == "B"
+    assert len(draft1.slides) == len(draft2.slides)

@@ -1,4 +1,5 @@
 import asyncio
+import random
 import re
 import uuid
 from pathlib import Path
@@ -12,8 +13,11 @@ from app.api.serializers import variant_out
 from app.pipeline.export.html_export import build_html
 from app.pipeline.export.pdf_export import build_pdf
 from app.pipeline.export.pptx_export import ExportError, build_pptx
+from app.pipeline.layout.composer import compose_single_variant
+from app.pipeline.planning.outline import build_outline, group_labels
 from app.schemas.audit import AuditReport, ResolveRequest, ResolveResponse
-from app.schemas.generation import PresentationBrief, VariantDetailResponse
+from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
+from app.schemas.presentation import GenerationSettings
 from app.schemas.template import SlideTheme
 from app.services.audit import audit_report, build_audit_context, issue_counts, load_slides, refresh_audit, resolve_issues
 from app.services.templates import slide_size_inches, template_theme
@@ -108,3 +112,29 @@ async def export_variant(
     filename = _filename(presentation.title, variant.letter, fmt)
     disposition = f"attachment; filename=\"presentation_{variant.letter}.{fmt}\"; filename*=UTF-8''{quote(filename)}"
     return Response(content=content, media_type=MEDIA_TYPES[fmt], headers={"Content-Disposition": disposition})
+
+
+@router.post("/{variant_id}/reroll", response_model=VariantOut)
+async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> VariantOut:
+    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    template = presentation.template
+    options = GenerationSettings.model_validate(presentation.settings or {})
+    specs = build_outline(title=presentation.title, purpose=presentation.purpose, brief=presentation.brief)
+    seed = random.randint(1, 1_000_000)
+    draft = compose_single_variant(
+        specs,
+        axis_key=variant.axis or options.variant_axis,
+        position=variant.position,
+        slides_count=options.slides_count,
+        speaker_notes=options.speaker_notes,
+        layouts=template.layouts if template else [],
+        roles=template.layout_roles if template else {},
+        groups=group_labels(),
+        seed=seed,
+    )
+    variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
+    ctx = await build_audit_context(db, presentation, template)
+    await refresh_audit(db, variant, ctx)
+    await db.commit()
+    counts = await issue_counts(db, [variant.id])
+    return variant_out(variant, counts.get(variant.id), presentation.selected_variant_id)

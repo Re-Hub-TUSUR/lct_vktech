@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { ArrowRight, Check, Eye } from 'lucide-react'
+import { ArrowRight, Check, Dices, Eye } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
@@ -26,12 +26,16 @@ function VariantCard({
   onOpen,
   onSelect,
   selecting,
+  onReroll,
+  rerolling,
 }: {
   variant: Variant
   theme: SlideTheme
   onOpen: (index: number) => void
   onSelect: () => void
   selecting: boolean
+  onReroll: () => void
+  rerolling: boolean
 }) {
   const preview = previewSlideIndex(variant)
   const { stats } = variant
@@ -45,9 +49,24 @@ function VariantCard({
         </div>
       </header>
 
-      <button type="button" className="variant-card__preview" onClick={() => onOpen(preview)}>
-        <SlideView slide={variant.slides[preview]} theme={theme} number={preview + 1} />
-      </button>
+      <div className="variant-card__preview-wrapper" style={{ position: 'relative' }}>
+        <button type="button" className="variant-card__preview" onClick={() => onOpen(preview)}>
+          <SlideView slide={variant.slides[preview]} theme={theme} number={preview + 1} />
+        </button>
+        <button
+          type="button"
+          className="variant-card__reroll"
+          title="Перегенерировать этот вариант"
+          aria-label="Перегенерировать этот вариант"
+          disabled={rerolling}
+          onClick={(e) => {
+            e.stopPropagation()
+            onReroll()
+          }}
+        >
+          <Dices size={22} className={clsx('variant-card__reroll-icon', rerolling && 'is-spinning')} />
+        </button>
+      </div>
 
       <div className="variant-card__strip">
         {variant.slides.map((slide, index) => (
@@ -115,6 +134,17 @@ export function VariantsPage() {
     onError: (error) => notify(error.message, 'error'),
   })
 
+  const reroll = useMutation({
+    mutationFn: (variantId: string) => api.post<Variant>(`/variants/${variantId}/reroll`),
+    onSuccess: () => {
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.variants(id) })
+      }
+      notify('Вариант успешно перегенерирован')
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+
   if (presentation.isPending) return <FullPageSpinner />
   if (presentation.error) return <ErrorState error={presentation.error} />
 
@@ -165,6 +195,8 @@ export function VariantsPage() {
             onOpen={(index) => setViewer({ variant, index })}
             onSelect={() => select.mutate(variant.id)}
             selecting={select.isPending && select.variables === variant.id}
+            onReroll={() => reroll.mutate(variant.id)}
+            rerolling={reroll.isPending && reroll.variables === variant.id}
           />
         ))}
       </div>
