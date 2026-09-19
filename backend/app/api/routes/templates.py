@@ -46,9 +46,22 @@ async def upload_template(
     await db.flush()
     dest = storage_path("templates", f"{template.id}.pptx")
     template.file_size = await save_upload(file, dest)
-    if not zipfile.is_zipfile(dest):
+    try:
+        if not zipfile.is_zipfile(dest):
+            raise ValueError("Файл не является zip-архивом")
+        with zipfile.ZipFile(dest, "r") as zf:
+            namelist = set(zf.namelist())
+            # Проверяем обязательные файлы структуры презентации OpenXML (.pptx)
+            if "[Content_Types].xml" not in namelist or not any(name.startswith("ppt/") for name in namelist):
+                raise ValueError("Архив не содержит структуры презентации PowerPoint (.pptx)")
+            # Защита от zip bomb: проверяем суммарный распакованный размер и коэффициент сжатия
+            total_uncompressed = sum(info.file_size for info in zf.infolist())
+            max_uncompressed = settings.max_upload_mb * 1024 * 1024 * 10  # не более 10x от лимита
+            if total_uncompressed > max_uncompressed:
+                raise ValueError("Архив превышает допустимый распакованный размер")
+    except Exception:
         remove_file(dest)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Файл повреждён или это не .pptx")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Файл повреждён или это не валидный .pptx")
     template.file_path = str(dest)
     await db.commit()
     await arq.enqueue_job("parse_template_job", str(template.id))

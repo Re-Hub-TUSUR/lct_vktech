@@ -1,11 +1,12 @@
-"""Файловое хранилище: загруженные шаблоны и контент-пакеты (Docker-том /data)."""
-
+import logging
 import shutil
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 1024
 
@@ -34,8 +35,10 @@ async def save_upload(upload: UploadFile, dest: Path, max_bytes: int | None = No
 
 def _inside_storage(path: Path) -> bool:
     try:
+        # Убеждаемся, что директория storage_dir существует для корректного resolve()
+        settings.storage_dir.mkdir(parents=True, exist_ok=True)
         path.resolve().relative_to(settings.storage_dir.resolve())
-    except ValueError:
+    except (ValueError, RuntimeError):
         return False
     return True
 
@@ -44,12 +47,20 @@ def remove_file(path: str | Path | None) -> None:
     """Удаляет файл, только если он лежит в хранилище (встроенные шаблоны не трогаем)."""
     if not path:
         return
-    path = Path(path)
-    if _inside_storage(path):
-        path.unlink(missing_ok=True)
+    try:
+        path = Path(path)
+        if _inside_storage(path):
+            path.unlink(missing_ok=True)
+    except Exception as exc:
+        logger.warning("Не удалось удалить файл %s: %s", path, exc)
 
 
 def remove_dir(*parts: str) -> None:
-    path = settings.storage_dir.joinpath(*parts)
-    if _inside_storage(path):
-        shutil.rmtree(path, ignore_errors=True)
+    """Удаляет директорию и всё её содержимое, если она внутри хранилища."""
+    try:
+        path = settings.storage_dir.joinpath(*parts)
+        if _inside_storage(path) and path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+    except Exception as exc:
+        logger.warning("Не удалось удалить директорию %s: %s", parts, exc)
+

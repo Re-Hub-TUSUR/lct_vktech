@@ -49,6 +49,39 @@ export function GenerationPage() {
     }
   }, [status, id, queryClient])
 
+  // Реалтайм-подписка через Server-Sent Events (SSE)
+  useEffect(() => {
+    if (!id || status === 'done' || status === 'failed') return
+
+    const eventSource = new EventSource(`/api/presentations/${id}/generation/events`, {
+      withCredentials: true,
+    })
+
+    eventSource.addEventListener('update', (event) => {
+      try {
+        const payload = JSON.parse(event.data) as Generation
+        queryClient.setQueryData(queryKeys.generation(id), payload)
+      } catch (err) {
+        console.error('Ошибка разбора SSE-события генерации:', err)
+      }
+    })
+
+    eventSource.addEventListener('close', () => {
+      eventSource.close()
+      queryClient.invalidateQueries({ queryKey: queryKeys.generation(id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.presentation(id) })
+    })
+
+    eventSource.onerror = () => {
+      // При ошибке соединения EventSource автоматически переподключается,
+      // а в это время работает резервный poll из React Query.
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [id, status, queryClient])
+
   const restart = useMutation({
     mutationFn: () => api.post<Generation>(`/presentations/${id}/generate`),
     onSuccess: (data) => {

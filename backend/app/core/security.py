@@ -53,3 +53,19 @@ async def resolve_session(redis: Redis, token: str) -> uuid.UUID | None:
 
 async def delete_session(redis: Redis, token: str) -> None:
     await redis.delete(_session_key(token))
+
+
+async def check_rate_limit(redis: Redis, key: str, max_requests: int, window_seconds: int) -> bool:
+    """Проверяет лимит запросов с использованием счетчика в Redis с TTL.
+    
+    Возвращает True, если лимит НЕ превышен, и False, если запрос заблокирован.
+    """
+    try:
+        current = await redis.incr(key)
+        if current == 1:
+            await redis.expire(key, window_seconds)
+        return current <= max_requests
+    except Exception:
+        # При сбое Redis не блокируем пользователей аварийно
+        return True
+

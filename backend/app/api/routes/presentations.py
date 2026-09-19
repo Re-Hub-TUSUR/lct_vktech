@@ -1,8 +1,12 @@
+import asyncio
+import json
+import logging
 import uuid
 from collections import defaultdict
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
@@ -14,8 +18,10 @@ from app.api.deps import (
     get_template_for_user,
 )
 from app.api.serializers import content_file_out, generation_out, presentation_out, variant_out
+from app.core.redis import generation_channel, is_heartbeat_alive, redis_client
 from app.core.storage import remove_dir, remove_file, save_upload, storage_path
 from app.models import ContentFile, Generation, Presentation, Variant
+from app.models.base import utcnow
 from app.pipeline.layout.composer import axis_config
 from app.pipeline.skills import get_skill
 from app.pipeline.stages import initial_stages
@@ -35,6 +41,7 @@ from app.schemas.template import SlideTheme
 from app.services.audit import issue_counts
 
 router = APIRouter(prefix="/presentations", tags=["presentations"])
+logger = logging.getLogger(__name__)
 
 
 def _content_extensions() -> set[str]:
@@ -214,9 +221,29 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
     return generation_out(generation)
 
 
+async def _check_and_mark_stale_generation(db: DbSession, generation: Generation, presentation: Presentation) -> bool:
+    """Проверяет, не зависла ли генерация из-за падения воркера, и при необходимости помечает ошибкой."""
+    if generation.status not in ("queued", "running"):
+        return False
+    # Даем 45 секунд форы на старт задачи
+    now = utcnow()
+    age_seconds = (now - generation.created_at).total_seconds() if generation.created_at else 0
+    if age_seconds < 45:
+        return False
+    if not await is_heartbeat_alive(redis_client, generation.id):
+        logger.warning("Обнаружена зависшая генерация %s (нет heartbeat), переводим в failed", generation.id)
+        generation.status = "failed"
+        generation.error = "Генерация была прервана из-за перезапуска службы обработки задач."
+        generation.finished_at = now
+        presentation.status = "failed"
+        await db.commit()
+        return True
+    return False
+
+
 @router.get("/{presentation_id}/generation", response_model=GenerationOut)
 async def latest_generation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> GenerationOut:
-    await get_presentation_for_user(db, presentation_id, user)
+    presentation = await get_presentation_for_user(db, presentation_id, user)
     generation = await db.scalar(
         select(Generation)
         .where(Generation.presentation_id == presentation_id)
@@ -225,7 +252,70 @@ async def latest_generation(presentation_id: uuid.UUID, user: CurrentUser, db: D
     )
     if generation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Генерация ещё не запускалась")
+    await _check_and_mark_stale_generation(db, generation, presentation)
     return generation_out(generation)
+
+
+@router.get("/{presentation_id}/generation/events")
+async def generation_events(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> StreamingResponse:
+    """Server-Sent Events (SSE) поток со статусом генерации в реальном времени."""
+    presentation = await get_presentation_for_user(db, presentation_id, user)
+    generation = await db.scalar(
+        select(Generation)
+        .where(Generation.presentation_id == presentation_id)
+        .order_by(Generation.created_at.desc())
+        .limit(1)
+    )
+    if generation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Генерация ещё не запускалась")
+
+    await _check_and_mark_stale_generation(db, generation, presentation)
+    channel = generation_channel(generation.id)
+
+    async def event_generator():
+        # 1. Отправляем текущее состояние сразу при подключении
+        initial_data = generation_out(generation).model_dump_json()
+        yield f"event: update\ndata: {initial_data}\n\n"
+
+        if generation.status in ("done", "failed"):
+            yield "event: close\ndata: {}\n\n"
+            return
+
+        # 2. Подписываемся на события из Redis Pub/Sub
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(channel)
+        try:
+            while True:
+                # Читаем сообщение с таймаутом 15с (для отправки keep-alive ping)
+                try:
+                    message = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True), timeout=15.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+
+                if message and message.get("type") == "message":
+                    data = message["data"]
+                    yield f"event: update\ndata: {data}\n\n"
+                    try:
+                        parsed = json.loads(data)
+                        if parsed.get("status") in ("done", "failed"):
+                            yield "event: close\ndata: {}\n\n"
+                            break
+                    except Exception:
+                        pass
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{presentation_id}/variants", response_model=VariantsResponse)

@@ -19,8 +19,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.serializers import generation_out
 from app.core.config import settings
 from app.core.db import SessionLocal
+from app.core.redis import generation_channel, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
 from app.pipeline.content.ingest import extract_text, split_sentences
@@ -34,6 +36,15 @@ from app.services.audit import build_audit_context, refresh_audit
 from app.services.templates import apply_parsed
 
 logger = logging.getLogger(__name__)
+
+
+async def _publish_generation_update(generation: Generation) -> None:
+    """Публикует обновленный статус генерации в Redis Pub/Sub для клиентов SSE."""
+    try:
+        payload = generation_out(generation).model_dump_json()
+        await redis_client.publish(generation_channel(generation.id), payload)
+    except Exception as exc:
+        logger.debug("Не удалось опубликовать событие генерации в Redis: %s", exc)
 
 
 class PipelineError(RuntimeError):
@@ -70,18 +81,31 @@ class StageTracker:
         self.generation.current_stage = key
         self._update(key, status="running", started_at=utcnow().isoformat())
         await self.db.commit()
+        await touch_heartbeat(redis_client, self.generation.id)
+        await _publish_generation_update(self.generation)
+
         ctx = StageContext()
         started = time.monotonic()
         try:
             yield ctx
             remaining = STAGE_BY_KEY[key].mock_seconds * settings.mock_speed - (time.monotonic() - started)
             if remaining > 0:
-                await asyncio.sleep(remaining)
+                # Периодически обновляем heartbeat во время ожидания/работы
+                while remaining > 0:
+                    chunk = min(remaining, 5.0)
+                    await asyncio.sleep(chunk)
+                    remaining -= chunk
+                    await touch_heartbeat(redis_client, self.generation.id)
         except Exception as exc:
             self._update(key, status="failed", finished_at=utcnow().isoformat(), detail=str(exc)[:500])
+            await touch_heartbeat(redis_client, self.generation.id)
+            await _publish_generation_update(self.generation)
             raise
+
         self._update(key, status="done", finished_at=utcnow().isoformat(), detail=ctx.detail)
         await self.db.commit()
+        await touch_heartbeat(redis_client, self.generation.id)
+        await _publish_generation_update(self.generation)
 
 
 async def run_generation(generation_id: uuid.UUID) -> None:
@@ -104,6 +128,8 @@ async def run_generation(generation_id: uuid.UUID) -> None:
         generation.started_at = utcnow()
         generation.skills = skills_snapshot()
         await db.commit()
+        await touch_heartbeat(redis_client, generation.id)
+        await _publish_generation_update(generation)
 
         tracker = StageTracker(db, generation)
         try:
@@ -120,6 +146,7 @@ async def run_generation(generation_id: uuid.UUID) -> None:
             generation.finished_at = utcnow()
             presentation.status = "failed"
             await db.commit()
+            await _publish_generation_update(generation)
             return
 
         generation.status = "done"
@@ -128,6 +155,7 @@ async def run_generation(generation_id: uuid.UUID) -> None:
         generation.finished_at = utcnow()
         presentation.status = "ready"
         await db.commit()
+        await _publish_generation_update(generation)
 
 
 async def _run_stages(

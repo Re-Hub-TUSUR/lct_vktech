@@ -79,9 +79,10 @@ export function useGeneration(presentationId: string | undefined) {
     queryKey: queryKeys.generation(presentationId ?? ''),
     queryFn: () => api.get<Generation>(`/presentations/${presentationId}/generation`),
     enabled: Boolean(presentationId),
+    // Резервный поллинг с увеличенным интервалом (5 сек) на случай, если SSE недоступен или разорван
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status === 'queued' || status === 'running' ? 1000 : false
+      return status === 'queued' || status === 'running' ? 5000 : false
     },
   })
 }

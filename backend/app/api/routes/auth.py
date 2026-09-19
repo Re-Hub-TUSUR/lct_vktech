@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import CurrentUser, DbSession, session_token
 from app.core.config import settings
 from app.core.redis import redis_client
-from app.core.security import create_session, delete_session, hash_password, verify_password
+from app.core.security import check_rate_limit, create_session, delete_session, hash_password, verify_password
 from app.models import User
 from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserOut
 
@@ -25,7 +25,11 @@ def _set_session_cookie(response: Response, token: str) -> None:
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, response: Response, db: DbSession) -> AuthResponse:
+async def register(payload: RegisterRequest, request: Request, response: Response, db: DbSession) -> AuthResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    if not await check_rate_limit(redis_client, f"rl:register:{client_ip}", max_requests=10, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток регистрации. Пожалуйста, подождите минуту.")
+
     email = payload.email.lower()
     if await db.scalar(select(User.id).where(User.email == email)):
         raise HTTPException(status.HTTP_409_CONFLICT, "Пользователь с таким email уже зарегистрирован")
@@ -42,8 +46,15 @@ async def register(payload: RegisterRequest, response: Response, db: DbSession) 
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(payload: LoginRequest, response: Response, db: DbSession) -> AuthResponse:
-    user = await db.scalar(select(User).where(User.email == payload.email.lower()))
+async def login(payload: LoginRequest, request: Request, response: Response, db: DbSession) -> AuthResponse:
+    client_ip = request.client.host if request.client else "unknown"
+    email = payload.email.lower()
+    if not await check_rate_limit(redis_client, f"rl:login:ip:{client_ip}", max_requests=20, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток входа. Пожалуйста, подождите минуту.")
+    if not await check_rate_limit(redis_client, f"rl:login:acc:{email}", max_requests=10, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток входа для этого аккаунта. Попробуйте позже.")
+
+    user = await db.scalar(select(User).where(User.email == email))
     if not verify_password(payload.password, user.password_hash if user else None) or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
     token = await create_session(redis_client, user.id)
