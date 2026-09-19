@@ -150,7 +150,6 @@ export function GenerationPage() {
                 <div className="stage__body">
                   <div className="stage__title">
                     <strong>{stage.title}</strong>
-                    {stage.skill && <code>{stage.skill}</code>}
                   </div>
                   {stage.detail && <p>{stage.detail}</p>}
                 </div>

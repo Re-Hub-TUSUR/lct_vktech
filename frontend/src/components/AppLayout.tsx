@@ -1,18 +1,17 @@
-import { LayoutTemplate, LogOut, Plus } from 'lucide-react'
+import { LogOut, Plus } from 'lucide-react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 
 import { useAuth } from '../auth/AuthProvider'
+import vkLogo from '../assets/vk-logo.png'
 import { Button } from './ui'
 
 export function Logo() {
   return (
-    <Link to="/" className="logo">
-      <span className="logo__mark">
-        <LayoutTemplate size={18} />
-      </span>
+    <Link to="/" className="logo" aria-label="VK Tech — AI Presentation Designer">
+      <img className="logo__img" src={vkLogo} alt="" width={36} height={36} />
       <span className="logo__text">
-        Цифровой дизайнер
-        <small>презентаций</small>
+        VK Tech
+        <small>AI Presentation Designer</small>
       </span>
     </Link>
   )

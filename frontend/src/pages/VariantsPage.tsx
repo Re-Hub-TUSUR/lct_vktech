@@ -53,19 +53,23 @@ function VariantCard({
         <button type="button" className="variant-card__preview" onClick={() => onOpen(preview)}>
           <SlideView slide={variant.slides[preview]} theme={theme} number={preview + 1} />
         </button>
-        <button
-          type="button"
-          className="variant-card__reroll"
-          title="Перегенерировать этот вариант"
-          aria-label="Перегенерировать этот вариант"
-          disabled={rerolling}
-          onClick={(e) => {
-            e.stopPropagation()
-            onReroll()
-          }}
-        >
-          <Dices size={22} className={clsx('variant-card__reroll-icon', rerolling && 'is-spinning')} />
-        </button>
+        <div className="variant-card__reroll-wrap">
+          <button
+            type="button"
+            className="variant-card__reroll"
+            aria-label="Перегенерировать этот вариант"
+            disabled={rerolling}
+            onClick={(e) => {
+              e.stopPropagation()
+              onReroll()
+            }}
+          >
+            <Dices size={22} className={clsx('variant-card__reroll-icon', rerolling && 'is-spinning')} />
+          </button>
+          <span className="variant-card__tip" role="tooltip">
+            Перегенерировать этот вариант
+          </span>
+        </div>
       </div>
 
       <div className="variant-card__strip">

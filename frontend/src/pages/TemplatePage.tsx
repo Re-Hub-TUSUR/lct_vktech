@@ -47,7 +47,6 @@ export function TemplatePage() {
         <div className="template-hero__info">
           <div className="row">
             <Badge tone={template.is_builtin ? 'info' : 'neutral'}>{template.is_builtin ? 'Встроенный' : 'Мой'}</Badge>
-            {template.parser_version && <Badge>парсер v{template.parser_version}</Badge>}
           </div>
           <h1>{template.name}</h1>
           <p className="muted">

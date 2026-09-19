@@ -1,5 +1,7 @@
-import { Check, LayoutTemplate } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
+
+import vkLogo from '../../assets/vk-logo.png'
 
 const FEATURES = [
   'Разбирает шаблон .pptx на дизайн-токены и макеты',
@@ -13,10 +15,11 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
     <div className="auth">
       <aside className="auth__promo">
         <div className="auth__brand">
-          <span className="logo__mark">
-            <LayoutTemplate size={20} />
+          <img className="logo__img" src={vkLogo} alt="" width={36} height={36} />
+          <span className="logo__text">
+            VK Tech
+            <small>AI Presentation Designer</small>
           </span>
-          Цифровой дизайнер презентаций
         </div>
         <div>
           <h2>Презентации в фирменном стиле — за минуты, а не часы</h2>

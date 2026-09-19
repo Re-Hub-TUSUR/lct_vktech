@@ -12,7 +12,7 @@ import { PresentationHeader } from '../components/PresentationHeader'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
-import { Button, Card, ErrorState, Field, FullPageSpinner, Segmented, Spinner, Toggle } from '../components/ui'
+import { Button, Card, ErrorState, Field, FullPageSpinner, Segmented, Select, Spinner, Toggle } from '../components/ui'
 import { countLabel, formatSize } from '../lib/format'
 
 const DEFAULT_SETTINGS: GenerationSettings = {
@@ -269,13 +269,11 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                   />
                 </Field>
                 <Field label="Тон">
-                  <select value={form.settings.tone} onChange={(event) => setOption('tone', event.target.value as GenerationSettings['tone'])}>
-                    {(options.data?.tones ?? []).map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
+                  <Select
+                    value={form.settings.tone}
+                    onChange={(value) => setOption('tone', value)}
+                    options={(options.data?.tones ?? []).map((item) => ({ value: item.value, label: item.label }))}
+                  />
                 </Field>
               </div>
 
