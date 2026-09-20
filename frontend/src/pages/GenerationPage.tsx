@@ -94,6 +94,7 @@ export function GenerationPage() {
   if (presentation.error) return <ErrorState error={presentation.error} />
 
   const data = generation.data
+  const canEdit = presentation.data.access_role !== 'viewer'
   const header = <PresentationHeader presentation={presentation.data} step="generation" />
 
   if (generation.isPending) return <>{header}<FullPageSpinner /></>
@@ -103,7 +104,7 @@ export function GenerationPage() {
         {header}
         <EmptyState
           title="Генерация ещё не запускалась"
-          action={<Button onClick={() => restart.mutate()} loading={restart.isPending}>Запустить генерацию</Button>}
+          action={canEdit ? <Button onClick={() => restart.mutate()} loading={restart.isPending}>Запустить генерацию</Button> : undefined}
         />
       </div>
     )
@@ -134,7 +135,7 @@ export function GenerationPage() {
                 Выбрать вариант
               </Button>
             )}
-            {status === 'failed' && (
+            {status === 'failed' && canEdit && (
               <Button variant="secondary" icon={<RefreshCw size={16} />} loading={restart.isPending} onClick={() => restart.mutate()}>
                 Повторить
               </Button>

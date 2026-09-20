@@ -10,6 +10,7 @@ from app.schemas.template import SlideTheme, TemplateSummary
 Purpose = Literal["feature", "product", "project", "initiative"]
 PresentationStatus = Literal["draft", "generating", "ready", "failed"]
 VariantAxis = Literal["density", "visualization", "structure", "layouts"]
+PresentationAccessRole = Literal["owner", "editor", "viewer"]
 SLIDES_MIN, SLIDES_MAX, SLIDES_DEFAULT = 5, 20, 12
 
 
@@ -50,6 +51,12 @@ class ContentFileOut(BaseModel):
     created_at: datetime
 
 
+class PresentationUserOut(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    email: str
+
+
 class PresentationOut(BaseModel):
     id: uuid.UUID
     title: str
@@ -60,6 +67,8 @@ class PresentationOut(BaseModel):
     template_id: uuid.UUID | None
     template: TemplateSummary | None
     selected_variant_id: uuid.UUID | None
+    access_role: PresentationAccessRole
+    owner: PresentationUserOut
     files: list[ContentFileOut]
     created_at: datetime
     updated_at: datetime
@@ -77,6 +86,8 @@ class PresentationListItem(BaseModel):
     cover_image: str | None = None
     slides_count: int | None
     selected_variant_id: uuid.UUID | None
+    access_role: PresentationAccessRole
+    owner: PresentationUserOut
     updated_at: datetime
 
 

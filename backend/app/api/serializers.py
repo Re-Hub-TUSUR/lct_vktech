@@ -4,7 +4,7 @@ from collections import Counter
 
 from app.models import ContentFile, Generation, Presentation, Template, Variant
 from app.schemas.generation import GenerationOut, VariantOut, VariantRenders, VariantStats
-from app.schemas.presentation import ContentFileOut, GenerationSettings, PresentationOut
+from app.schemas.presentation import ContentFileOut, GenerationSettings, PresentationOut, PresentationUserOut
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme, TemplateDetail, TemplateSummary
 from app.services.renders import render_state
@@ -65,6 +65,10 @@ def presentation_out(presentation: Presentation, files: list[ContentFile]) -> Pr
         template_id=presentation.template_id,
         template=template_summary(presentation.template) if presentation.template else None,
         selected_variant_id=presentation.selected_variant_id,
+        access_role=presentation.access_role or "owner",
+        owner=PresentationUserOut(
+            id=presentation.owner.id, full_name=presentation.owner.full_name, email=presentation.owner.email
+        ),
         files=[content_file_out(file) for file in files],
         created_at=presentation.created_at,
         updated_at=presentation.updated_at,

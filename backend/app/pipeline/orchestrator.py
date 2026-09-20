@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 from app.api.serializers import generation_out
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.core.redis import generation_channel, redis_client, touch_heartbeat
+from app.core.redis import generation_channel, publish_presentation_update, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
 from app.pipeline.content.ingest import extract_text, split_sentences
@@ -156,6 +156,7 @@ async def run_generation(generation_id: uuid.UUID) -> None:
             presentation.status = "failed"
             await db.commit()
             await _publish_generation_update(generation)
+            await publish_presentation_update(redis_client, presentation_id, kind="generation")
             return
 
         generation.status = "done"
@@ -165,6 +166,7 @@ async def run_generation(generation_id: uuid.UUID) -> None:
         presentation.status = "ready"
         await db.commit()
         await _publish_generation_update(generation)
+        await publish_presentation_update(redis_client, presentation_id, kind="generation")
 
 
 async def _run_stages(

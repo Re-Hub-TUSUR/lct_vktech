@@ -1,11 +1,13 @@
 import clsx from 'clsx'
-import { Check } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { Check, Share2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 
 import type { Presentation } from '../api/types'
+import { usePresentationRealtime } from '../api/queries'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
 import { Badge } from './ui'
+import { ShareDialog } from './ShareDialog'
 
 export type StepKey = 'settings' | 'generation' | 'variants' | 'audit' | 'export'
 
@@ -39,6 +41,8 @@ export function PresentationHeader({
   step: StepKey
   actions?: ReactNode
 }) {
+  const [shareOpen, setShareOpen] = useState(false)
+  usePresentationRealtime(presentation.id)
   const currentIndex = STEPS.findIndex((item) => item.key === step)
   return (
     <div className="presentation-header">
@@ -55,10 +59,22 @@ export function PresentationHeader({
               </>
             )}
             <Badge tone={STATUS_TONES[presentation.status]}>{STATUS_LABELS[presentation.status]}</Badge>
+            {presentation.access_role !== 'owner' && (
+              <Badge tone={presentation.access_role === 'editor' ? 'info' : 'neutral'}>
+                {presentation.access_role === 'editor' ? 'Общий доступ: редактор' : 'Общий доступ: просмотр'}
+              </Badge>
+            )}
           </div>
           <h1>{presentation.title}</h1>
         </div>
         {actions && <div className="presentation-header__actions">{actions}</div>}
+        {presentation.access_role === 'owner' && (
+          <div className="presentation-header__actions">
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShareOpen(true)}>
+              <Share2 size={16} /><span className="btn__label">Поделиться</span>
+            </button>
+          </div>
+        )}
       </div>
       <ol className="stepper">
         {STEPS.map((item, index) => {
@@ -81,6 +97,7 @@ export function PresentationHeader({
           )
         })}
       </ol>
+      {shareOpen && <ShareDialog presentationId={presentation.id} title={presentation.title} onClose={() => setShareOpen(false)} />}
     </div>
   )
 }

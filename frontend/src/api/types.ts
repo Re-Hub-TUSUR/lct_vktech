@@ -293,6 +293,8 @@ export interface TemplateDetail extends TemplateSummary {
 export type Purpose = 'feature' | 'product' | 'project' | 'initiative'
 export type PresentationStatus = 'draft' | 'generating' | 'ready' | 'failed'
 export type VariantAxis = 'density' | 'visualization' | 'structure' | 'layouts'
+export type PresentationAccessRole = 'owner' | 'editor' | 'viewer'
+export type ShareRole = 'editor' | 'viewer'
 
 export interface GenerationSettings {
   slides_count: number
@@ -323,6 +325,8 @@ export interface Presentation {
   template_id: Uuid | null
   template: TemplateSummary | null
   selected_variant_id: Uuid | null
+  access_role: PresentationAccessRole
+  owner: Pick<User, 'id' | 'full_name' | 'email'>
   files: ContentFile[]
   created_at: string
   updated_at: string
@@ -340,6 +344,8 @@ export interface PresentationListItem {
   cover_image: string | null
   slides_count: number | null
   selected_variant_id: Uuid | null
+  access_role: PresentationAccessRole
+  owner: Pick<User, 'id' | 'full_name' | 'email'>
   updated_at: string
 }
 
@@ -349,6 +355,36 @@ export interface PresentationInput {
   brief: string
   template_id: Uuid
   settings: GenerationSettings
+}
+
+export interface PresentationMember {
+  user: Pick<User, 'id' | 'full_name' | 'email'>
+  role: PresentationAccessRole
+  created_at: string | null
+}
+
+export interface ShareLink {
+  id: Uuid
+  token: string
+  role: ShareRole
+  is_active: boolean
+  created_at: string
+}
+
+export interface ShareAccept {
+  presentation_id: Uuid
+  title: string
+  role: PresentationAccessRole
+}
+
+export interface Notification {
+  id: Uuid
+  kind: string
+  title: string
+  body: string
+  href: string | null
+  read_at: string | null
+  created_at: string
 }
 
 // --- Генерация и варианты -------------------------------------------------

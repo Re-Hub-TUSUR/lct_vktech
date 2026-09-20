@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.redis import redis_client
 from app.core.security import resolve_session
-from app.models import Presentation, Template, User, Variant
+from app.models import Presentation, PresentationMember, Template, User, Variant
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -66,27 +66,64 @@ async def get_template_for_user(db: AsyncSession, template_id: uuid.UUID, user: 
 
 
 async def get_presentation_for_user(
-    db: AsyncSession, presentation_id: uuid.UUID, user: User, *, with_files: bool = False
+    db: AsyncSession,
+    presentation_id: uuid.UUID,
+    user: User,
+    *,
+    with_files: bool = False,
+    editable: bool = False,
+    owner_only: bool = False,
 ) -> Presentation:
-    query = select(Presentation).where(Presentation.id == presentation_id, Presentation.owner_id == user.id)
-    query = query.options(selectinload(Presentation.template))
+    query = (
+        select(Presentation, PresentationMember.role)
+        .outerjoin(
+            PresentationMember,
+            (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
+        )
+        .where(Presentation.id == presentation_id, or_(Presentation.owner_id == user.id, PresentationMember.user_id == user.id))
+        .options(selectinload(Presentation.template), selectinload(Presentation.owner))
+    )
     if with_files:
         query = query.options(selectinload(Presentation.files))
-    presentation = await db.scalar(query)
-    if presentation is None:
+    row = (await db.execute(query)).first()
+    if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Презентация не найдена")
+    presentation, member_role = row
+    presentation.access_role = "owner" if presentation.owner_id == user.id else member_role
+    if owner_only and presentation.access_role != "owner":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Управлять доступом может только владелец")
+    if editable and presentation.access_role not in {"owner", "editor"}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
     return presentation
 
 
-async def get_variant_for_user(db: AsyncSession, variant_id: uuid.UUID, user: User) -> tuple[Variant, Presentation]:
+async def get_variant_for_user(
+    db: AsyncSession, variant_id: uuid.UUID, user: User, *, editable: bool = False
+) -> tuple[Variant, Presentation]:
     row = (
         await db.execute(
             select(Variant, Presentation)
             .join(Presentation, Presentation.id == Variant.presentation_id)
-            .where(Variant.id == variant_id, Presentation.owner_id == user.id)
-            .options(selectinload(Presentation.template))
+            .outerjoin(
+                PresentationMember,
+                (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
+            )
+            .where(
+                Variant.id == variant_id,
+                or_(Presentation.owner_id == user.id, PresentationMember.user_id == user.id),
+            )
+            .options(selectinload(Presentation.template), selectinload(Presentation.owner))
         )
     ).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Вариант не найден")
-    return row[0], row[1]
+    variant, presentation = row[0], row[1]
+    # Второй столбец join не выбираем намеренно: роль можно достать отдельным компактным запросом.
+    presentation.access_role = "owner" if presentation.owner_id == user.id else await db.scalar(
+        select(PresentationMember.role).where(
+            PresentationMember.presentation_id == presentation.id, PresentationMember.user_id == user.id
+        )
+    )
+    if editable and presentation.access_role not in {"owner", "editor"}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
+    return variant, presentation

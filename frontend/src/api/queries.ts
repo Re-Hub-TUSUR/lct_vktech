@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef } from 'react'
 
 import { api } from './client'
 import type {
@@ -26,6 +27,9 @@ export const queryKeys = {
   variants: (id: string) => ['presentations', id, 'variants'] as const,
   variant: (id: string) => ['variants', id] as const,
   audit: (id: string) => ['variants', id, 'audit'] as const,
+  members: (id: string) => ['presentations', id, 'members'] as const,
+  shareLinks: (id: string) => ['presentations', id, 'share-links'] as const,
+  notifications: ['notifications'] as const,
 }
 
 export function useOptions() {
@@ -74,6 +78,46 @@ export function usePresentation(id: string | undefined) {
   })
 }
 
+/**
+ * Подписка на сохранения в общей презентации. Само событие не содержит данных:
+ * после него перезапрашиваем только уже открытые части колоды через обычный API.
+ */
+export function usePresentationRealtime(presentationId: string | undefined) {
+  const queryClient = useQueryClient()
+  const lastRefresh = useRef(0)
+
+  useEffect(() => {
+    if (!presentationId) return
+    const source = new EventSource(`/api/presentations/${presentationId}/events`, { withCredentials: true })
+
+    const refresh = () => {
+      // Несколько операций (например, сохранение + очередь рендера) могут прийти подряд.
+      // Сводим их к одному обновлению, чтобы не создавать сетевой всплеск.
+      const now = Date.now()
+      if (now - lastRefresh.current < 250) return
+      lastRefresh.current = now
+
+      const presentation = queryClient.getQueryData<Presentation>(queryKeys.presentation(presentationId))
+      const variants = queryClient.getQueryData<VariantsResponse>(queryKeys.variants(presentationId))
+      const variantIds = new Set(variants?.variants.map((variant) => variant.id) ?? [])
+      if (presentation?.selected_variant_id) variantIds.add(presentation.selected_variant_id)
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.presentation(presentationId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
+      queryClient.invalidateQueries({ queryKey: queryKeys.variants(presentationId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.generation(presentationId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.members(presentationId) })
+      for (const variantId of variantIds) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.variant(variantId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.audit(variantId) })
+      }
+    }
+
+    source.addEventListener('update', refresh)
+    return () => source.close()
+  }, [presentationId, queryClient])
+}
+
 export function useGeneration(presentationId: string | undefined) {
   return useQuery({
     queryKey: queryKeys.generation(presentationId ?? ''),
@@ -114,5 +158,29 @@ export function useAudit(variantId: string | null | undefined) {
     queryKey: queryKeys.audit(variantId ?? ''),
     queryFn: () => api.get<AuditReport>(`/variants/${variantId}/audit`),
     enabled: Boolean(variantId),
+  })
+}
+
+export function usePresentationMembers(presentationId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.members(presentationId ?? ''),
+    queryFn: () => api.get<import('./types').PresentationMember[]>(`/presentations/${presentationId}/members`),
+    enabled: Boolean(presentationId) && enabled,
+  })
+}
+
+export function useShareLinks(presentationId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.shareLinks(presentationId ?? ''),
+    queryFn: () => api.get<import('./types').ShareLink[]>(`/presentations/${presentationId}/share-links`),
+    enabled: Boolean(presentationId) && enabled,
+  })
+}
+
+export function useNotifications() {
+  return useQuery({
+    queryKey: queryKeys.notifications,
+    queryFn: () => api.get<import('./types').Notification[]>('/notifications'),
+    refetchInterval: 30000,
   })
 }

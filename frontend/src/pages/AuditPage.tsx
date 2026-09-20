@@ -92,7 +92,7 @@ export function AuditPage() {
   return (
     <div className="stack">
       {header}
-      <AuditWorkspace detail={variant.data} report={audit.data} />
+      <AuditWorkspace detail={variant.data} report={audit.data} canEdit={presentation.data.access_role !== 'viewer'} />
     </div>
   )
 }
@@ -174,7 +174,7 @@ function applyFieldChange(slide: Slide, path: string, value: string): Slide {
   return slide
 }
 
-function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: AuditReport }) {
+function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; report: AuditReport; canEdit: boolean }) {
   const queryClient = useQueryClient()
   const notify = useToast()
   const { variant, theme } = detail
@@ -638,7 +638,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
         onChange={handleImageFileChange}
       />
 
-      {isEditing && currentSlide ? (
+      {canEdit && isEditing && currentSlide ? (
         <SlideEditToolbar
           slide={activeSlide}
           theme={theme}
@@ -675,9 +675,9 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
             <span className="muted">
               Детерминированных: {summary.by_kind.deterministic ?? 0} · контекстуальных: {summary.by_kind.contextual ?? 0}
             </span>
-            <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} loading={rerun.isPending} onClick={() => rerun.mutate()}>
+            {canEdit && <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} loading={rerun.isPending} onClick={() => rerun.mutate()}>
               Перезапустить аудит
-            </Button>
+            </Button>}
           </div>
         </div>
       )}
@@ -716,7 +716,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
                   </span>
                 </div>
                 <div className="row row--sm">
-                  <Button
+                  {canEdit && <Button
                     variant={isEditing ? 'primary' : 'secondary'}
                     size="sm"
                     icon={<Edit3 size={15} />}
@@ -729,16 +729,16 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
                     }}
                   >
                     {isEditing ? 'Завершить редактирование' : 'Редактировать слайд'}
-                  </Button>
+                  </Button>}
                 </div>
               </div>
 
               <div
                 onDoubleClick={() => {
-                  if (!isEditing) setIsEditing(true)
+                  if (canEdit && !isEditing) setIsEditing(true)
                 }}
-                style={{ cursor: isEditing ? 'default' : 'pointer' }}
-                title={isEditing ? undefined : 'Двойной клик для редактирования слайда'}
+                style={{ cursor: canEdit && !isEditing ? 'pointer' : 'default' }}
+                title={canEdit && !isEditing ? 'Двойной клик для редактирования слайда' : undefined}
               >
                 <SlideView
                   key={currentSlide.id}
@@ -785,7 +785,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
         </section>
 
         <aside className="audit-panel">
-          {isEditing && currentSlide ? (
+          {canEdit && isEditing && currentSlide ? (
             <SlideAssistantPanel
               slide={activeSlide}
               theme={theme}
@@ -878,7 +878,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
                     </ul>
                   )}
 
-                  <div className="audit-actions">
+                  {canEdit && <div className="audit-actions">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -908,7 +908,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
                         Исправить ({checkedIds.length})
                       </Button>
                     </div>
-                  </div>
+                  </div>}
 
                   {resolvedIssues.length > 0 && (
                     <details className="resolved">
