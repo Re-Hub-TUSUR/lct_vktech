@@ -82,9 +82,11 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const setOption = <K extends keyof GenerationSettings>(key: K, value: GenerationSettings[K]) =>
     setForm((current) => ({ ...current, settings: { ...current.settings, [key]: value } }))
 
-  const selectedTemplate = templates.data?.find((template) => template.id === form.templateId)
+  // Участник общей презентации может использовать личный шаблон владельца только внутри неё.
+  const selectedTemplate = templates.data?.find((template) => template.id === form.templateId) ?? presentation?.template ?? undefined
   const axis = options.data?.variant_axes.find((item) => item.value === form.settings.variant_axis)
-  const canSubmit = form.title.trim().length > 0 && selectedTemplate?.status === 'ready' && !step
+  const canEdit = !presentation || presentation.access_role !== 'viewer'
+  const canSubmit = canEdit && form.title.trim().length > 0 && selectedTemplate?.status === 'ready' && !step
 
   const removeExisting = async (fileId: string) => {
     if (!presentation) return

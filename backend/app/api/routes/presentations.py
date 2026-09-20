@@ -18,9 +18,15 @@ from app.api.deps import (
     get_template_for_user,
 )
 from app.api.serializers import content_file_out, generation_out, presentation_out, variant_out
-from app.core.redis import generation_channel, is_heartbeat_alive, redis_client
+from app.core.redis import (
+    generation_channel,
+    is_heartbeat_alive,
+    presentation_channel,
+    publish_presentation_update,
+    redis_client,
+)
 from app.core.storage import remove_dir, remove_file, save_upload, storage_path
-from app.models import ContentFile, Generation, Presentation, Variant
+from app.models import ContentFile, Generation, Presentation, PresentationMember, Variant
 from app.models.base import utcnow
 from app.pipeline.layout.composer import axis_config
 from app.pipeline.skills import get_skill
@@ -51,14 +57,22 @@ def _content_extensions() -> set[str]:
 
 @router.get("", response_model=list[PresentationListItem])
 async def list_presentations(user: CurrentUser, db: DbSession) -> list[PresentationListItem]:
-    presentations = list(
-        await db.scalars(
-            select(Presentation)
-            .where(Presentation.owner_id == user.id)
-            .options(selectinload(Presentation.template))
+    rows = list(
+        await db.execute(
+            select(Presentation, PresentationMember.role)
+            .outerjoin(
+                PresentationMember,
+                (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
+            )
+            .where((Presentation.owner_id == user.id) | (PresentationMember.user_id == user.id))
+            .options(selectinload(Presentation.template), selectinload(Presentation.owner))
             .order_by(Presentation.updated_at.desc())
         )
     )
+    presentations = []
+    for presentation, member_role in rows:
+        presentation.access_role = "owner" if presentation.owner_id == user.id else member_role
+        presentations.append(presentation)
     variants_by_presentation: dict[uuid.UUID, list[Variant]] = defaultdict(list)
     if presentations:
         variants = await db.scalars(
@@ -87,6 +101,8 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
                 cover_image=renders["slides"][0]["image"] if renders["slides"] else None,
                 slides_count=len(shown.slides) if shown else None,
                 selected_variant_id=presentation.selected_variant_id,
+                access_role=presentation.access_role or "owner",
+                owner={"id": presentation.owner.id, "full_name": presentation.owner.full_name, "email": presentation.owner.email},
                 updated_at=presentation.updated_at,
             )
         )
@@ -121,21 +137,22 @@ async def get_presentation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
 async def update_presentation(
     presentation_id: uuid.UUID, payload: PresentationUpdate, user: CurrentUser, db: DbSession
 ) -> PresentationOut:
-    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
+    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True, editable=True)
     changes = payload.model_dump(exclude_unset=True)
-    if changes.get("template_id"):
+    if changes.get("template_id") and changes["template_id"] != presentation.template_id:
         await get_template_for_user(db, changes["template_id"], user)
     for field, value in changes.items():
         if value is not None:
             setattr(presentation, field, value.strip() if isinstance(value, str) else value)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="settings")
     presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
     return presentation_out(presentation, presentation.files)
 
 
 @router.delete("/{presentation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_presentation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
-    presentation = await get_presentation_for_user(db, presentation_id, user)
+    presentation = await get_presentation_for_user(db, presentation_id, user, owner_only=True)
     variant_ids = list(await db.scalars(select(Variant.id).where(Variant.presentation_id == presentation.id)))
     await db.delete(presentation)
     await db.commit()
@@ -148,7 +165,7 @@ async def delete_presentation(presentation_id: uuid.UUID, user: CurrentUser, db:
 async def upload_content_files(
     presentation_id: uuid.UUID, user: CurrentUser, db: DbSession, files: list[UploadFile] = File(...)
 ) -> list[ContentFileOut]:
-    presentation = await get_presentation_for_user(db, presentation_id, user)
+    presentation = await get_presentation_for_user(db, presentation_id, user, editable=True)
     allowed = _content_extensions()
     created: list[ContentFile] = []
     try:
@@ -177,12 +194,13 @@ async def upload_content_files(
             remove_file(content_file.path)
         raise
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="files")
     return [content_file_out(file) for file in created]
 
 
 @router.delete("/{presentation_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_content_file(presentation_id: uuid.UUID, file_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
-    await get_presentation_for_user(db, presentation_id, user)
+    await get_presentation_for_user(db, presentation_id, user, editable=True)
     content_file = await db.scalar(
         select(ContentFile).where(ContentFile.id == file_id, ContentFile.presentation_id == presentation_id)
     )
@@ -191,12 +209,13 @@ async def delete_content_file(presentation_id: uuid.UUID, file_id: uuid.UUID, us
     path = content_file.path
     await db.delete(content_file)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation_id, kind="files")
     remove_file(path)
 
 
 @router.post("/{presentation_id}/generate", response_model=GenerationOut, status_code=status.HTTP_202_ACCEPTED)
 async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> GenerationOut:
-    presentation = await get_presentation_for_user(db, presentation_id, user)
+    presentation = await get_presentation_for_user(db, presentation_id, user, editable=True)
     template = presentation.template
     if template is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Выберите шаблон презентации")
@@ -224,10 +243,41 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
     presentation.status = "generating"
     presentation.selected_variant_id = None
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="generation")
     for variant_id in old_variants:
         remove_dir("variants", str(variant_id))
     await arq.enqueue_job("run_generation_job", str(generation.id), _job_id=f"generation:{generation.id}")
     return generation_out(generation)
+
+
+@router.get("/{presentation_id}/events")
+async def presentation_events(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> StreamingResponse:
+    """SSE: уведомляет участников о сохранениях в общей презентации."""
+    await get_presentation_for_user(db, presentation_id, user)
+    channel = presentation_channel(presentation_id)
+
+    async def event_generator():
+        yield "event: connected\ndata: {}\n\n"
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(channel)
+        try:
+            while True:
+                try:
+                    message = await asyncio.wait_for(pubsub.get_message(ignore_subscribe_messages=True), timeout=20.0)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if message and message.get("type") == "message":
+                    yield f"event: update\ndata: {json.dumps({'kind': message['data']})}\n\n"
+        finally:
+            await pubsub.unsubscribe(channel)
+            await pubsub.aclose()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
 
 
 async def _check_and_mark_stale_generation(db: DbSession, generation: Generation, presentation: Presentation) -> bool:
@@ -334,7 +384,11 @@ async def list_variants(presentation_id: uuid.UUID, user: CurrentUser, db: DbSes
         await db.scalars(select(Variant).where(Variant.presentation_id == presentation.id).order_by(Variant.position))
     )
     # Превью, отставшие от слайдов (например, после обновления парсера), пересобираются в фоне.
-    scheduled = [await schedule_render(db, arq, variant, presentation.template) for variant in variants]
+    scheduled = (
+        [await schedule_render(db, arq, variant, presentation.template) for variant in variants]
+        if presentation.access_role in {"owner", "editor"}
+        else []
+    )
     if any(scheduled):
         await db.commit()
     counts = await issue_counts(db, [v.id for v in variants])
@@ -352,7 +406,7 @@ async def list_variants(presentation_id: uuid.UUID, user: CurrentUser, db: DbSes
 async def select_variant(
     presentation_id: uuid.UUID, payload: SelectVariantRequest, user: CurrentUser, db: DbSession
 ) -> PresentationOut:
-    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True)
+    presentation = await get_presentation_for_user(db, presentation_id, user, with_files=True, editable=True)
     variant = await db.scalar(
         select(Variant).where(Variant.id == payload.variant_id, Variant.presentation_id == presentation.id)
     )
@@ -360,4 +414,5 @@ async def select_variant(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Вариант не найден")
     presentation.selected_variant_id = variant.id
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="variant_selected")
     return presentation_out(presentation, presentation.files)

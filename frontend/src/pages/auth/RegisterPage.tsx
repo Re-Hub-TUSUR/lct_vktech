@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 
 import { useAuth } from '../../auth/AuthProvider'
 import { Button, ErrorState, Field } from '../../components/ui'
@@ -10,6 +10,7 @@ const MIN_PASSWORD = 8
 export function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -27,7 +28,8 @@ export function RegisterPage() {
     setError(null)
     try {
       await register(fullName.trim(), email.trim(), password)
-      navigate('/', { replace: true })
+      const from = (location.state as { from?: string } | null)?.from
+      navigate(from && from !== '/register' ? from : '/', { replace: true })
     } catch (err) {
       setError(err)
     } finally {
@@ -35,8 +37,13 @@ export function RegisterPage() {
     }
   }
 
+  const shareRequired = Boolean((location.state as { shareRequired?: boolean } | null)?.shareRequired)
+
   return (
-    <AuthLayout title="Регистрация" subtitle="Создайте аккаунт — шаблоны из контент-пакета уже подключены">
+    <AuthLayout
+      title="Регистрация"
+      subtitle={shareRequired ? 'Чтобы открыть приглашение к презентации, сначала зарегистрируйтесь' : 'Создайте аккаунт — шаблоны из контент-пакета уже подключены'}
+    >
       <form className="form" onSubmit={submit}>
         <Field label="Имя и фамилия">
           <input
@@ -87,7 +94,7 @@ export function RegisterPage() {
         </Button>
       </form>
       <p className="auth__switch">
-        Уже есть аккаунт? <Link to="/login">Войти</Link>
+        Уже есть аккаунт? <Link to="/login" state={location.state}>Войти</Link>
       </p>
     </AuthLayout>
   )

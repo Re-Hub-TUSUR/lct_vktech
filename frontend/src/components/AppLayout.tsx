@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 import { useAuth } from '../auth/AuthProvider'
 import vkLogo from '../assets/vk-logo.png'
 import { Button } from './ui'
+import { NotificationsBell } from './NotificationsBell'
 
 export function Logo() {
   return (
@@ -35,6 +36,7 @@ export function AppLayout() {
           <Button size="sm" icon={<Plus size={16} />} onClick={() => navigate('/presentations/new')}>
             Новая презентация
           </Button>
+          <NotificationsBell />
           <div className="user-chip" title={user?.email}>
             <span className="user-chip__avatar">{user?.full_name.slice(0, 1).toUpperCase()}</span>
             <span className="user-chip__name">{user?.full_name}</span>

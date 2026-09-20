@@ -16,6 +16,7 @@ import { PresentationSettingsPage } from './pages/PresentationSettingsPage'
 import { TemplatePage } from './pages/TemplatePage'
 import { TemplatesPage } from './pages/TemplatesPage'
 import { VariantsPage } from './pages/VariantsPage'
+import { ShareAcceptPage } from './pages/ShareAcceptPage'
 
 function PresentationRedirect() {
   const { id } = useParams()
@@ -30,6 +31,7 @@ export function App() {
     <Routes>
       <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
       <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />
+      <Route path="/share/:token" element={<ShareAcceptPage />} />
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<DashboardPage />} />
         <Route path="templates" element={<TemplatesPage />} />

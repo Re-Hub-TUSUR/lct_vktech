@@ -165,6 +165,142 @@ input[type='checkbox'] {
   gap: var(--space-3);
 }
 
+.notifications {
+  position: relative;
+}
+.notifications__trigger {
+  position: relative;
+}
+.notifications__count {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+}
+.notifications__panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 50;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 88px));
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+.notifications__panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 8px;
+}
+.notifications__panel ul,
+.notifications__panel p {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notifications__panel li > a,
+.notifications__panel li > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+}
+.notifications__panel li:hover > a,
+.notifications__panel li:hover > div,
+.notifications__panel li.is-unread > a,
+.notifications__panel li.is-unread > div {
+  background: var(--color-surface-muted);
+  text-decoration: none;
+}
+.notifications__panel li span,
+.notifications__panel li small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.share-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.share-dialog__create {
+  display: flex;
+  align-items: end;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-soft);
+}
+.share-dialog__create .field {
+  flex: 1;
+}
+.share-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.share-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.share-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.share-list li:last-child { border-bottom: none; }
+.share-list li.is-inactive { opacity: 0.55; }
+.share-list__avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+.share-list__person {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+.share-list__person small { color: var(--color-text-muted); font-size: 12px; }
+.share-list__role { width: auto; padding: 5px 8px; font-size: 13px; }
+.share-accept-page {
+  display: grid;
+  min-height: 100vh;
+  padding: var(--space-5);
+  place-items: center;
+}
+.share-accept-page .card { max-width: 480px; align-items: flex-start; }
+
 .logo {
   display: flex;
   align-items: center;
@@ -2544,4 +2680,3 @@ a:hover > .template-card,
 .slide__chart-box.is-editable-chart:hover .slide__chart-hint {
   opacity: 1;
 }
-

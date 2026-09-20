@@ -58,7 +58,7 @@ export function LoginPage() {
         </Button>
       </form>
       <p className="auth__switch">
-        Нет аккаунта? <Link to="/register">Зарегистрироваться</Link>
+        Нет аккаунта? <Link to="/register" state={location.state}>Зарегистрироваться</Link>
       </p>
     </AuthLayout>
   )

@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 
 from app.api.deps import Arq, CurrentUser, DbSession, OptionalUser, get_variant_for_user
 from app.api.serializers import variant_out
+from app.core.redis import publish_presentation_update, redis_client
 from app.core.storage import save_upload, storage_path
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
@@ -44,7 +45,7 @@ async def _variant_payload(db, variant, presentation) -> VariantOut:
 async def get_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> VariantDetailResponse:
     variant, presentation = await get_variant_for_user(db, variant_id, user)
     # Превью отстало от слайдов (новая версия парсера и т. п.) — пересобираем в фоне.
-    if await schedule_render(db, arq, variant, presentation.template):
+    if presentation.access_role in {"owner", "editor"} and await schedule_render(db, arq, variant, presentation.template):
         await db.commit()
     return VariantDetailResponse(
         theme=SlideTheme(**template_theme(presentation.template)),
@@ -81,10 +82,11 @@ async def get_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> 
 
 @router.post("/{variant_id}/audit/run", response_model=AuditReport)
 async def rerun_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> AuditReport:
-    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     ctx = await build_audit_context(db, presentation, presentation.template)
     await refresh_audit(db, variant, ctx)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="audit")
     return await audit_report(db, variant)
 
 
@@ -92,12 +94,13 @@ async def rerun_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -
 async def resolve(
     variant_id: uuid.UUID, payload: ResolveRequest, user: CurrentUser, db: DbSession, arq: Arq
 ) -> ResolveResponse:
-    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     ctx = await build_audit_context(db, presentation, template)
     applied = await resolve_issues(db, variant, payload.issue_ids, payload.action, ctx, template)
     await schedule_render(db, arq, variant, template)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="audit")
     return ResolveResponse(
         applied=applied,
         report=await audit_report(db, variant),
@@ -135,7 +138,7 @@ async def export_variant(
 @router.post("/{variant_id}/reroll", response_model=VariantOut)
 async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> VariantOut:
     """Рерол варианта: тот же профиль, но другие паттерны шаблона из равноценных и другой порядок тезисов."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     options = GenerationSettings.model_validate(presentation.settings or {})
     specs = build_outline(title=presentation.title, purpose=presentation.purpose, brief=presentation.brief)
@@ -157,6 +160,7 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     await refresh_audit(db, variant, ctx)
     await schedule_render(db, arq, variant, template)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="variant")
     return await _variant_payload(db, variant, presentation)
 
 
@@ -170,7 +174,7 @@ async def update_slide(
     arq: Arq,
 ) -> ResolveResponse:
     """Ручное редактирование слайда (заголовок, тезисы, шрифты, размеры, картинка, макет)."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     slides = load_slides(variant)
     target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
@@ -192,6 +196,7 @@ async def update_slide(
     # какой текст и стиль ему нужен, и система не должна критиковать его правки.
     await schedule_render(db, arq, variant, template)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
     return ResolveResponse(
         applied=len(updates),
@@ -210,7 +215,7 @@ async def upload_slide_image(
     file: UploadFile = File(...),
 ) -> ResolveResponse:
     """Загрузка пользовательского изображения для слайда (импорт картинки)."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     slides = load_slides(variant)
     target = next((s for s in slides if s.id == slide_id), None)
@@ -246,6 +251,7 @@ async def upload_slide_image(
     variant.slides = [s.model_dump(mode="json") for s in slides]
     await schedule_render(db, arq, variant, template)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
     return ResolveResponse(
         applied=1,
@@ -285,7 +291,7 @@ async def regenerate_slide(
     arq: Arq,
 ) -> ResolveResponse:
     """Точечная перегенерация отдельного слайда (ручка-стаб для последующей привязки ML)."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     slides = load_slides(variant)
     target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
@@ -306,10 +312,10 @@ async def regenerate_slide(
     await refresh_audit(db, variant, ctx)
     await schedule_render(db, arq, variant, template)
     await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
     return ResolveResponse(
         applied=1,
         report=await audit_report(db, variant),
         variant=await _variant_payload(db, variant, presentation),
     )
-

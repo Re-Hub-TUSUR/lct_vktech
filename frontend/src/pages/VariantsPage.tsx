@@ -28,6 +28,7 @@ function VariantCard({
   selecting,
   onReroll,
   rerolling,
+  canEdit,
 }: {
   variant: Variant
   theme: SlideTheme
@@ -36,6 +37,7 @@ function VariantCard({
   selecting: boolean
   onReroll: () => void
   rerolling: boolean
+  canEdit: boolean
 }) {
   const preview = previewSlideIndex(variant)
   const { stats } = variant
@@ -61,7 +63,7 @@ function VariantCard({
         {variant.renders.status === 'pending' && (
           <span className="variant-card__render-status">Собираем превью по шаблону…</span>
         )}
-        <div className="variant-card__reroll-wrap">
+        {canEdit && <div className="variant-card__reroll-wrap">
           <button
             type="button"
             className="variant-card__reroll"
@@ -77,7 +79,7 @@ function VariantCard({
           <span className="variant-card__tip" role="tooltip">
             Перегенерировать этот вариант
           </span>
-        </div>
+        </div>}
       </div>
 
       <div className="variant-card__strip">
@@ -115,11 +117,11 @@ function VariantCard({
           <Badge tone="success">
             <Check size={14} /> Выбран
           </Badge>
-        ) : (
+        ) : canEdit ? (
           <Button onClick={onSelect} loading={selecting}>
             Выбрать
           </Button>
-        )}
+        ) : <Badge tone="neutral">Только просмотр</Badge>}
       </footer>
     </article>
   )
@@ -191,6 +193,7 @@ export function VariantsPage() {
   if (variants.error) return <ErrorState error={variants.error} />
 
   const { theme, axis } = variants.data
+  const canEdit = presentation.data.access_role !== 'viewer'
   return (
     <div className="stack">
       {header}
@@ -212,6 +215,7 @@ export function VariantsPage() {
             selecting={select.isPending && select.variables === variant.id}
             onReroll={() => reroll.mutate(variant.id)}
             rerolling={reroll.isPending && reroll.variables === variant.id}
+            canEdit={canEdit}
           />
         ))}
       </div>

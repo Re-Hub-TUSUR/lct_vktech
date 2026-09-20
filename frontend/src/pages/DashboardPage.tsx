@@ -38,6 +38,7 @@ function PresentationCard({ item }: { item: PresentationListItem }) {
       <div className="presentation-card__body">
         <div className="presentation-card__row">
           <Badge tone={STATUS_TONES[item.status]}>{STATUS_LABELS[item.status]}</Badge>
+          {item.access_role !== 'owner' && <Badge tone={item.access_role === 'editor' ? 'info' : 'neutral'}>{item.access_role === 'editor' ? 'Редактор' : 'Наблюдатель'}</Badge>}
           <small>{formatDate(item.updated_at)}</small>
         </div>
         <strong>{item.title}</strong>
@@ -46,6 +47,7 @@ function PresentationCard({ item }: { item: PresentationListItem }) {
           {item.template_name && ` · ${item.template_name}`}
           {item.slides_count ? ` · ${countLabel(item.slides_count, ['слайд', 'слайда', 'слайдов'])}` : ''}
         </small>
+        {item.access_role !== 'owner' && <small>Владелец: {item.owner.full_name}</small>}
       </div>
     </Link>
   )
@@ -88,7 +90,7 @@ export function DashboardPage() {
 
       <section className="section">
         <div className="section__header">
-          <h2>Мои презентации</h2>
+          <h2>Презентации</h2>
         </div>
         {presentations.isPending ? (
           <Spinner />
