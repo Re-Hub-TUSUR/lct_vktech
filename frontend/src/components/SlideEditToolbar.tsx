@@ -52,25 +52,97 @@ export function SlideEditToolbar({
     ].filter(Boolean))
   )
 
-  const currentFont = slide.font_family || ''
-  const currentScale = slide.font_size_scale || 1.0
+  const selectedShape = (slide.shapes || []).find((s) => s.id === selectedShapeId)
+
+  const handleUpdateSelectedShape = (patch: Partial<SlideShape>) => {
+    if (!selectedShapeId) return
+    const next = (slide.shapes || []).map((s) => (s.id === selectedShapeId ? { ...s, ...patch } : s))
+    onChange({ shapes: next })
+  }
+
+  // Current font & scale depending on whether shape, element, or slide is focused
+  let currentFont = ''
+  let currentScale = 1.0
+
+  if (selectedShape) {
+    currentFont = selectedShape.font_family || ''
+    currentScale = selectedShape.font_size ? selectedShape.font_size / 14 : 1.0
+  } else if (activeElement) {
+    currentFont = slide.element_fonts?.[activeElement] || slide.element_fonts?.[activeElement.split('.')[0]] || slide.font_family || ''
+    currentScale = slide.element_scales?.[activeElement] ?? slide.element_scales?.[activeElement.split('.')[0]] ?? slide.font_size_scale ?? 1.0
+  } else {
+    currentFont = slide.font_family || ''
+    currentScale = slide.font_size_scale || 1.0
+  }
 
   const handleFontChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange({ font_family: e.target.value || null })
+    const val = e.target.value || null
+    if (selectedShape) {
+      handleUpdateSelectedShape({ font_family: val })
+    } else if (activeElement) {
+      const nextFonts = { ...(slide.element_fonts || {}) }
+      if (val) {
+        nextFonts[activeElement] = val
+      } else {
+        delete nextFonts[activeElement]
+      }
+      onChange({ element_fonts: nextFonts })
+    } else {
+      onChange({ font_family: val })
+    }
   }
 
   const handleScaleChange = (scale: number) => {
-    onChange({ font_size_scale: Math.round(scale * 100) / 100 })
+    const rounded = Math.round(scale * 100) / 100
+    if (selectedShape) {
+      handleUpdateSelectedShape({ font_size: Math.round(scale * 14) })
+    } else if (activeElement) {
+      const nextScales = { ...(slide.element_scales || {}) }
+      nextScales[activeElement] = rounded
+      onChange({ element_scales: nextScales })
+    } else {
+      onChange({ font_size_scale: rounded })
+    }
+  }
+
+  const handleApplyFontToAll = () => {
+    if (!currentFont) return
+    onChange({ font_family: currentFont, element_fonts: {} })
   }
 
   const handleSlideKindChange = (newKind: SlideKind) => {
     if (newKind === slide.kind) return
     const updates: SlideUpdate = { kind: newKind }
 
+    // If changing kind, pattern_id might no longer match
+    if (slide.pattern_id) {
+      updates.pattern_id = null
+    }
+
+    const extractTexts = (): string[] => {
+      if (slide.bullets && slide.bullets.length > 0) return slide.bullets.filter(Boolean)
+      if (slide.columns && slide.columns.length > 0) {
+        const colTexts = slide.columns.flatMap((c) => [c.title, ...(c.bullets || [])]).filter(Boolean)
+        if (colTexts.length > 0) return colTexts
+      }
+      if (slide.kpis && slide.kpis.length > 0) {
+        const kpiTexts = slide.kpis.map((k) => `${k.label}: ${k.value}`).filter(Boolean)
+        if (kpiTexts.length > 0) return kpiTexts
+      }
+      if (slide.timeline && slide.timeline.length > 0) {
+        const tTexts = slide.timeline.map((t) => [t.title, t.text].filter(Boolean).join(' — ')).filter(Boolean)
+        if (tTexts.length > 0) return tTexts
+      }
+      if (slide.quote?.text) return [slide.quote.text]
+      if (slide.summary) return [slide.summary]
+      return []
+    }
+    const existingTexts = extractTexts()
+
     if (newKind === 'cards') {
       if (!slide.columns || slide.columns.length === 0) {
-        if (slide.bullets && slide.bullets.length > 0) {
-          updates.columns = slide.bullets.map((b, i) => ({
+        if (existingTexts.length > 0) {
+          updates.columns = existingTexts.slice(0, 4).map((b, i) => ({
             title: `Пункт ${i + 1}`,
             bullets: [b],
           }))
@@ -84,20 +156,18 @@ export function SlideEditToolbar({
       }
     } else if (newKind === 'two_columns') {
       if (!slide.columns || slide.columns.length < 2) {
-        const mid = Math.ceil((slide.bullets?.length || 0) / 2)
-        const left = slide.bullets?.slice(0, mid) || ['Тезис левой колонки']
-        const right = slide.bullets?.slice(mid) || ['Тезис правой колонки']
+        const mid = Math.max(1, Math.ceil(existingTexts.length / 2))
+        const left = existingTexts.slice(0, mid)
+        const right = existingTexts.slice(mid)
         updates.columns = [
-          { title: 'Колонка 1', bullets: left.length ? left : ['Тезис 1'] },
-          { title: 'Колонка 2', bullets: right.length ? right : ['Тезис 2'] },
+          { title: 'Колонка 1', bullets: left.length > 0 ? left : ['Тезис 1'] },
+          { title: 'Колонка 2', bullets: right.length > 0 ? right : ['Тезис 2'] },
         ]
       }
     } else if (newKind === 'bullets' || newKind === 'agenda') {
       if (!slide.bullets || slide.bullets.length === 0) {
-        if (slide.columns && slide.columns.length > 0) {
-          updates.bullets = slide.columns.map((c) => (c.bullets?.[0] ? `${c.title}: ${c.bullets[0]}` : c.title))
-        } else if (slide.kpis && slide.kpis.length > 0) {
-          updates.bullets = slide.kpis.map((k) => `${k.label}: ${k.value}`)
+        if (existingTexts.length > 0) {
+          updates.bullets = existingTexts
         } else {
           updates.bullets = ['Ключевой тезис слайда', 'Дополнительный пункт с пояснением']
         }
@@ -130,30 +200,45 @@ export function SlideEditToolbar({
       }
     } else if (newKind === 'kpi') {
       if (!slide.kpis || slide.kpis.length === 0) {
-        updates.kpis = [
-          { value: '+45%', label: 'Рост эффективности' },
-          { value: '2.4x', label: 'Увеличение скорости работы' },
-          { value: '98%', label: 'Точность соблюдения гайдлайнов' },
-        ]
+        if (existingTexts.length > 0) {
+          updates.kpis = existingTexts.slice(0, 3).map((t, i) => ({
+            value: ['+45%', '2.4x', '98%'][i] || `${(i + 1) * 10}%`,
+            label: t,
+          }))
+        } else {
+          updates.kpis = [
+            { value: '+45%', label: 'Рост эффективности' },
+            { value: '2.4x', label: 'Увеличение скорости работы' },
+            { value: '98%', label: 'Точность соблюдения гайдлайнов' },
+          ]
+        }
       }
     } else if (newKind === 'timeline') {
       if (!slide.timeline || slide.timeline.length === 0) {
-        updates.timeline = [
-          { date: 'Этап 1', title: 'Анализ и подготовка', text: 'Сбор исходных данных и шаблонов' },
-          { date: 'Этап 2', title: 'Разработка решения', text: 'Автоматическая верстка и аудит' },
-          { date: 'Этап 3', title: 'Внедрение и запуск', text: 'Интеграция в рабочие процессы' },
-        ]
+        if (existingTexts.length > 0) {
+          updates.timeline = existingTexts.slice(0, 4).map((t, i) => ({
+            date: `Этап ${i + 1}`,
+            title: t.length > 30 ? t.slice(0, 30) + '...' : t,
+            text: t,
+          }))
+        } else {
+          updates.timeline = [
+            { date: 'Этап 1', title: 'Анализ и подготовка', text: 'Сбор исходных данных и шаблонов' },
+            { date: 'Этап 2', title: 'Разработка решения', text: 'Автоматическая верстка и аудит' },
+            { date: 'Этап 3', title: 'Внедрение и запуск', text: 'Интеграция в рабочие процессы' },
+          ]
+        }
       }
     } else if (newKind === 'quote') {
       if (!slide.quote) {
         updates.quote = {
-          text: slide.summary || slide.bullets?.[0] || 'Ключевая цитата или мысль слайда',
+          text: existingTexts[0] || slide.summary || 'Ключевая цитата или мысль слайда',
           author: 'Автор цитаты',
         }
       }
     } else if (newKind === 'image_text') {
       if (!slide.bullets || slide.bullets.length === 0) {
-        updates.bullets = ['Ключевое описание иллюстрации', 'Поясняющий тезис к изображению']
+        updates.bullets = existingTexts.length > 0 ? existingTexts : ['Ключевое описание иллюстрации', 'Поясняющий тезис к изображению']
       }
     }
 
@@ -161,8 +246,6 @@ export function SlideEditToolbar({
   }
 
   // --- Управление фигурами и объектами окружения ---
-  const selectedShape = (slide.shapes || []).find((s) => s.id === selectedShapeId)
-
   const handleAddShape = (kind: 'circle' | 'rect' | 'badge' | 'line') => {
     const id = Math.random().toString(36).substring(2, 10)
     const newShape: SlideShape = {
@@ -181,12 +264,6 @@ export function SlideEditToolbar({
     onChange({ shapes: [...currentShapes, newShape] })
     onSelectShape?.(id)
     setShowShapeMenu(false)
-  }
-
-  const handleUpdateSelectedShape = (patch: Partial<SlideShape>) => {
-    if (!selectedShapeId) return
-    const next = (slide.shapes || []).map((s) => (s.id === selectedShapeId ? { ...s, ...patch } : s))
-    onChange({ shapes: next })
   }
 
   const handleDeleteSelectedShape = () => {
@@ -323,22 +400,54 @@ export function SlideEditToolbar({
 
   const getBadgeLabel = () => {
     if (selectedShape) {
-      if (selectedShape.kind === 'circle') return 'Кругляшок'
-      if (selectedShape.kind === 'badge') return 'Плашка'
-      if (selectedShape.kind === 'line') return 'Линия'
+      if (selectedShape.kind === 'circle') return 'Фигура: Круг'
+      if (selectedShape.kind === 'badge') return 'Фигура: Плашка'
+      if (selectedShape.kind === 'line') return 'Фигура: Линия'
       return 'Фигура'
     }
     if (activeElement === 'image') return 'Изображение'
     if (activeElement === 'title') return 'Заголовок'
     if (activeElement === 'subtitle') return 'Подзаголовок'
-    if (activeElement?.startsWith('bullets')) return 'Список тезисов'
-    if (activeElement?.startsWith('columns')) return slide.kind === 'cards' ? 'Карточка' : 'Колонка'
-    if (activeElement?.startsWith('kpis')) return 'Показатель'
-    if (activeElement?.startsWith('timeline')) return 'Таймлайн'
-    if (activeElement?.startsWith('quote')) return 'Цитата'
-    if (activeElement?.startsWith('table')) return 'Таблица'
+    if (activeElement?.startsWith('bullets.')) {
+      const idx = parseInt(activeElement.split('.')[1], 10)
+      return `Тезис ${isNaN(idx) ? '' : idx + 1}`
+    }
+    if (activeElement === 'bullets') return 'Список тезисов'
+    if (activeElement?.startsWith('columns.')) {
+      const parts = activeElement.split('.')
+      const colIdx = parseInt(parts[1], 10)
+      const colNum = isNaN(colIdx) ? '' : ` ${colIdx + 1}`
+      if (parts[2] === 'title') return `Заголовок ${slide.kind === 'cards' ? 'карточки' : 'колонки'}${colNum}`
+      if (parts[2] === 'bullets') return `Текст ${slide.kind === 'cards' ? 'карточки' : 'колонки'}${colNum}`
+      return `${slide.kind === 'cards' ? 'Карточка' : 'Колонка'}${colNum}`
+    }
+    if (activeElement?.startsWith('kpis.')) {
+      const parts = activeElement.split('.')
+      const kpiIdx = parseInt(parts[1], 10)
+      const kpiNum = isNaN(kpiIdx) ? '' : ` ${kpiIdx + 1}`
+      if (parts[2] === 'value') return `Значение показателя${kpiNum}`
+      if (parts[2] === 'label') return `Подпись показателя${kpiNum}`
+      return `Показатель${kpiNum}`
+    }
+    if (activeElement?.startsWith('timeline.')) {
+      const parts = activeElement.split('.')
+      const stepIdx = parseInt(parts[1], 10)
+      const stepNum = isNaN(stepIdx) ? '' : ` ${stepIdx + 1}`
+      if (parts[2] === 'date') return `Дата этапа${stepNum}`
+      if (parts[2] === 'title') return `Заголовок этапа${stepNum}`
+      if (parts[2] === 'text') return `Описание этапа${stepNum}`
+      return `Этап${stepNum}`
+    }
+    if (activeElement?.startsWith('quote.')) {
+      if (activeElement === 'quote.author') return 'Автор цитаты'
+      return 'Текст цитаты'
+    }
+    if (activeElement?.startsWith('table.')) {
+      if (activeElement.startsWith('table.columns.')) return 'Заголовок таблицы'
+      return 'Ячейка таблицы'
+    }
     if (activeElement === 'chart' || activeElement?.startsWith('chart') || slide.kind === 'chart') return 'Диаграмма'
-    return 'Холст слайда'
+    return 'Холст слайда (весь слайд)'
   }
 
   return (
@@ -388,13 +497,28 @@ export function SlideEditToolbar({
               value={currentFont}
               onChange={handleFontChange}
             >
-              <option value="">Шаблонный ({theme.heading_font})</option>
+              <option value="">
+                {activeElement && slide.font_family
+                  ? `По умолчанию слайда (${slide.font_family})`
+                  : `Шаблонный (${theme.heading_font})`}
+              </option>
               {availableFonts.map((f) => (
                 <option key={f} value={f}>
                   {f}
                 </option>
               ))}
             </select>
+            {activeElement && currentFont && currentFont !== slide.font_family && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                style={{ fontSize: 11, padding: '2px 6px', marginLeft: 4 }}
+                title="Применить этот шрифт ко всему слайду"
+                onClick={handleApplyFontToAll}
+              >
+                Ко всему слайду
+              </button>
+            )}
           </div>
 
           {/* Размер шрифта */}

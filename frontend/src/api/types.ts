@@ -48,6 +48,8 @@ export interface SlideShape {
   opacity?: number | null
   text?: string | null
   border?: boolean | null
+  font_family?: string | null
+  font_size?: number | null
 }
 
 export interface ChartData {
@@ -106,6 +108,8 @@ export interface Slide {
   pattern_id: string | null
   font_family?: string | null
   font_size_scale?: number | null
+  element_fonts?: Record<string, string> | null
+  element_scales?: Record<string, number> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
 }
 
@@ -125,6 +129,8 @@ export interface SlideUpdate {
   notes?: string | null
   font_family?: string | null
   font_size_scale?: number | null
+  element_fonts?: Record<string, string> | null
+  element_scales?: Record<string, number> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
   image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
   layout_key?: string | null

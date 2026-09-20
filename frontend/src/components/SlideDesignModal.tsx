@@ -3,7 +3,7 @@ import { Check, Eye, LayoutTemplate, Sparkles, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { Slide, SlidePattern, SlideTheme } from '../api/types'
-import { SLIDE_KIND_LABELS } from '../lib/labels'
+import { PATTERN_CATEGORY_LABELS, PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 import { Badge, Button } from './ui'
 
 interface SlideDesignModalProps {
@@ -42,9 +42,18 @@ export function SlideDesignModal({
     slide.layout_key || layouts[0]?.key || null
   )
 
+  const availablePatternTypes = useMemo(() => {
+    const types = new Set<string>()
+    for (const p of patterns) {
+      if (p.type) types.add(p.type)
+      if (p.category) types.add(p.category)
+    }
+    return Array.from(types)
+  }, [patterns])
+
   const filteredPatterns = useMemo(() => {
     if (typeFilter === 'all') return patterns
-    return patterns.filter((p) => p.type === typeFilter || (p as unknown as { category?: string }).category === typeFilter)
+    return patterns.filter((p) => (p.type as string) === typeFilter || p.category === typeFilter)
   }, [patterns, typeFilter])
 
   const activePattern = useMemo(() => {
@@ -126,12 +135,12 @@ export function SlideDesignModal({
               className={clsx('btn btn-sm', typeFilter === 'all' ? 'btn-primary' : 'btn-ghost')}
               onClick={() => setTypeFilter('all')}
             >
-              Все
+              Все ({patterns.length})
             </button>
-            {['cards', 'two_columns', 'timeline', 'kpi', 'table', 'text', 'agenda', 'cover'].map((t) => {
-              const count = patterns.filter((p) => p.type === t).length
+            {availablePatternTypes.map((t) => {
+              const count = patterns.filter((p) => (p.type as string) === t || p.category === t).length
               if (count === 0) return null
-              const label = (SLIDE_KIND_LABELS as Record<string, string>)[t] || t
+              const label = PATTERN_TYPE_LABELS[t] || PATTERN_CATEGORY_LABELS[t as keyof typeof PATTERN_CATEGORY_LABELS] || (SLIDE_KIND_LABELS as Record<string, string>)[t] || t
               return (
                 <button
                   key={t}
@@ -154,7 +163,7 @@ export function SlideDesignModal({
                 {filteredPatterns.map((pattern) => {
                   const isCurrent = slide.pattern_id === pattern.id
                   const isSelected = activePattern?.id === pattern.id
-                  const patternTypeLabel = (SLIDE_KIND_LABELS as Record<string, string>)[pattern.type] || pattern.type
+                  const patternTypeLabel = PATTERN_TYPE_LABELS[pattern.type] || (SLIDE_KIND_LABELS as Record<string, string>)[pattern.type] || pattern.type
                   const imgUrl = getPatternImageUrl(pattern)
 
                   return (
@@ -312,7 +321,7 @@ export function SlideDesignModal({
                   <div className="row" style={{ justifyContent: 'space-between' }}>
                     <span className="muted">Тип структуры:</span>
                     <span className="badge badge-primary" style={{ fontSize: 11 }}>
-                      {(SLIDE_KIND_LABELS as Record<string, string>)[activePattern.type] || activePattern.type}
+                      {PATTERN_TYPE_LABELS[activePattern.type] || (SLIDE_KIND_LABELS as Record<string, string>)[activePattern.type] || activePattern.type}
                     </span>
                   </div>
                   <div className="row" style={{ justifyContent: 'space-between' }}>

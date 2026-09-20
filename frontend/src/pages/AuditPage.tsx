@@ -236,6 +236,8 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
       layout_name: edits.layout_name !== undefined ? edits.layout_name : currentSlide.layout_name,
       font_family: edits.font_family !== undefined ? edits.font_family : currentSlide.font_family,
       font_size_scale: edits.font_size_scale !== undefined ? edits.font_size_scale : currentSlide.font_size_scale,
+      element_fonts: edits.element_fonts !== undefined ? edits.element_fonts : currentSlide.element_fonts,
+      element_scales: edits.element_scales !== undefined ? edits.element_scales : currentSlide.element_scales,
       block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
     }
   }, [currentSlide, slideEdits, theme?.patterns])
@@ -424,41 +426,73 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     handleSlideChange(updates)
   }
 
+  const patternKindToSlideKind = (pattern: SlidePattern, currentKind: SlideKind): SlideKind => {
+    const pType = pattern.type
+    const category = pattern.category
+    if (category === 'cover') return 'title'
+    if (category === 'section') return 'section'
+    if (category === 'closing') return 'closing'
+    if (category === 'quote') return 'quote'
+    if (pType === 'text' || pType === 'title_only') return 'bullets'
+    if (pType === 'cards') return 'cards'
+    if (pType === 'two_columns') return 'two_columns'
+    if (pType === 'kpi') return 'kpi'
+    if (pType === 'timeline') return 'timeline'
+    if (pType === 'table') return 'table'
+    if (pType === 'chart') return 'chart'
+    if (pType === 'agenda') return 'agenda'
+    if (pType === 'image_text') return 'image_text'
+    return currentKind
+  }
+
+  const extractSlideTexts = (slide: Slide): string[] => {
+    if (slide.bullets && slide.bullets.length > 0) {
+      const list = slide.bullets.filter(Boolean)
+      if (list.length > 0) return list
+    }
+    if (slide.columns && slide.columns.length > 0) {
+      const list = slide.columns.flatMap((c) => [c.title, ...(c.bullets || [])]).filter(Boolean)
+      if (list.length > 0) return list
+    }
+    if (slide.kpis && slide.kpis.length > 0) {
+      const list = slide.kpis.map((k) => `${k.value} ${k.label}`.trim()).filter(Boolean)
+      if (list.length > 0) return list
+    }
+    if (slide.timeline && slide.timeline.length > 0) {
+      const list = slide.timeline.map((t) => [t.date, t.title, t.text].filter(Boolean).join(' — ')).filter(Boolean)
+      if (list.length > 0) return list
+    }
+    if (slide.quote?.text) return [slide.quote.text]
+    if (slide.summary) return [slide.summary]
+    return ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3']
+  }
+
   const handleSelectPattern = (pattern: SlidePattern) => {
     if (!currentSlide) return
+    const newKind = patternKindToSlideKind(pattern, activeSlide.kind)
     const patch: SlideUpdate = {
       pattern_id: pattern.id,
       layout_key: pattern.layout_key,
       layout_name: pattern.layout_name || (pattern.layout_key && theme.layouts?.[pattern.layout_key]?.name) || pattern.layout_key,
       shapes: pattern.shapes && pattern.shapes.length > 0 ? pattern.shapes : [],
+      kind: newKind,
     }
-    const newKind = (pattern.type && Object.keys(SLIDE_KIND_LABELS).includes(pattern.type))
-      ? (pattern.type as SlideKind)
-      : activeSlide.kind
 
-    patch.kind = newKind
-
-    // Умная адаптация контента под выбранный шаблон
-    const currentBullets = activeSlide.bullets || []
-    const existingTexts = currentBullets.length > 0
-      ? currentBullets
-      : (activeSlide.columns?.flatMap((c) => (c.bullets?.length ? [c.title, ...c.bullets] : [c.title]))
-        || activeSlide.kpis?.map((k) => `${k.value} ${k.label}`)
-        || activeSlide.timeline?.map((t) => `${t.date}: ${t.title}`)
-        || ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3'])
-
+    // Умная адаптация контента под выбранный шаблон без потери данных
+    const existingTexts = extractSlideTexts(activeSlide)
     const targetCount = Math.max(pattern.items_count || 3, 2)
 
     if (newKind === 'cards') {
       patch.columns = Array.from({ length: targetCount }, (_, i) => {
-        const title = activeSlide.columns?.[i]?.title || existingTexts[i] || `Тезис ${i + 1}`
-        const bullets = activeSlide.columns?.[i]?.bullets?.length
-          ? activeSlide.columns[i].bullets
-          : ['Описание и ключевые детали пункта']
+        const existingCol = activeSlide.columns?.[i]
+        const title = existingCol?.title || existingTexts[i] || `Тезис ${i + 1}`
+        const bullets = existingCol?.bullets?.length
+          ? existingCol.bullets
+          : [existingTexts[i + targetCount] || 'Описание и ключевые детали пункта']
         return { title, bullets }
       })
     } else if (newKind === 'two_columns') {
-      const half = Math.ceil(existingTexts.length / 2)
+      const half = Math.max(1, Math.ceil(existingTexts.length / 2))
       patch.columns = [
         {
           title: activeSlide.columns?.[0]?.title || 'Направление 1',
@@ -470,24 +504,24 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
         },
       ]
     } else if (newKind === 'kpi') {
-      const fallbackKpis = [
-        { value: '100+', label: 'Показатель успеха' },
-        { value: '85%', label: 'Уровень конверсии' },
-        { value: '3x', label: 'Рост эффективности' },
-        { value: '24/7', label: 'Непрерывная работа' },
-      ]
+      const fallbackValues = ['100+', '85%', '3x', '24/7', '98%', '+45%']
       patch.kpis = Array.from({ length: targetCount }, (_, i) => {
-        return activeSlide.kpis?.[i] || fallbackKpis[i % fallbackKpis.length]
+        if (activeSlide.kpis?.[i]) return activeSlide.kpis[i]
+        const text = existingTexts[i] || `Показатель ${i + 1}`
+        return {
+          value: fallbackValues[i % fallbackValues.length],
+          label: text,
+        }
       })
     } else if (newKind === 'timeline') {
       patch.timeline = Array.from({ length: targetCount }, (_, i) => {
-        return (
-          activeSlide.timeline?.[i] || {
-            date: `Этап ${i + 1}`,
-            title: existingTexts[i] || `Веха ${i + 1}`,
-            text: 'Реализация и внедрение запланированных шагов',
-          }
-        )
+        if (activeSlide.timeline?.[i]) return activeSlide.timeline[i]
+        const text = existingTexts[i] || `Этап ${i + 1}`
+        return {
+          date: `Этап ${i + 1}`,
+          title: text.length > 35 ? text.slice(0, 35) + '...' : text,
+          text: text,
+        }
       })
     } else if (newKind === 'bullets') {
       patch.bullets = existingTexts.slice(0, Math.max(targetCount, 3))
@@ -531,6 +565,17 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     const roleForLayout = Object.entries(theme.roles || {}).find(([_, k]) => k === layoutKey)?.[0]
     if (roleForLayout && Object.keys(SLIDE_KIND_LABELS).includes(roleForLayout)) {
       patch.kind = roleForLayout as SlideKind
+    } else {
+      const lower = (layoutName + ' ' + layoutKey).toLowerCase()
+      if (lower.includes('two_col') || lower.includes('2 col') || lower.includes('две колонки')) {
+        patch.kind = 'two_columns'
+      } else if (lower.includes('card') || lower.includes('карточк') || lower.includes('3 col') || lower.includes('три колонки')) {
+        patch.kind = 'cards'
+      } else if (lower.includes('agenda') || lower.includes('повестк') || lower.includes('содержани')) {
+        patch.kind = 'agenda'
+      } else if (lower.includes('quote') || lower.includes('цитат')) {
+        patch.kind = 'quote'
+      }
     }
 
     handleSlideChange(patch)
@@ -576,21 +621,22 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
   const handleSaveSlide = async () => {
     if (!currentSlide) return
     const edits = slideEdits[currentSlide.id]
-    if (!edits) {
-      setIsEditing(false)
-      setActiveElement(null)
-      setSelectedShapeId(null)
-      return
+    if (edits) {
+      await updateSlideMutation.mutateAsync({
+        ...edits,
+        shapes: activeSlide.shapes,
+      })
     }
-    await updateSlideMutation.mutateAsync({
-      ...edits,
-      shapes: activeSlide.shapes,
-    })
-    setSlideEdits((prev) => {
-      const next = { ...prev }
-      delete next[currentSlide.id]
-      return next
-    })
+    // Также сохраняем изменения на других слайдах, если они были отредактированы
+    const otherEntries = Object.entries(slideEdits).filter(([id]) => id !== currentSlide.id)
+    for (const [sId, sEdits] of otherEntries) {
+      try {
+        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${sId}`, sEdits)
+      } catch (err) {
+        console.error(`Failed to save slide ${sId}:`, err)
+      }
+    }
+    setSlideEdits({})
     setIsEditing(false)
     setActiveElement(null)
     setSelectedShapeId(null)

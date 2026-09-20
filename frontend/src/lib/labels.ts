@@ -2,7 +2,6 @@ import type {
   CheckKind,
   CheckStatus,
   PatternCategory,
-  PatternType,
   PresentationStatus,
   Purpose,
   Severity,
@@ -69,16 +68,23 @@ export const ROLE_LABELS: Record<string, string> = {
   blank: 'Пустой',
 }
 
-export const PATTERN_TYPE_LABELS: Record<PatternType, string> = {
+export const PATTERN_TYPE_LABELS: Record<string, string> = {
   text: 'Текст',
+  bullets: 'Тезисы',
   cards: 'Карточки',
   two_columns: 'Две колонки',
+  columns: 'Колонки',
   kpi: 'KPI',
   timeline: 'Шаги / таймлайн',
   table: 'Таблица',
   image_text: 'Текст и изображение',
   agenda: 'Оглавление',
   title_only: 'Только заголовок',
+  cover: 'Обложка',
+  title: 'Обложка',
+  section: 'Разделитель',
+  closing: 'Финал',
+  quote: 'Цитата',
   people: 'Люди',
   diagram: 'Схема',
   chart: 'Диаграмма',

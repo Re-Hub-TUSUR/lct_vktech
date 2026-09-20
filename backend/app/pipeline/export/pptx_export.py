@@ -80,6 +80,7 @@ class _Ctx:
     fg: str = "#000000"
     muted: str = "#737373"
     surface: str = "#E6F1FF"
+    font_family: str | None = None
 
     @property
     def scale(self) -> float:
@@ -104,7 +105,7 @@ def build_deck(
     prs = Presentation(str(template_path))
     # Слайды-примеры нужны как источники паттернов до конца сборки, потом удаляются.
     sources = list(prs.slides)
-    by_id = {pattern["id"]: pattern for pattern in patterns or [] if pattern.get("usable")}
+    by_id = {pattern["id"]: pattern for pattern in patterns or []}
     layouts = {
         f"{mi}:{li}": layout
         for mi, master in enumerate(prs.slide_masters)
@@ -121,26 +122,34 @@ def build_deck(
         background = layout_background(layout, theme_colors) or theme["background"]
         fg = text_on(background, theme["text"])
         slide_ctx = replace(
-            ctx, fg=fg, muted=mix(fg, background, 0.45), surface=mix(theme["accent"], background, 0.88)
+            ctx,
+            fg=fg,
+            muted=mix(fg, background, 0.45),
+            surface=mix(theme["accent"], background, 0.88),
+            font_family=spec.font_family,
         )
         pattern = by_id.get(spec.pattern_id or "")
-        if pattern is not None and pattern["slide_index"] < len(sources) and fits(spec, pattern):
-            slide = clone_slide(prs, sources[pattern["slide_index"]])
-            targets.append(fill_pattern(slide, pattern, spec))
-            _shapes(slide, spec.shapes, slide_ctx, pattern_shapes=pattern.get("shapes"))
-            if spec.image and spec.image.url and spec.kind == "image_text":
-                img_name = Path(spec.image.url).name
-                try:
-                    local_path = storage_path("user_images", img_name)
-                    if local_path.exists():
-                        left = int(slide_ctx.width * 0.55)
-                        top = int(slide_ctx.height * 0.25)
-                        img_w = int(slide_ctx.width * 0.38)
-                        img_h = int(slide_ctx.height * 0.55)
-                        slide.shapes.add_picture(str(local_path), left, top, img_w, img_h)
-                except Exception:
-                    pass
-            continue
+        if pattern is not None and pattern["slide_index"] < len(sources):
+            try:
+                slide = clone_slide(prs, sources[pattern["slide_index"]])
+                targets.append(fill_pattern(slide, pattern, spec))
+                _shapes(slide, spec.shapes, slide_ctx, pattern_shapes=pattern.get("shapes"))
+                if spec.image and spec.image.url and spec.kind == "image_text":
+                    img_name = Path(spec.image.url).name
+                    try:
+                        local_path = storage_path("user_images", img_name)
+                        if local_path.exists():
+                            left = int(slide_ctx.width * 0.55)
+                            top = int(slide_ctx.height * 0.25)
+                            img_w = int(slide_ctx.width * 0.38)
+                            img_h = int(slide_ctx.height * 0.55)
+                            slide.shapes.add_picture(str(local_path), left, top, img_w, img_h)
+                    except Exception:
+                        pass
+                continue
+            except Exception:
+                # В случае ошибки клонирования откатываемся на нативный макет
+                pass
         targets.append(_render(prs.slides.add_slide(layout), spec, slide_ctx))
     clear_slides(prs, len(sources))
 
@@ -195,17 +204,25 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     used: set[int] = set()
 
     targets: Targets = {}
+    elem_fonts = getattr(spec, "element_fonts", {}) or {}
+    elem_scales = getattr(spec, "element_scales", {}) or {}
+    title_font = elem_fonts.get("title") or spec.font_family
+    title_scale = elem_scales.get("title", 1.0)
     if title_ph is not None:
         title_ph.text_frame.text = spec.title
         # Длинный заголовок ужимается в рамку макета, а не наезжает на декор (как автоподбор в PowerPoint).
         title_ph.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
         used.add(title_ph.shape_id)
+        if title_font:
+            for p in title_ph.text_frame.paragraphs:
+                for r in p.runs:
+                    r.font.name = title_font
         if None not in (title_ph.left, title_ph.top, title_ph.width, title_ph.height):
             targets["title"] = _fraction((title_ph.left, title_ph.top, title_ph.width, title_ph.height), ctx)
     else:
         rect = (int(ctx.width * 0.06), int(ctx.height * 0.07), int(ctx.width * 0.88), int(ctx.height * 0.14))
         box = slide.shapes.add_textbox(*rect)
-        _write(box.text_frame, [spec.title], ctx, size=30, bold=True)
+        _write(box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=True, font_name=title_font)
         targets["title"] = _fraction(rect, ctx)
 
     area = _content_area(title_ph, ctx)
@@ -213,15 +230,21 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     if kind in CONTENT_TARGET:
         targets[CONTENT_TARGET[kind]] = _fraction(area, ctx)
 
+    sub_font = elem_fonts.get("subtitle") or spec.font_family
+    sub_scale = elem_scales.get("subtitle", 1.0)
     if kind in {"title", "section", "closing"}:
         if spec.subtitle:
             if bodies:
                 bodies[0].text_frame.text = spec.subtitle
                 used.add(bodies[0].shape_id)
+                if sub_font:
+                    for p in bodies[0].text_frame.paragraphs:
+                        for r in p.runs:
+                            r.font.name = sub_font
             else:
                 x, y, w, _ = area
                 box = slide.shapes.add_textbox(x, y, w, int(ctx.height * 0.12))
-                _write(box.text_frame, [spec.subtitle], ctx, size=20)
+                _write(box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, font_name=sub_font)
     elif kind in {"bullets", "agenda"}:
         items = spec.bullets
         if kind == "agenda":
@@ -279,6 +302,7 @@ def _run(
     italic=False,
     color: str | None = None,
     styled: bool = False,
+    font_name: str | None = None,
 ):
     """styled=True — цвет текста задаёт стиль объекта (таблицы), а не фон слайда."""
     run = paragraph.add_run()
@@ -286,16 +310,19 @@ def _run(
     run.font.size = ctx.pt(size)
     run.font.bold = bold
     run.font.italic = italic
+    fn = font_name or ctx.font_family
+    if fn:
+        run.font.name = fn
     if not styled:
         run.font.color.rgb = ctx.rgb(color or ctx.fg)
     return run
 
 
-def _write(text_frame, lines: list[str], ctx: _Ctx, *, size: float, bold=False, italic=False, color=None):
+def _write(text_frame, lines: list[str], ctx: _Ctx, *, size: float, bold=False, italic=False, color=None, font_name=None):
     text_frame.word_wrap = True
     for i, line in enumerate(lines):
         paragraph = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
-        _run(paragraph, line, ctx, size=size, bold=bold, italic=italic, color=color)
+        _run(paragraph, line, ctx, size=size, bold=bold, italic=italic, color=color, font_name=font_name)
 
 
 def _set_bullet(paragraph, ctx: _Ctx) -> None:
@@ -604,9 +631,9 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
         if text:
             tf = sp.text_frame
             tf.word_wrap = True
-            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
             p = tf.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER
+            shape_font = getattr(s, "font_family", None) if not isinstance(s, dict) else s.get("font_family")
             _run(
                 p,
                 text,
@@ -614,5 +641,6 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
                 size=14,
                 bold=True,
                 color="#FFFFFF" if text_on(fill_color, "#FFFFFF") == "#FFFFFF" else "#000000",
+                font_name=shape_font,
             )
 
