@@ -62,7 +62,18 @@ def _shapes_table(pattern: dict[str, Any]) -> str:
 
 
 def _parse_json(content: str) -> dict[str, Any]:
-    match = re.search(r"\{.*\}", content, re.DOTALL)
+    text = content.strip()
+    fence = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
+    if fence:
+        try:
+            return json.loads(fence.group(1))
+        except json.JSONDecodeError:
+            pass
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"\{[\s\S]*\}", text)
     if not match:
         raise ValueError("в ответе нет JSON")
     return json.loads(match.group(0))
@@ -96,7 +107,12 @@ def label_pattern(client: httpx.Client, pattern: dict[str, Any], image: bytes) -
         payload.pop("response_format")
         response = client.post("/chat/completions", json=payload)
     response.raise_for_status()
-    content = response.json()["choices"][0]["message"]["content"]
+    choices = response.json().get("choices") or []
+    if not choices or not choices[0].get("message"):
+        return None
+    content = choices[0]["message"].get("content") or ""
+    if not content.strip():
+        return None
     try:
         return PatternLabel.model_validate(_parse_json(content))
     except (ValueError, ValidationError) as exc:

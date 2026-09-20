@@ -2,9 +2,10 @@ import clsx from 'clsx'
 import { ImageIcon } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 
-import type { FrameRect, LayoutSkin, Severity, Slide, SlideRender, SlideTheme, Variant } from '../../api/types'
+import type { FrameRect, LayoutSkin, Severity, Slide, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
 import { fitFontSize } from '../../lib/fit'
 import { SlideChart } from './SlideChart'
+import { SlideShapesLayer } from './SlideShapesLayer'
 
 // Отрисовка слайда в оформлении шаблона. Если есть рендер собранного .pptx (render), показываем его —
 // превью совпадает с экспортом, а проблемы аудита подсвечиваются по рамкам элементов из сборки.
@@ -23,6 +24,15 @@ interface SlideViewProps {
   className?: string
   /** Рендер слайда из собранного .pptx (Variant.renders). */
   render?: SlideRender
+  /** Режим ручного визуального редактирования (Canva-style). */
+  editable?: boolean
+  selectedShapeId?: string | null
+  onElementSelect?: (elementId: string) => void
+  onFieldChange?: (path: string, newText: string) => void
+  onImageClick?: () => void
+  onSelectShape?: (shapeId: string | null) => void
+  onUpdateShape?: (shapeId: string, patch: Partial<SlideShape>) => void
+  onDeleteShape?: (shapeId: string) => void
 }
 
 /** Рендер слайда варианта, если превью актуально. */
@@ -59,8 +69,25 @@ function box(rect: FrameRect): CSSProperties {
   return { left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` }
 }
 
-export function SlideView({ slide, theme, number, highlights, activeTarget, className, render }: SlideViewProps) {
-  if (render) {
+export function SlideView({
+  slide,
+  theme,
+  number,
+  highlights,
+  activeTarget,
+  className,
+  render,
+  editable = false,
+  selectedShapeId,
+  onElementSelect,
+  onFieldChange,
+  onImageClick,
+  onSelectShape,
+  onUpdateShape,
+  onDeleteShape,
+}: SlideViewProps) {
+  // В обычном режиме показываем точный рендер экспортированного .pptx, если он готов
+  if (render && !editable) {
     return (
       <RenderedSlide
         slide={slide}
@@ -73,16 +100,30 @@ export function SlideView({ slide, theme, number, highlights, activeTarget, clas
       />
     )
   }
-  const skin = slide.layout_key ? theme.layouts?.[slide.layout_key] : undefined
+
+  // При инлайн-редактировании или отсутствии рендера берем skin макета.
+  // Если у слайда нет явного layout_key (например, при pattern_id), берем подходящий макет роли шаблона,
+  // чтобы слайд не терял графическое оформление и цвета!
+  const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
+  const skin =
+    (slide.layout_key && theme.layouts?.[slide.layout_key]) ||
+    (roleKey && theme.layouts?.[roleKey]) ||
+    undefined
+
   const surface = surfaceFor(slide, theme, skin)
+  const headingFont = slide.font_family ? `"${slide.font_family}", "${theme.heading_font}", var(--font-sans)` : `"${theme.heading_font}", var(--font-sans)`
+  const bodyFont = slide.font_family ? `"${slide.font_family}", "${theme.body_font}", var(--font-sans)` : `"${theme.body_font}", var(--font-sans)`
+  const scaleMultiplier = slide.font_size_scale || 1.0
+
   const style = {
     '--slide-bg': surface.background,
     '--slide-text': surface.text,
     '--slide-muted': skin?.muted ?? (isCover(slide) ? surface.text : theme.muted),
     '--slide-accent': theme.accent,
     '--slide-surface': skin?.surface ?? theme.surface,
-    '--slide-heading-font': `"${theme.heading_font}", var(--font-sans)`,
-    '--slide-body-font': `"${theme.body_font}", var(--font-sans)`,
+    '--slide-heading-font': headingFont,
+    '--slide-body-font': bodyFont,
+    '--slide-font-scale': String(scaleMultiplier),
     aspectRatio: String(theme.aspect),
   } as CSSProperties
 
@@ -95,17 +136,53 @@ export function SlideView({ slide, theme, number, highlights, activeTarget, clas
   const framed = skin?.frames?.title ? skin : undefined
   return (
     <div
-      className={clsx('slide', `slide--${slide.kind}`, skin?.image && 'slide--skinned', flag('slide'), className)}
+      className={clsx(
+        'slide',
+        `slide--${slide.kind}`,
+        skin?.image && 'slide--skinned',
+        editable && 'slide--editable',
+        flag('slide'),
+        className
+      )}
       style={style}
     >
       {skin?.image && <img className="slide__bg" src={skin.image} alt="" draggable={false} loading="lazy" />}
       {framed ? (
-        <FramedSlide slide={slide} skin={framed} theme={theme} flag={flag} />
+        <FramedSlide
+          slide={slide}
+          skin={framed}
+          theme={theme}
+          flag={flag}
+          editable={editable}
+          onElementSelect={onElementSelect}
+          onFieldChange={onFieldChange}
+          onImageClick={onImageClick}
+        />
       ) : (
         <div className="slide__inner">
-          <FlowSlide slide={slide} theme={theme} flag={flag} />
+          <FlowSlide
+            slide={slide}
+            theme={theme}
+            flag={flag}
+            editable={editable}
+            onElementSelect={onElementSelect}
+            onFieldChange={onFieldChange}
+            onImageClick={onImageClick}
+          />
         </div>
       )}
+
+      {/* Слой фигур и объектов окружения */}
+      <SlideShapesLayer
+        shapes={slide.shapes || []}
+        theme={theme}
+        editable={editable}
+        selectedShapeId={selectedShapeId}
+        onSelectShape={onSelectShape}
+        onUpdateShape={onUpdateShape}
+        onDeleteShape={onDeleteShape}
+      />
+
       {number !== undefined && <span className="slide__number">{number}</span>}
     </div>
   )
@@ -153,13 +230,38 @@ function RenderedSlide({
           style={box(rect)}
         />
       ))}
+      {slide.shapes && slide.shapes.length > 0 && (
+        <SlideShapesLayer
+          shapes={slide.shapes}
+          theme={{ accent: '#0077FF', accents: [] } as unknown as SlideTheme}
+          editable={false}
+        />
+      )}
       {number !== undefined && <span className="slide__number slide__number--render">{number}</span>}
     </div>
   )
 }
 
 /** Раскладка по областям макета шаблона. */
-function FramedSlide({ slide, skin, theme, flag }: { slide: Slide; skin: LayoutSkin; theme: SlideTheme; flag: Flag }) {
+function FramedSlide({
+  slide,
+  skin,
+  theme,
+  flag,
+  editable,
+  onElementSelect,
+  onFieldChange,
+  onImageClick,
+}: {
+  slide: Slide
+  skin: LayoutSkin
+  theme: SlideTheme
+  flag: Flag
+  editable?: boolean
+  onElementSelect?: (elementId: string) => void
+  onFieldChange?: (path: string, newText: string) => void
+  onImageClick?: () => void
+}) {
   const frames = skin.frames!
   const titleRect = frames.title!
   const cover = isCover(slide)
@@ -185,85 +287,204 @@ function FramedSlide({ slide, skin, theme, flag }: { slide: Slide; skin: LayoutS
           fontWeight: skin.title.bold === false ? 400 : 700,
         }}
       >
-        <Heading className={flag('title')}>{slide.title}</Heading>
+        <Heading
+          className={flag('title')}
+          contentEditable={editable}
+          suppressContentEditableWarning
+          onFocus={() => onElementSelect?.('title')}
+          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+        >
+          {slide.title}
+        </Heading>
       </div>
       {cover ? (
         slide.subtitle && (
           <div className="slide__frame" style={box(subtitleRect)}>
-            <p className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}>
+            <p
+              className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
+              contentEditable={editable}
+              suppressContentEditableWarning
+              onFocus={() => onElementSelect?.('subtitle')}
+              onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
+            >
               {slide.subtitle}
             </p>
           </div>
         )
       ) : (
         <div className="slide__frame slide__frame--body" style={box(frames.body ?? [0.06, 0.24, 0.88, 0.66])}>
-          <SlideContent slide={slide} theme={theme} flag={flag} />
+          <SlideContent
+            slide={slide}
+            theme={theme}
+            flag={flag}
+            editable={editable}
+            onElementSelect={onElementSelect}
+            onFieldChange={onFieldChange}
+            onImageClick={onImageClick}
+          />
         </div>
       )}
     </>
   )
 }
 
-/** Раскладка потоком — для шаблонов без рендеров и областей макетов. */
-function FlowSlide({ slide, theme, flag }: { slide: Slide; theme: SlideTheme; flag: Flag }) {
+/** Раскладка потоком — для шаблонов без явных областей макетов. */
+function FlowSlide({
+  slide,
+  theme,
+  flag,
+  editable,
+  onElementSelect,
+  onFieldChange,
+  onImageClick,
+}: {
+  slide: Slide
+  theme: SlideTheme
+  flag: Flag
+  editable?: boolean
+  onElementSelect?: (elementId: string) => void
+  onFieldChange?: (path: string, newText: string) => void
+  onImageClick?: () => void
+}) {
   if (slide.kind === 'title' || slide.kind === 'closing') {
     return (
       <div className="slide__cover">
-        <h1 className={clsx('slide__cover-title', flag('title'))}>{slide.title}</h1>
-        {slide.subtitle && <p className={clsx('slide__subtitle', flag('subtitle'))}>{slide.subtitle}</p>}
+        <h1
+          className={clsx('slide__cover-title', flag('title'))}
+          contentEditable={editable}
+          suppressContentEditableWarning
+          onFocus={() => onElementSelect?.('title')}
+          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+        >
+          {slide.title}
+        </h1>
+        {slide.subtitle && (
+          <p
+            className={clsx('slide__subtitle', flag('subtitle'))}
+            contentEditable={editable}
+            suppressContentEditableWarning
+            onFocus={() => onElementSelect?.('subtitle')}
+            onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
+          >
+            {slide.subtitle}
+          </p>
+        )}
       </div>
     )
   }
   if (slide.kind === 'section') {
     return (
       <div className="slide__cover">
-        {slide.subtitle && <p className="slide__section-number">{slide.subtitle}</p>}
-        <h1 className={clsx('slide__cover-title', flag('title'))}>{slide.title}</h1>
+        {slide.subtitle && (
+          <p
+            className="slide__section-number"
+            contentEditable={editable}
+            suppressContentEditableWarning
+            onFocus={() => onElementSelect?.('subtitle')}
+            onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
+          >
+            {slide.subtitle}
+          </p>
+        )}
+        <h1
+          className={clsx('slide__cover-title', flag('title'))}
+          contentEditable={editable}
+          suppressContentEditableWarning
+          onFocus={() => onElementSelect?.('title')}
+          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+        >
+          {slide.title}
+        </h1>
       </div>
     )
   }
   return (
     <>
-      {slide.kind !== 'quote' && <h2 className={clsx('slide__title', flag('title'))}>{slide.title}</h2>}
-      <SlideContent slide={slide} theme={theme} flag={flag} />
+      {slide.kind !== 'quote' && (
+        <h2
+          className={clsx('slide__title', flag('title'))}
+          contentEditable={editable}
+          suppressContentEditableWarning
+          onFocus={() => onElementSelect?.('title')}
+          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+        >
+          {slide.title}
+        </h2>
+      )}
+      <SlideContent
+        slide={slide}
+        theme={theme}
+        flag={flag}
+        editable={editable}
+        onElementSelect={onElementSelect}
+        onFieldChange={onFieldChange}
+        onImageClick={onImageClick}
+      />
     </>
   )
 }
 
-function Bullets({ items, prefix, flag }: { items: string[]; prefix: string; flag: Flag }) {
-  return (
-    <ul className={clsx('slide__bullets', flag(prefix))}>
-      {items.map((item, i) => (
-        <li key={i} className={flag(`${prefix}.${i}`)}>
-          {item}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-/** Содержимое слайда без заголовка. */
-function SlideContent({ slide, theme, flag }: { slide: Slide; theme: SlideTheme; flag: Flag }): ReactNode {
+/** Содержимое слайда без заголовка. Поддерживает все типы слайдов. */
+function SlideContent({
+  slide,
+  theme,
+  flag,
+  editable,
+  onElementSelect,
+  onFieldChange,
+  onImageClick,
+}: {
+  slide: Slide
+  theme: SlideTheme
+  flag: Flag
+  editable?: boolean
+  onElementSelect?: (elementId: string) => void
+  onFieldChange?: (path: string, newText: string) => void
+  onImageClick?: () => void
+}): ReactNode {
   switch (slide.kind) {
     case 'agenda':
       return (
         <ol className={clsx('slide__agenda', flag('bullets'))}>
           {slide.bullets.map((item, i) => (
-            <li key={i} className={flag(`bullets.${i}`)}>
+            <li
+              key={i}
+              className={flag(`bullets.${i}`)}
+              contentEditable={editable}
+              suppressContentEditableWarning
+              onFocus={() => onElementSelect?.(`bullets.${i}`)}
+              onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+            >
               <span>{String(i + 1).padStart(2, '0')}</span>
               {item}
             </li>
           ))}
         </ol>
       )
+
     case 'cards':
       return (
         <div className={clsx('slide__cards', flag('columns'))}>
           {slide.columns.map((card, ci) => (
             <div key={ci} className={clsx('slide__card', flag(`columns.${ci}`))}>
-              <h3 className={flag(`columns.${ci}.title`)}>{card.title}</h3>
+              <h3
+                className={flag(`columns.${ci}.title`)}
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
+                onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
+              >
+                {card.title}
+              </h3>
               {card.bullets.map((line, bi) => (
-                <p key={bi} className={flag(`columns.${ci}.bullets.${bi}`)}>
+                <p
+                  key={bi}
+                  className={flag(`columns.${ci}.bullets.${bi}`)}
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
+                  onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
+                >
                   {line}
                 </p>
               ))}
@@ -271,44 +492,104 @@ function SlideContent({ slide, theme, flag }: { slide: Slide; theme: SlideTheme;
           ))}
         </div>
       )
+
     case 'two_columns':
       return (
         <div className={clsx('slide__columns', flag('columns'))}>
           {slide.columns.map((column, ci) => (
-            <div key={ci}>
-              <h3 className={flag(`columns.${ci}.title`)}>{column.title}</h3>
-              <Bullets items={column.bullets} prefix={`columns.${ci}.bullets`} flag={flag} />
+            <div key={ci} className={flag(`columns.${ci}`)}>
+              <h3
+                className={flag(`columns.${ci}.title`)}
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
+                onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
+              >
+                {column.title}
+              </h3>
+              <ul className={clsx('slide__bullets', flag(`columns.${ci}.bullets`))}>
+                {column.bullets.map((item, bi) => (
+                  <li
+                    key={bi}
+                    className={flag(`columns.${ci}.bullets.${bi}`)}
+                    contentEditable={editable}
+                    suppressContentEditableWarning
+                    onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
+                    onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
             </div>
           ))}
         </div>
       )
+
     case 'chart':
       return (
-        <>
-          {slide.chart?.caption && <p className="slide__caption">{slide.chart.caption}</p>}
+        <div
+          className={clsx('slide__chart-box', editable && 'is-editable-chart')}
+          onClick={() => {
+            if (editable) onElementSelect?.('chart')
+          }}
+        >
+          {slide.chart?.caption && (
+            <p
+              className={clsx('slide__caption', flag('chart'))}
+              contentEditable={editable}
+              suppressContentEditableWarning
+              onFocus={() => onElementSelect?.('chart.caption')}
+              onBlur={(e) => onFieldChange?.('chart.caption', e.currentTarget.textContent || '')}
+            >
+              {slide.chart.caption}
+            </p>
+          )}
           {slide.chart && (
             <div className={clsx('slide__chart', flag('chart'))}>
               <SlideChart chart={slide.chart} colors={theme.accents} />
             </div>
           )}
-        </>
+          {editable && (
+            <div className="slide__chart-hint">
+              <span>Кликните для редактирования данных диаграммы</span>
+            </div>
+          )}
+        </div>
       )
+
     case 'table':
       return (
         slide.table && (
           <table className={clsx('slide__table', flag('table'))}>
             <thead>
               <tr>
-                {slide.table.columns.map((cell, i) => (
-                  <th key={i}>{cell}</th>
+                {slide.table.columns.map((cell, ci) => (
+                  <th
+                    key={ci}
+                    contentEditable={editable}
+                    suppressContentEditableWarning
+                    onFocus={() => onElementSelect?.(`table.columns.${ci}`)}
+                    onBlur={(e) => onFieldChange?.(`table.columns.${ci}`, e.currentTarget.textContent || '')}
+                  >
+                    {cell}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {slide.table.rows.map((row, r) => (
-                <tr key={r}>
-                  {row.map((cell, c) => (
-                    <td key={c}>{cell}</td>
+              {slide.table.rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((cell, ci) => (
+                    <td
+                      key={ci}
+                      contentEditable={editable}
+                      suppressContentEditableWarning
+                      onFocus={() => onElementSelect?.(`table.rows.${ri}.${ci}`)}
+                      onBlur={(e) => onFieldChange?.(`table.rows.${ri}.${ci}`, e.currentTarget.textContent || '')}
+                    >
+                      {cell}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -316,52 +597,147 @@ function SlideContent({ slide, theme, flag }: { slide: Slide; theme: SlideTheme;
           </table>
         )
       )
+
     case 'kpi':
       return (
         <div className="slide__kpis">
           {slide.kpis.map((kpi, i) => (
             <div key={i} className={clsx('slide__kpi', flag(`kpis.${i}`))}>
-              <strong>{kpi.value}</strong>
-              <span>{kpi.label}</span>
+              <strong
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`kpis.${i}.value`)}
+                onBlur={(e) => onFieldChange?.(`kpis.${i}.value`, e.currentTarget.textContent || '')}
+              >
+                {kpi.value}
+              </strong>
+              <span
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`kpis.${i}.label`)}
+                onBlur={(e) => onFieldChange?.(`kpis.${i}.label`, e.currentTarget.textContent || '')}
+              >
+                {kpi.label}
+              </span>
             </div>
           ))}
         </div>
       )
+
     case 'timeline':
       return (
         <div className="slide__timeline">
           {slide.timeline.map((item, i) => (
             <div key={i} className={flag(`timeline.${i}`)}>
-              <b>{item.date}</b>
-              <strong>{item.title}</strong>
-              {item.text && <p>{item.text}</p>}
+              <b
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`timeline.${i}.date`)}
+                onBlur={(e) => onFieldChange?.(`timeline.${i}.date`, e.currentTarget.textContent || '')}
+              >
+                {item.date}
+              </b>
+              <strong
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`timeline.${i}.title`)}
+                onBlur={(e) => onFieldChange?.(`timeline.${i}.title`, e.currentTarget.textContent || '')}
+              >
+                {item.title}
+              </strong>
+              <p
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`timeline.${i}.text`)}
+                onBlur={(e) => onFieldChange?.(`timeline.${i}.text`, e.currentTarget.textContent || '')}
+              >
+                {item.text || ''}
+              </p>
             </div>
           ))}
         </div>
       )
+
     case 'quote':
       return (
         <blockquote className={clsx('slide__quote', flag('quote'))}>
-          «{slide.quote?.text}»{slide.quote?.author && <footer>— {slide.quote.author}</footer>}
+          «
+          <span
+            contentEditable={editable}
+            suppressContentEditableWarning
+            onFocus={() => onElementSelect?.('quote.text')}
+            onBlur={(e) => onFieldChange?.('quote.text', e.currentTarget.textContent || '')}
+          >
+            {slide.quote?.text || ''}
+          </span>
+          »
+          <footer
+            contentEditable={editable}
+            suppressContentEditableWarning
+            onFocus={() => onElementSelect?.('quote.author')}
+            onBlur={(e) => onFieldChange?.('quote.author', e.currentTarget.textContent || '')}
+          >
+            {slide.quote?.author ? `— ${slide.quote.author}` : '— Автор'}
+          </footer>
         </blockquote>
       )
+
     case 'image_text':
       return (
         <div className="slide__image-text">
-          <Bullets items={slide.bullets} prefix="bullets" flag={flag} />
-          <div className={clsx('slide__image', flag('image'))}>
+          <ul className={clsx('slide__bullets', flag('bullets'))}>
+            {slide.bullets.map((item, i) => (
+              <li
+                key={i}
+                className={flag(`bullets.${i}`)}
+                contentEditable={editable}
+                suppressContentEditableWarning
+                onFocus={() => onElementSelect?.(`bullets.${i}`)}
+                onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+              >
+                {item}
+              </li>
+            ))}
+          </ul>
+          <div
+            className={clsx('slide__image', flag('image'))}
+            onClick={() => {
+              if (editable) {
+                onElementSelect?.('image')
+                onImageClick?.()
+              }
+            }}
+          >
             {slide.image?.url ? (
               <img src={slide.image.url} alt="" />
             ) : (
               <>
                 <ImageIcon />
-                <span>{slide.image?.prompt ?? 'Иллюстрация'}</span>
+                <span>{slide.image?.prompt || 'Область изображения'}</span>
+                {editable && <span style={{ fontSize: 11, opacity: 0.8 }}>(кликните для загрузки)</span>}
               </>
             )}
           </div>
         </div>
       )
+
+    case 'bullets':
     default:
-      return <Bullets items={slide.bullets} prefix="bullets" flag={flag} />
+      return (
+        <ul className={clsx('slide__bullets', flag('bullets'))}>
+          {slide.bullets.map((item, i) => (
+            <li
+              key={i}
+              className={flag(`bullets.${i}`)}
+              contentEditable={editable}
+              suppressContentEditableWarning
+              onFocus={() => onElementSelect?.(`bullets.${i}`)}
+              onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+            >
+              {item}
+            </li>
+          ))}
+        </ul>
+      )
   }
 }

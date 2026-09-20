@@ -35,8 +35,10 @@ BODY_TYPES = {PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT, PP_PLACEHOLDER.SUBTITL
 REFERENCE_WIDTH = 12192000  # 13,333" — ширина, под которую подобраны кегли
 CHART_TYPES = {
     "bar": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "horizontal_bar": XL_CHART_TYPE.BAR_CLUSTERED,
     "line": XL_CHART_TYPE.LINE_MARKERS,
     "pie": XL_CHART_TYPE.PIE,
+    "donut": XL_CHART_TYPE.DOUGHNUT,
 }
 
 
@@ -113,11 +115,6 @@ def build_deck(
 
     targets: list[Targets] = []
     for spec in slides:
-        pattern = by_id.get(spec.pattern_id or "")
-        if pattern is not None and pattern["slide_index"] < len(sources) and fits(spec, pattern):
-            slide = clone_slide(prs, sources[pattern["slide_index"]])
-            targets.append(fill_pattern(slide, pattern, spec))
-            continue
         key = spec.layout_key if spec.layout_key in layouts else fallback_key
         layout = layouts[key]
         background = layout_background(layout, theme_colors) or theme["background"]
@@ -125,6 +122,12 @@ def build_deck(
         slide_ctx = replace(
             ctx, fg=fg, muted=mix(fg, background, 0.45), surface=mix(theme["accent"], background, 0.88)
         )
+        pattern = by_id.get(spec.pattern_id or "")
+        if pattern is not None and pattern["slide_index"] < len(sources) and fits(spec, pattern):
+            slide = clone_slide(prs, sources[pattern["slide_index"]])
+            targets.append(fill_pattern(slide, pattern, spec))
+            _shapes(slide, spec.shapes, slide_ctx)
+            continue
         targets.append(_render(prs.slides.add_slide(layout), spec, slide_ctx))
     clear_slides(prs, len(sources))
 
@@ -235,6 +238,9 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
 
     if spec.notes:
         slide.notes_slide.notes_text_frame.text = spec.notes
+
+    if spec.shapes:
+        _shapes(slide, spec.shapes, ctx)
 
     # Пустые плейсхолдеры макета показывают подсказки «Введите текст» — убираем их.
     for placeholder in list(slide.placeholders):
@@ -388,16 +394,19 @@ def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
     chart.has_title = False  # подпись диаграммы — отдельным текстом над ней
     chart.font.size = ctx.pt(14)
     chart.font.color.rgb = ctx.rgb(ctx.fg)
-    chart.has_legend = len(chart_spec.series) > 1 or chart_spec.type == "pie"
+    if chart_spec.show_legend is not None:
+        chart.has_legend = chart_spec.show_legend
+    else:
+        chart.has_legend = len(chart_spec.series) > 1 or chart_spec.type in ("pie", "donut")
     if chart.has_legend:
         chart.legend.position = XL_LEGEND_POSITION.BOTTOM
         chart.legend.include_in_layout = False
 
     plot = chart.plots[0]
-    plot.has_data_labels = True
+    plot.has_data_labels = chart_spec.show_values if chart_spec.show_values is not None else True
     plot.data_labels.font.size = ctx.pt(12)
-    accents = ctx.theme["accents"]
-    if chart_spec.type == "pie":
+    accents = chart_spec.colors if chart_spec.colors else ctx.theme["accents"]
+    if chart_spec.type in ("pie", "donut"):
         for i, point in enumerate(plot.series[0].points):
             point.format.fill.solid()
             point.format.fill.fore_color.rgb = ctx.rgb(accents[i % len(accents)])
@@ -482,3 +491,64 @@ def _timeline(slide, spec: Slide, area, ctx: _Ctx) -> None:
         _run(frame.add_paragraph(), item.title, ctx, size=18, bold=True)
         if item.text:
             _run(frame.add_paragraph(), item.text, ctx, size=14, color=ctx.muted)
+
+
+def _shapes(slide, shapes: list, ctx: _Ctx) -> None:
+    if not shapes:
+        return
+    for s in shapes:
+        kind = getattr(s, "kind", "circle") if not isinstance(s, dict) else s.get("kind", "circle")
+        x = getattr(s, "x", 0.5) if not isinstance(s, dict) else s.get("x", 0.5)
+        y = getattr(s, "y", 0.5) if not isinstance(s, dict) else s.get("y", 0.5)
+        w = getattr(s, "width", 0.15) if not isinstance(s, dict) else s.get("width", 0.15)
+        h = getattr(s, "height", 0.15) if not isinstance(s, dict) else s.get("height", 0.15)
+        color = getattr(s, "color", None) if not isinstance(s, dict) else s.get("color")
+        text = getattr(s, "text", None) if not isinstance(s, dict) else s.get("text")
+        border = getattr(s, "border", False) if not isinstance(s, dict) else s.get("border", False)
+
+        left = int(x * ctx.width)
+        top = int(y * ctx.height)
+        width = int(w * ctx.width)
+        height = int(h * ctx.height)
+
+        fill_color = color or ctx.theme.get("accent", "#0077FF")
+
+        if kind == "circle":
+            sp = slide.shapes.add_shape(MSO_SHAPE.OVAL, left, top, width, height)
+        elif kind == "line":
+            sp = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, left, top, left + width, top)
+            sp.line.color.rgb = ctx.rgb(fill_color)
+            sp.line.width = Pt(3)
+            continue
+        elif kind in ("badge", "pill", "rect"):
+            sp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+            if kind in ("badge", "pill"):
+                sp.adjustments[0] = 0.5
+            else:
+                sp.adjustments[0] = 0.08
+        else:
+            sp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+
+        sp.fill.solid()
+        sp.fill.fore_color.rgb = ctx.rgb(fill_color)
+        if border:
+            sp.line.color.rgb = ctx.rgb(ctx.fg)
+            sp.line.width = Pt(1.5)
+        else:
+            sp.line.fill.background()
+
+        if text:
+            tf = sp.text_frame
+            tf.word_wrap = True
+            tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            p = tf.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            _run(
+                p,
+                text,
+                ctx,
+                size=14,
+                bold=True,
+                color="#FFFFFF" if text_on(fill_color, "#FFFFFF") == "#FFFFFF" else "#000000",
+            )
+

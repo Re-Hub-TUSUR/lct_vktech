@@ -2,14 +2,16 @@ import asyncio
 import random
 import re
 import uuid
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
 from app.api.deps import Arq, CurrentUser, DbSession, get_variant_for_user
 from app.api.serializers import variant_out
+from app.core.storage import save_upload, storage_path
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
 from app.pipeline.layout.composer import compose_single_variant
@@ -17,6 +19,7 @@ from app.pipeline.planning.outline import build_outline, group_labels
 from app.schemas.audit import AuditReport, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
 from app.schemas.presentation import GenerationSettings
+from app.schemas.slide import ImageSpec, RegenerateSlideRequest, SlideUpdate
 from app.schemas.template import SlideTheme
 from app.services.audit import audit_report, build_audit_context, issue_counts, load_slides, refresh_audit, resolve_issues
 from app.services.export import ExportUnavailable, export_deck
@@ -155,3 +158,136 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     await schedule_render(db, arq, variant, template)
     await db.commit()
     return await _variant_payload(db, variant, presentation)
+
+
+@router.patch("/{variant_id}/slides/{slide_id}", response_model=ResolveResponse)
+async def update_slide(
+    variant_id: uuid.UUID,
+    slide_id: str,
+    payload: SlideUpdate,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Ручное редактирование слайда (заголовок, тезисы, шрифты, размеры, картинка, макет)."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    template = presentation.template
+    slides = load_slides(variant)
+    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
+    if target_idx is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
+
+    slide = slides[target_idx]
+    updates = payload.model_dump(exclude_unset=True)
+    for field, val in updates.items():
+        if val is not None or field in (
+            "subtitle", "summary", "notes", "font_family", "font_size_scale",
+            "block_density", "quote", "chart", "table", "timeline", "shapes"
+        ):
+            setattr(slide, field, val)
+
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    # При ручном редактировании НЕ запускаем повторный аудит: пользователь сам решает,
+    # какой текст и стиль ему нужен, и система не должна критиковать его правки.
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+
+    return ResolveResponse(
+        applied=len(updates),
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+
+
+@router.post("/{variant_id}/slides/{slide_id}/upload-image")
+async def upload_slide_image(
+    variant_id: uuid.UUID,
+    slide_id: str,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+    file: UploadFile = File(...),
+) -> ResolveResponse:
+    """Загрузка пользовательского изображения для слайда (импорт картинки)."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    template = presentation.template
+    slides = load_slides(variant)
+    target = next((s for s in slides if s.id == slide_id), None)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
+
+    filename = file.filename or "image.png"
+    ext = Path(filename).suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Поддерживаются изображения PNG, JPG, WEBP, SVG")
+
+    file_id = uuid.uuid4().hex[:12]
+    image_rel_path = f"{variant.id}_{slide_id}_{file_id}{ext}"
+    dest = storage_path("user_images", image_rel_path)
+    await save_upload(file, dest)
+
+    image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
+    target.image = ImageSpec(prompt="Пользовательское изображение", url=image_url, status="generated")
+
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+
+    return ResolveResponse(
+        applied=1,
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+
+
+@router.get("/{variant_id}/images/{filename}")
+async def get_uploaded_image(variant_id: uuid.UUID, filename: str, user: CurrentUser, db: DbSession) -> FileResponse:
+    """Раздача загруженного пользователем изображения для слайда."""
+    await get_variant_for_user(db, variant_id, user)
+    # Защита пути
+    safe_name = Path(filename).name
+    path = storage_path("user_images", safe_name)
+    if not path.exists():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Изображение не найдено")
+    media = "image/svg+xml" if path.suffix == ".svg" else f"image/{path.suffix.lstrip('.')}"
+    return FileResponse(path, media_type=media)
+
+
+@router.post("/{variant_id}/slides/{slide_id}/regenerate", response_model=ResolveResponse)
+async def regenerate_slide(
+    variant_id: uuid.UUID,
+    slide_id: str,
+    payload: RegenerateSlideRequest,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Точечная перегенерация отдельного слайда (ручка-стаб для последующей привязки ML)."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user)
+    template = presentation.template
+    slides = load_slides(variant)
+    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
+    if target_idx is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
+
+    slide = slides[target_idx]
+    # Стаб-логика: если передан запрос или стиль, освежаем текст/порядок или плейсхолдеры
+    instruction = (payload.instruction or "").strip()
+    if instruction:
+        slide.notes = f"Инструкция перегенерации: {instruction}"
+    if slide.bullets:
+        # Слегка варьируем или сокращаем формулировки, имитируя работу модели
+        slide.bullets = [f"{b.rstrip('.')}." for b in slide.bullets]
+
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    ctx = await build_audit_context(db, presentation, template)
+    await refresh_audit(db, variant, ctx)
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+
+    return ResolveResponse(
+        applied=1,
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+

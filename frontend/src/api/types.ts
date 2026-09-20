@@ -31,12 +31,54 @@ export type SlideKind =
   | 'image_text'
   | 'closing'
 
+export interface ChartSeries {
+  name: string
+  values: number[]
+}
+
+export interface SlideShape {
+  id: string
+  kind: 'circle' | 'rect' | 'badge' | 'pill' | 'line'
+  x: number // fraction 0..1
+  y: number // fraction 0..1
+  width: number // fraction 0..1
+  height: number // fraction 0..1
+  color?: string | null
+  opacity?: number | null
+  text?: string | null
+  border?: boolean | null
+}
+
 export interface ChartData {
-  type: 'bar' | 'line' | 'pie'
+  type: 'bar' | 'horizontal_bar' | 'line' | 'pie' | 'donut'
   caption: string | null
   unit: string | null
   categories: string[]
-  series: { name: string; values: number[] }[]
+  series: ChartSeries[]
+  colors?: string[] | null
+  show_values?: boolean | null
+  show_legend?: boolean | null
+}
+
+export interface Column {
+  title: string
+  bullets: string[]
+}
+
+export interface Kpi {
+  value: string
+  label: string
+}
+
+export interface TimelineItem {
+  date: string
+  title: string
+  text: string | null
+}
+
+export interface TableData {
+  columns: string[]
+  rows: string[][]
 }
 
 export interface Slide {
@@ -48,18 +90,47 @@ export interface Slide {
   subtitle: string | null
   summary: string | null
   bullets: string[]
-  columns: { title: string; bullets: string[] }[]
+  columns: Column[]
   chart: ChartData | null
-  table: { columns: string[]; rows: string[][] } | null
-  kpis: { value: string; label: string }[]
-  timeline: { date: string; title: string; text: string | null }[]
+  table: TableData | null
+  kpis: Kpi[]
+  timeline: TimelineItem[]
   quote: { text: string; author: string | null } | null
   image: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
+  shapes?: SlideShape[]
   notes: string | null
   layout_key: string | null
   layout_name: string | null
   /** Паттерн шаблона (слайд-пример, из которого собран слайд); null — вёрстка на макете. */
   pattern_id: string | null
+  font_family?: string | null
+  font_size_scale?: number | null
+  block_density?: 'compact' | 'normal' | 'spacious' | null
+}
+
+export interface SlideUpdate {
+  title?: string | null
+  subtitle?: string | null
+  summary?: string | null
+  bullets?: string[] | null
+  columns?: Column[] | null
+  kpis?: Kpi[] | null
+  timeline?: TimelineItem[] | null
+  quote?: { text: string; author: string | null } | null
+  table?: TableData | null
+  chart?: ChartData | null
+  shapes?: SlideShape[] | null
+  notes?: string | null
+  font_family?: string | null
+  font_size_scale?: number | null
+  block_density?: 'compact' | 'normal' | 'spacious' | null
+  image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
+  layout_key?: string | null
+}
+
+export interface RegenerateSlideRequest {
+  instruction?: string | null
+  style?: string | null
 }
 
 export interface SurfaceColors {

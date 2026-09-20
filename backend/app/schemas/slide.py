@@ -46,12 +46,28 @@ class ChartSeries(BaseModel):
     values: list[float] = Field(default_factory=list)
 
 
+class SlideShape(BaseModel):
+    id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    kind: Literal["circle", "rect", "badge", "pill", "line"] = "circle"
+    x: float = 0.5  # fraction 0..1
+    y: float = 0.5  # fraction 0..1
+    width: float = 0.15  # fraction
+    height: float = 0.15  # fraction
+    color: str | None = None
+    opacity: float | None = 1.0
+    text: str | None = None
+    border: bool | None = False
+
+
 class ChartData(BaseModel):
-    type: Literal["bar", "line", "pie"] = "bar"
+    type: Literal["bar", "horizontal_bar", "line", "pie", "donut"] = "bar"
     caption: str | None = None
     unit: str | None = None
     categories: list[str] = Field(default_factory=list)
     series: list[ChartSeries] = Field(default_factory=list)
+    colors: list[str] | None = None
+    show_values: bool | None = True
+    show_legend: bool | None = True
 
 
 class TableData(BaseModel):
@@ -100,8 +116,40 @@ class Slide(BaseModel):
     timeline: list[TimelineItem] = Field(default_factory=list)
     quote: Quote | None = None
     image: ImageSpec | None = None
+    shapes: list[SlideShape] = Field(default_factory=list)
     notes: str | None = None
     layout_key: str | None = None
     layout_name: str | None = None
     # Паттерн шаблона (id слайда-примера, см. parsing/patterns.py); None — вёрстка на макете.
     pattern_id: str | None = None
+
+    # Пользовательские переопределения стилей и размеров (Canva Lite)
+    font_family: str | None = None
+    font_size_scale: float | None = None  # 0.8, 1.0, 1.25 и т.д.
+    block_density: Literal["compact", "normal", "spacious"] | None = None
+
+
+class SlideUpdate(BaseModel):
+    title: str | None = None
+    subtitle: str | None = None
+    summary: str | None = None
+    bullets: list[str] | None = None
+    columns: list[Column] | None = None
+    kpis: list[Kpi] | None = None
+    timeline: list[TimelineItem] | None = None
+    quote: Quote | None = None
+    table: TableData | None = None
+    chart: ChartData | None = None
+    shapes: list[SlideShape] | None = None
+    notes: str | None = None
+    font_family: str | None = None
+    font_size_scale: float | None = None
+    block_density: Literal["compact", "normal", "spacious"] | None = None
+    image: ImageSpec | None = None
+    layout_key: str | None = None
+
+
+class RegenerateSlideRequest(BaseModel):
+    instruction: str | None = None
+    style: str | None = None
+

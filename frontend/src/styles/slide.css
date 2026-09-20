@@ -92,7 +92,7 @@
 
 .slide__title {
   font-family: var(--slide-heading-font);
-  font-size: 3.2cqw;
+  font-size: calc(3.2cqw * var(--slide-font-scale, 1));
   font-weight: 700;
   line-height: 1.15;
   margin: 0;
@@ -109,13 +109,13 @@
 }
 .slide__cover-title {
   font-family: var(--slide-heading-font);
-  font-size: 5.2cqw;
+  font-size: calc(5.2cqw * var(--slide-font-scale, 1));
   font-weight: 700;
   line-height: 1.1;
   margin: 0;
 }
 .slide__subtitle {
-  font-size: 2.2cqw;
+  font-size: calc(2.2cqw * var(--slide-font-scale, 1));
   opacity: 0.85;
   margin: 0;
 }
@@ -144,7 +144,7 @@
 .slide__bullets {
   margin: 0;
   padding-left: 2.4cqw;
-  font-size: 1.9cqw;
+  font-size: calc(1.9cqw * var(--slide-font-scale, 1));
   display: flex;
   flex-direction: column;
   gap: 1cqw;
@@ -403,3 +403,95 @@
   outline-width: 0.55cqw;
   box-shadow: 0 0 0 1.2cqw color-mix(in srgb, var(--flag-color) 25%, transparent);
 }
+
+/* Режим инлайн-редактирования на холсте (Canva-style) */
+.slide--editable {
+  user-select: text;
+}
+.slide--editable [contenteditable="true"] {
+  outline: 1px dashed transparent;
+  outline-offset: 2px;
+  border-radius: 4px;
+  cursor: text;
+  transition: outline-color 0.15s, background-color 0.15s;
+}
+.slide--editable [contenteditable="true"]:hover {
+  outline-color: var(--color-primary, #0077ff);
+  background-color: rgba(0, 119, 255, 0.05);
+}
+.slide--editable [contenteditable="true"]:focus {
+  outline: 2px solid var(--color-primary, #0077ff);
+  background-color: rgba(0, 119, 255, 0.08);
+}
+.slide--editable .slide__image {
+  cursor: pointer;
+  transition: outline 0.15s;
+}
+.slide--editable .slide__image:hover {
+  outline: 2px dashed var(--color-primary, #0077ff);
+}
+
+/* Объекты окружения и фигуры на слайде */
+.slide-shapes-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+.slide-shapes-layer.is-editable {
+  pointer-events: auto;
+}
+.slide-shape-item {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  transition: box-shadow 0.15s ease;
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+.slide-shapes-layer.is-editable .slide-shape-item {
+  cursor: grab;
+}
+.slide-shapes-layer.is-editable .slide-shape-item:active {
+  cursor: grabbing;
+}
+.slide-shape-item.is-selected {
+  outline: 2px dashed #0077ff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(0, 119, 255, 0.25);
+}
+.slide-shape-text {
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 1.6cqw;
+  text-align: center;
+  padding: 0 0.5cqw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  outline: none;
+}
+.slide-shape-delete-btn {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ef4444;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  z-index: 20;
+}
+.slide-shape-delete-btn:hover {
+  background: #dc2626;
+  transform: scale(1.1);
+}
+

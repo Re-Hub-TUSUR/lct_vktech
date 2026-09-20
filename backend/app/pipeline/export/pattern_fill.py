@@ -319,7 +319,11 @@ def fill_table(frame, table: TableData) -> None:
     rows_data = [list(table.columns)] + [list(row) for row in table.rows]
     n_cols = max((len(row) for row in rows_data), default=1) or 1
     grid = tbl.find(qn("a:tblGrid"))
+    if grid is None:
+        return
     columns = grid.findall(qn("a:gridCol"))
+    if not columns:
+        return
     total_width = sum(int(column.get("w", "0")) for column in columns)
     for column in columns[n_cols:]:
         grid.remove(column)
@@ -329,6 +333,8 @@ def fill_table(frame, table: TableData) -> None:
         column.set("w", str(total_width // n_cols))
 
     templates = tbl.findall(qn("a:tr"))
+    if not templates:
+        return
     frame_height = sum(int(row.get("h", "0")) for row in templates)
     row_height = max(frame_height // max(len(rows_data), 1), 1)
     # Шапка — первая строка шаблона, данные — одна «типовая» строка из середины: крайние строки
@@ -342,6 +348,8 @@ def fill_table(frame, table: TableData) -> None:
         row = copy.deepcopy(template)
         row.set("h", str(min(int(template.get("h", "0")) or row_height, row_height)))
         cells = row.findall(qn("a:tc"))
+        if not cells:
+            continue
         for cell in cells[n_cols:]:
             row.remove(cell)
         while len(row.findall(qn("a:tc"))) < n_cols:

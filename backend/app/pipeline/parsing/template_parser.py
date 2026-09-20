@@ -246,7 +246,7 @@ def _rect(placeholder: dict[str, Any]) -> tuple[int, int, int, int] | None:
 def _frames(placeholders: list[dict[str, Any]], width: int, height: int) -> dict[str, list[float] | None]:
     """Области макета в долях слайда: заголовок, подзаголовок (первое тело) и контент под заголовком."""
     title = next((r for p in placeholders if p["type"] in TITLE_TYPES and (r := _rect(p))), None)
-    bodies = sorted((p for p in placeholders if p["type"] in BODY_TYPES and _rect(p)), key=lambda p: p["idx"])
+    bodies = sorted((p for p in placeholders if p["type"] in BODY_TYPES and _rect(p)), key=lambda p: p.get("idx") or 0)
     return {
         "title": to_fractions(title, width, height),
         "subtitle": to_fractions(_rect(bodies[0]), width, height) if bodies else None,

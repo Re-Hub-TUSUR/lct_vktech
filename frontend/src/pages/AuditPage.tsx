@@ -1,13 +1,25 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { ArrowRight, Ban, CircleAlert, Info, RefreshCw, TriangleAlert, WandSparkles } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowRight, Ban, CircleAlert, Edit3, Info, RefreshCw, TriangleAlert, WandSparkles } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, useAudit, usePresentation, useVariant } from '../api/queries'
-import type { AuditCheck, AuditIssue, AuditReport, CheckKind, ResolveResponse, Severity, VariantDetail } from '../api/types'
+import type {
+  AuditCheck,
+  AuditIssue,
+  AuditReport,
+  CheckKind,
+  ResolveResponse,
+  Severity,
+  Slide,
+  SlideShape,
+  SlideUpdate,
+  VariantDetail,
+} from '../api/types'
 import { PresentationHeader } from '../components/PresentationHeader'
+import { SlideEditToolbar } from '../components/SlideEditToolbar'
 import { SlideView, slideRender, type Highlights } from '../components/slides/SlideView'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner, Segmented } from '../components/ui'
@@ -81,6 +93,83 @@ export function AuditPage() {
   )
 }
 
+function applyFieldChange(slide: Slide, path: string, value: string): Slide {
+  if (path === 'title') return { ...slide, title: value }
+  if (path === 'subtitle') return { ...slide, subtitle: value || null }
+  if (path.startsWith('bullets.')) {
+    const idx = parseInt(path.split('.')[1], 10)
+    const next = [...(slide.bullets || [])]
+    next[idx] = value
+    return { ...slide, bullets: next }
+  }
+  if (path.startsWith('columns.')) {
+    const parts = path.split('.')
+    const ci = parseInt(parts[1], 10)
+    const nextCols = [...(slide.columns || [])]
+    if (!nextCols[ci]) return slide
+    if (parts[2] === 'title') {
+      nextCols[ci] = { ...nextCols[ci], title: value }
+    } else if (parts[2] === 'bullets') {
+      const bi = parseInt(parts[3], 10)
+      const nextBullets = [...(nextCols[ci].bullets || [])]
+      nextBullets[bi] = value
+      nextCols[ci] = { ...nextCols[ci], bullets: nextBullets }
+    }
+    return { ...slide, columns: nextCols }
+  }
+  if (path.startsWith('kpis.')) {
+    const parts = path.split('.')
+    const idx = parseInt(parts[1], 10)
+    const nextKpis = [...(slide.kpis || [])]
+    if (!nextKpis[idx]) return slide
+    if (parts[2] === 'value') nextKpis[idx] = { ...nextKpis[idx], value }
+    else if (parts[2] === 'label') nextKpis[idx] = { ...nextKpis[idx], label: value }
+    return { ...slide, kpis: nextKpis }
+  }
+  if (path.startsWith('timeline.')) {
+    const parts = path.split('.')
+    const idx = parseInt(parts[1], 10)
+    const nextTimeline = [...(slide.timeline || [])]
+    if (!nextTimeline[idx]) return slide
+    if (parts[2] === 'date') nextTimeline[idx] = { ...nextTimeline[idx], date: value }
+    else if (parts[2] === 'title') nextTimeline[idx] = { ...nextTimeline[idx], title: value }
+    else if (parts[2] === 'text') nextTimeline[idx] = { ...nextTimeline[idx], text: value || null }
+    return { ...slide, timeline: nextTimeline }
+  }
+  if (path.startsWith('quote.')) {
+    const parts = path.split('.')
+    const curQuote = slide.quote || { text: '', author: null }
+    if (parts[1] === 'text') return { ...slide, quote: { ...curQuote, text: value } }
+    if (parts[1] === 'author') return { ...slide, quote: { ...curQuote, author: value || null } }
+  }
+  if (path.startsWith('table.columns.')) {
+    if (!slide.table) return slide
+    const ci = parseInt(path.split('.')[2], 10)
+    const nextCols = [...slide.table.columns]
+    nextCols[ci] = value
+    return { ...slide, table: { ...slide.table, columns: nextCols } }
+  }
+  if (path.startsWith('table.rows.')) {
+    if (!slide.table) return slide
+    const parts = path.split('.')
+    const ri = parseInt(parts[2], 10)
+    const ci = parseInt(parts[3], 10)
+    const nextRows = slide.table.rows.map((row, r) =>
+      r === ri ? row.map((cell, c) => (c === ci ? value : cell)) : row
+    )
+    return { ...slide, table: { ...slide.table, rows: nextRows } }
+  }
+  if (path === 'chart.caption') {
+    if (!slide.chart) return slide
+    return { ...slide, chart: { ...slide.chart, caption: value || null } }
+  }
+  if (path === 'chart.unit') {
+    if (!slide.chart) return slide
+    return { ...slide, chart: { ...slide.chart, unit: value || null } }
+  }
+  return slide
+}
+
 function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: AuditReport }) {
   const queryClient = useQueryClient()
   const notify = useToast()
@@ -94,6 +183,39 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
 
   const slides = variant.slides
   const currentSlide = slides[Math.min(slideIndex, slides.length - 1)]
+
+  // Режим инлайн-редактирования: правки хранятся по id слайда синхронно
+  const [isEditing, setIsEditing] = useState(false)
+  const [activeElement, setActiveElement] = useState<string | null>(null)
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
+  const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Вычисляем активный слайд синхронно: правки накладываются на текущий слайд!
+  // Это исключает рассинхронизацию или показ чужого слайда при переключении.
+  const activeSlide = useMemo<Slide>(() => {
+    if (!currentSlide) return currentSlide
+    const edits = slideEdits[currentSlide.id]
+    if (!edits) return currentSlide
+    return {
+      ...currentSlide,
+      title: edits.title !== undefined && edits.title !== null ? edits.title : currentSlide.title,
+      subtitle: edits.subtitle !== undefined ? edits.subtitle : currentSlide.subtitle,
+      bullets: edits.bullets ?? currentSlide.bullets,
+      columns: edits.columns ?? currentSlide.columns,
+      kpis: edits.kpis ?? currentSlide.kpis,
+      timeline: edits.timeline ?? currentSlide.timeline,
+      quote: edits.quote !== undefined ? edits.quote : currentSlide.quote,
+      table: edits.table !== undefined ? edits.table : currentSlide.table,
+      chart: edits.chart !== undefined ? edits.chart : currentSlide.chart,
+      shapes: edits.shapes ?? currentSlide.shapes ?? [],
+      font_family: edits.font_family !== undefined ? edits.font_family : currentSlide.font_family,
+      font_size_scale: edits.font_size_scale !== undefined ? edits.font_size_scale : currentSlide.font_size_scale,
+      block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
+    }
+  }, [currentSlide, slideEdits])
+
+  const hasChanges = !!(currentSlide && slideEdits[currentSlide.id])
   const openIssues = report.issues.filter((issue) => issue.status === 'open')
   const resolvedIssues = report.issues.filter((issue) => issue.status !== 'open')
 
@@ -153,6 +275,130 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
     onError: (error) => notify(error.message, 'error'),
   })
 
+  const updateSlideMutation = useMutation({
+    mutationFn: (updates: SlideUpdate) =>
+      api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}`, updates),
+    onSuccess: (result) => {
+      applyResult(result)
+      notify('Слайд сохранён')
+      setIsEditing(false)
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+
+  const uploadImageMutation = useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/upload-image`, formData)
+    },
+    onSuccess: (result) => {
+      applyResult(result)
+      notify('Изображение успешно загружено на слайд')
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+
+  const regenerateSlideMutation = useMutation({
+    mutationFn: (instruction: string) =>
+      api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, { instruction }),
+    onSuccess: (result) => {
+      applyResult(result)
+      notify('Слайд перегенерирован')
+      setIsEditing(false)
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+
+  const handleSlideChange = (updates: SlideUpdate) => {
+    if (!currentSlide) return
+    setSlideEdits((prev) => ({
+      ...prev,
+      [currentSlide.id]: {
+        ...(prev[currentSlide.id] || {}),
+        ...updates,
+      },
+    }))
+  }
+
+  const handleFieldChange = (path: string, value: string) => {
+    if (!currentSlide) return
+    const updated = applyFieldChange(activeSlide, path, value)
+    setSlideEdits((prev) => ({
+      ...prev,
+      [currentSlide.id]: {
+        ...(prev[currentSlide.id] || {}),
+        title: updated.title,
+        subtitle: updated.subtitle,
+        bullets: updated.bullets,
+        columns: updated.columns,
+        kpis: updated.kpis,
+        timeline: updated.timeline,
+        quote: updated.quote,
+        table: updated.table,
+        chart: updated.chart,
+      },
+    }))
+  }
+
+  const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>) => {
+    const currentShapes = activeSlide.shapes || []
+    const next = currentShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s))
+    handleSlideChange({ shapes: next })
+  }
+
+  const handleDeleteShape = (shapeId: string) => {
+    const currentShapes = activeSlide.shapes || []
+    const next = currentShapes.filter((s) => s.id !== shapeId)
+    handleSlideChange({ shapes: next })
+    if (selectedShapeId === shapeId) setSelectedShapeId(null)
+  }
+
+  useEffect(() => {
+    setSelectedShapeId(null)
+  }, [slideIndex])
+
+  const handleSaveSlide = async () => {
+    if (!currentSlide) return
+    const edits = slideEdits[currentSlide.id]
+    if (!edits) {
+      setIsEditing(false)
+      setActiveElement(null)
+      setSelectedShapeId(null)
+      return
+    }
+    await updateSlideMutation.mutateAsync(edits)
+    setSlideEdits((prev) => {
+      const next = { ...prev }
+      delete next[currentSlide.id]
+      return next
+    })
+    setIsEditing(false)
+    setActiveElement(null)
+    setSelectedShapeId(null)
+  }
+
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      await uploadImageMutation.mutateAsync(file)
+      e.target.value = ''
+    }
+  }
+
+  const handleCloseEdit = () => {
+    if (currentSlide) {
+      setSlideEdits((prev) => {
+        const next = { ...prev }
+        delete next[currentSlide.id]
+        return next
+      })
+    }
+    setIsEditing(false)
+    setActiveElement(null)
+    setSelectedShapeId(null)
+  }
+
   const toggle = (issueId: string) =>
     setChecked((current) => {
       const next = new Set(current)
@@ -166,31 +412,60 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
 
   return (
     <>
-      <div className="audit-summary">
-        <div className="audit-summary__counts">
-          <span className="audit-count audit-count--error">
-            <CircleAlert size={16} /> {summary.by_severity.error ?? 0} ошибок
-          </span>
-          <span className="audit-count audit-count--warning">
-            <TriangleAlert size={16} /> {summary.by_severity.warning ?? 0} предупреждений
-          </span>
-          <span className="audit-count audit-count--info">
-            <Info size={16} /> {summary.by_severity.info ?? 0} советов
-          </span>
-          <span className="muted">
-            Исправлено {summary.fixed} · скрыто {summary.ignored} · проверок выполнено {summary.checks_run}, с замечаниями{' '}
-            {summary.checks_failed}
-          </span>
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        onChange={handleImageFileChange}
+      />
+
+      {isEditing && currentSlide ? (
+        <SlideEditToolbar
+          slide={activeSlide}
+          theme={theme}
+          activeElement={activeElement}
+          selectedShapeId={selectedShapeId}
+          onSelectShape={setSelectedShapeId}
+          onChange={handleSlideChange}
+          onSave={handleSaveSlide}
+          onTriggerImageUpload={() => fileInputRef.current?.click()}
+          onRegenerate={async (instruction) => {
+            await regenerateSlideMutation.mutateAsync(instruction)
+          }}
+          onClose={handleCloseEdit}
+          isSaving={updateSlideMutation.isPending}
+          isUploading={uploadImageMutation.isPending}
+          isRegenerating={regenerateSlideMutation.isPending}
+          hasChanges={hasChanges}
+        />
+      ) : (
+        <div className="audit-summary">
+          <div className="audit-summary__counts">
+            <span className="audit-count audit-count--error">
+              <CircleAlert size={16} /> {summary.by_severity.error ?? 0} ошибок
+            </span>
+            <span className="audit-count audit-count--warning">
+              <TriangleAlert size={16} /> {summary.by_severity.warning ?? 0} предупреждений
+            </span>
+            <span className="audit-count audit-count--info">
+              <Info size={16} /> {summary.by_severity.info ?? 0} советов
+            </span>
+            <span className="muted">
+              Исправлено {summary.fixed} · скрыто {summary.ignored} · проверок выполнено {summary.checks_run}, с замечаниями{' '}
+              {summary.checks_failed}
+            </span>
+          </div>
+          <div className="row">
+            <span className="muted">
+              Детерминированных: {summary.by_kind.deterministic ?? 0} · контекстуальных: {summary.by_kind.contextual ?? 0}
+            </span>
+            <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} loading={rerun.isPending} onClick={() => rerun.mutate()}>
+              Перезапустить аудит
+            </Button>
+          </div>
         </div>
-        <div className="row">
-          <span className="muted">
-            Детерминированных: {summary.by_kind.deterministic ?? 0} · контекстуальных: {summary.by_kind.contextual ?? 0}
-          </span>
-          <Button variant="secondary" size="sm" icon={<RefreshCw size={14} />} loading={rerun.isPending} onClick={() => rerun.mutate()}>
-            Перезапустить аудит
-          </Button>
-        </div>
-      </div>
+      )}
 
       <div className="audit-layout">
         <nav className="audit-slides" aria-label="Слайды">
@@ -218,25 +493,77 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
         <section className="audit-stage">
           {currentSlide && (
             <>
-              <SlideView
-                slide={currentSlide}
-                theme={theme}
-                number={slideIndex + 1}
-                highlights={highlights}
-                activeTarget={activeTarget}
-                render={slideRender(variant, slideIndex)}
-              />
+              <div className="audit-stage__toolbar">
+                <div className="row row--sm" style={{ alignItems: 'center' }}>
+                  <span style={{ fontWeight: 600 }}>Слайд {slideIndex + 1}</span>
+                  <span className="muted text-sm">
+                    {SLIDE_KIND_LABELS[currentSlide.kind]}
+                  </span>
+                </div>
+                <div className="row row--sm">
+                  <Button
+                    variant={isEditing ? 'primary' : 'secondary'}
+                    size="sm"
+                    icon={<Edit3 size={15} />}
+                    onClick={() => {
+                      if (isEditing) {
+                        handleCloseEdit()
+                      } else {
+                        setIsEditing(true)
+                      }
+                    }}
+                  >
+                    {isEditing ? 'Завершить редактирование' : 'Редактировать слайд'}
+                  </Button>
+                </div>
+              </div>
+
+              <div
+                onDoubleClick={() => {
+                  if (!isEditing) setIsEditing(true)
+                }}
+                style={{ cursor: isEditing ? 'default' : 'pointer' }}
+                title={isEditing ? undefined : 'Двойной клик для редактирования слайда'}
+              >
+                <SlideView
+                  key={currentSlide.id}
+                  slide={activeSlide}
+                  theme={theme}
+                  number={slideIndex + 1}
+                  highlights={isEditing ? undefined : highlights}
+                  activeTarget={isEditing ? undefined : activeTarget}
+                  render={isEditing ? undefined : slideRender(variant, slideIndex)}
+                  editable={isEditing}
+                  selectedShapeId={selectedShapeId}
+                  onSelectShape={setSelectedShapeId}
+                  onUpdateShape={handleUpdateShape}
+                  onDeleteShape={handleDeleteShape}
+                  onElementSelect={(el) => setActiveElement(el)}
+                  onFieldChange={handleFieldChange}
+                  onImageClick={() => {
+                    setActiveElement('image')
+                    fileInputRef.current?.click()
+                  }}
+                />
+              </div>
+
               <div className="audit-stage__meta">
                 <span>
-                  {SLIDE_KIND_LABELS[currentSlide.kind]}
                   {currentSlide.pattern_id
-                    ? ` · слайд-пример шаблона №${currentSlide.pattern_id.replace(/^s/, '')}`
-                    : currentSlide.layout_name && ` · макет «${currentSlide.layout_name}»`}
+                    ? `Слайд-пример шаблона №${currentSlide.pattern_id.replace(/^s/, '')}`
+                    : currentSlide.layout_name && `Макет «${currentSlide.layout_name}»`}
                   {variant.renders.status === 'pending' && ' · пересобираем превью…'}
                 </span>
-                <span className="legend">
-                  <i className="legend__error" /> ошибка <i className="legend__warning" /> предупреждение <i className="legend__info" /> совет
-                </span>
+                {!isEditing && (
+                  <span className="legend">
+                    <i className="legend__error" /> ошибка <i className="legend__warning" /> предупреждение <i className="legend__info" /> совет
+                  </span>
+                )}
+                {isEditing && (
+                  <span className="muted text-sm">
+                    Кликните или дважды нажмите на текст для редактирования на слайде
+                  </span>
+                )}
               </div>
             </>
           )}
