@@ -46,15 +46,14 @@ export function SlideDesignModal({
     const types = new Set<string>()
     for (const p of patterns) {
       if (p.type) types.add(p.type)
-      const cat = (p as unknown as { category?: string }).category
-      if (cat) types.add(cat)
+      if (p.category) types.add(p.category)
     }
     return Array.from(types)
   }, [patterns])
 
   const filteredPatterns = useMemo(() => {
     if (typeFilter === 'all') return patterns
-    return patterns.filter((p) => p.type === typeFilter || (p as unknown as { category?: string }).category === typeFilter)
+    return patterns.filter((p) => (p.type as string) === typeFilter || p.category === typeFilter)
   }, [patterns, typeFilter])
 
   const activePattern = useMemo(() => {
@@ -139,7 +138,7 @@ export function SlideDesignModal({
               Все ({patterns.length})
             </button>
             {availablePatternTypes.map((t) => {
-              const count = patterns.filter((p) => p.type === t || (p as unknown as { category?: string }).category === t).length
+              const count = patterns.filter((p) => (p.type as string) === t || p.category === t).length
               if (count === 0) return null
               const label = PATTERN_TYPE_LABELS[t] || PATTERN_CATEGORY_LABELS[t as keyof typeof PATTERN_CATEGORY_LABELS] || (SLIDE_KIND_LABELS as Record<string, string>)[t] || t
               return (

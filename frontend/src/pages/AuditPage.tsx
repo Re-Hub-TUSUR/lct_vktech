@@ -428,15 +428,20 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
 
   const patternKindToSlideKind = (pattern: SlidePattern, currentKind: SlideKind): SlideKind => {
     const pType = pattern.type
-    if (!pType) return currentKind
-    if (pType === 'text') return 'bullets'
-    if (pType === 'cover' || pType === 'title_only' || pType === 'section' || pType === 'closing') {
-      return 'bullets'
-    }
-    if (pType === 'columns') return 'cards'
-    if (Object.keys(SLIDE_KIND_LABELS).includes(pType)) {
-      return pType as SlideKind
-    }
+    const category = pattern.category
+    if (category === 'cover') return 'title'
+    if (category === 'section') return 'section'
+    if (category === 'closing') return 'closing'
+    if (category === 'quote') return 'quote'
+    if (pType === 'text' || pType === 'title_only') return 'bullets'
+    if (pType === 'cards') return 'cards'
+    if (pType === 'two_columns') return 'two_columns'
+    if (pType === 'kpi') return 'kpi'
+    if (pType === 'timeline') return 'timeline'
+    if (pType === 'table') return 'table'
+    if (pType === 'chart') return 'chart'
+    if (pType === 'agenda') return 'agenda'
+    if (pType === 'image_text') return 'image_text'
     return currentKind
   }
 

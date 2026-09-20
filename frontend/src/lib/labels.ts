@@ -2,7 +2,6 @@ import type {
   CheckKind,
   CheckStatus,
   PatternCategory,
-  PatternType,
   PresentationStatus,
   Purpose,
   Severity,

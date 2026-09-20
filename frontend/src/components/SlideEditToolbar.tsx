@@ -233,7 +233,7 @@ export function SlideEditToolbar({
       if (!slide.quote) {
         updates.quote = {
           text: existingTexts[0] || slide.summary || 'Ключевая цитата или мысль слайда',
-          author: slide.quote?.author || 'Автор цитаты',
+          author: 'Автор цитаты',
         }
       }
     } else if (newKind === 'image_text') {
