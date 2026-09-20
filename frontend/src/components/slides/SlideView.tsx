@@ -69,6 +69,23 @@ function box(rect: FrameRect): CSSProperties {
   return { left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` }
 }
 
+export function getElementStyle(
+  target: string,
+  elementFonts?: Record<string, string> | null,
+  elementScales?: Record<string, number> | null,
+): CSSProperties {
+  const font = elementFonts?.[target] || elementFonts?.[target.split('.')[0]]
+  const scale = elementScales?.[target] || elementScales?.[target.split('.')[0]]
+  const style: CSSProperties = {}
+  if (font) {
+    style.fontFamily = `"${font}", var(--slide-heading-font)`
+  }
+  if (scale !== undefined && scale !== null && scale !== 1.0) {
+    style.fontSize = `calc(1em * ${scale})`
+  }
+  return style
+}
+
 export function SlideView({
   slide,
   theme,
@@ -293,6 +310,7 @@ function FramedSlide({
           className={flag('title')}
           contentEditable={editable}
           suppressContentEditableWarning
+          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
           onFocus={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
@@ -306,6 +324,7 @@ function FramedSlide({
               className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
               contentEditable={editable}
               suppressContentEditableWarning
+              style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
               onFocus={() => onElementSelect?.('subtitle')}
               onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
             >
@@ -355,6 +374,7 @@ function FlowSlide({
           className={clsx('slide__cover-title', flag('title'))}
           contentEditable={editable}
           suppressContentEditableWarning
+          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
           onFocus={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
@@ -365,6 +385,7 @@ function FlowSlide({
             className={clsx('slide__subtitle', flag('subtitle'))}
             contentEditable={editable}
             suppressContentEditableWarning
+            style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
             onFocus={() => onElementSelect?.('subtitle')}
             onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
           >
@@ -382,6 +403,7 @@ function FlowSlide({
             className="slide__section-number"
             contentEditable={editable}
             suppressContentEditableWarning
+            style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
             onFocus={() => onElementSelect?.('subtitle')}
             onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
           >
@@ -392,6 +414,7 @@ function FlowSlide({
           className={clsx('slide__cover-title', flag('title'))}
           contentEditable={editable}
           suppressContentEditableWarning
+          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
           onFocus={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
@@ -407,6 +430,7 @@ function FlowSlide({
           className={clsx('slide__title', flag('title'))}
           contentEditable={editable}
           suppressContentEditableWarning
+          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
           onFocus={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
@@ -454,6 +478,7 @@ function SlideContent({
               className={flag(`bullets.${i}`)}
               contentEditable={editable}
               suppressContentEditableWarning
+              style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
               onFocus={() => onElementSelect?.(`bullets.${i}`)}
               onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
             >
@@ -473,6 +498,7 @@ function SlideContent({
                 className={flag(`columns.${ci}.title`)}
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
                 onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
               >
@@ -484,6 +510,7 @@ function SlideContent({
                   className={flag(`columns.${ci}.bullets.${bi}`)}
                   contentEditable={editable}
                   suppressContentEditableWarning
+                  style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
                   onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
                   onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
                 >
@@ -504,6 +531,7 @@ function SlideContent({
                 className={flag(`columns.${ci}.title`)}
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
                 onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
               >
@@ -516,6 +544,7 @@ function SlideContent({
                     className={flag(`columns.${ci}.bullets.${bi}`)}
                     contentEditable={editable}
                     suppressContentEditableWarning
+                    style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
                     onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
                     onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
                   >
@@ -541,6 +570,7 @@ function SlideContent({
               className={clsx('slide__caption', flag('chart'))}
               contentEditable={editable}
               suppressContentEditableWarning
+              style={getElementStyle('chart.caption', slide.element_fonts, slide.element_scales)}
               onFocus={() => onElementSelect?.('chart.caption')}
               onBlur={(e) => onFieldChange?.('chart.caption', e.currentTarget.textContent || '')}
             >
@@ -571,6 +601,7 @@ function SlideContent({
                     key={ci}
                     contentEditable={editable}
                     suppressContentEditableWarning
+                    style={getElementStyle(`table.columns.${ci}`, slide.element_fonts, slide.element_scales)}
                     onFocus={() => onElementSelect?.(`table.columns.${ci}`)}
                     onBlur={(e) => onFieldChange?.(`table.columns.${ci}`, e.currentTarget.textContent || '')}
                   >
@@ -587,6 +618,7 @@ function SlideContent({
                       key={ci}
                       contentEditable={editable}
                       suppressContentEditableWarning
+                      style={getElementStyle(`table.rows.${ri}.${ci}`, slide.element_fonts, slide.element_scales)}
                       onFocus={() => onElementSelect?.(`table.rows.${ri}.${ci}`)}
                       onBlur={(e) => onFieldChange?.(`table.rows.${ri}.${ci}`, e.currentTarget.textContent || '')}
                     >
@@ -608,6 +640,7 @@ function SlideContent({
               <strong
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`kpis.${i}.value`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`kpis.${i}.value`)}
                 onBlur={(e) => onFieldChange?.(`kpis.${i}.value`, e.currentTarget.textContent || '')}
               >
@@ -616,6 +649,7 @@ function SlideContent({
               <span
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`kpis.${i}.label`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`kpis.${i}.label`)}
                 onBlur={(e) => onFieldChange?.(`kpis.${i}.label`, e.currentTarget.textContent || '')}
               >
@@ -634,6 +668,7 @@ function SlideContent({
               <b
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`timeline.${i}.date`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`timeline.${i}.date`)}
                 onBlur={(e) => onFieldChange?.(`timeline.${i}.date`, e.currentTarget.textContent || '')}
               >
@@ -642,6 +677,7 @@ function SlideContent({
               <strong
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`timeline.${i}.title`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`timeline.${i}.title`)}
                 onBlur={(e) => onFieldChange?.(`timeline.${i}.title`, e.currentTarget.textContent || '')}
               >
@@ -650,6 +686,7 @@ function SlideContent({
               <p
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`timeline.${i}.text`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`timeline.${i}.text`)}
                 onBlur={(e) => onFieldChange?.(`timeline.${i}.text`, e.currentTarget.textContent || '')}
               >
@@ -667,6 +704,7 @@ function SlideContent({
           <span
             contentEditable={editable}
             suppressContentEditableWarning
+            style={getElementStyle('quote.text', slide.element_fonts, slide.element_scales)}
             onFocus={() => onElementSelect?.('quote.text')}
             onBlur={(e) => onFieldChange?.('quote.text', e.currentTarget.textContent || '')}
           >
@@ -676,6 +714,7 @@ function SlideContent({
           <footer
             contentEditable={editable}
             suppressContentEditableWarning
+            style={getElementStyle('quote.author', slide.element_fonts, slide.element_scales)}
             onFocus={() => onElementSelect?.('quote.author')}
             onBlur={(e) => onFieldChange?.('quote.author', e.currentTarget.textContent || '')}
           >
@@ -694,6 +733,7 @@ function SlideContent({
                 className={flag(`bullets.${i}`)}
                 contentEditable={editable}
                 suppressContentEditableWarning
+                style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
                 onFocus={() => onElementSelect?.(`bullets.${i}`)}
                 onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
               >
@@ -735,6 +775,7 @@ function SlideContent({
                   className={flag(`bullets.${i}`)}
                   contentEditable={editable}
                   suppressContentEditableWarning
+                  style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
                   onFocus={() => onElementSelect?.(`bullets.${i}`)}
                   onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
                 >
@@ -764,6 +805,7 @@ function SlideContent({
               className={flag(`bullets.${i}`)}
               contentEditable={editable}
               suppressContentEditableWarning
+              style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
               onFocus={() => onElementSelect?.(`bullets.${i}`)}
               onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
             >

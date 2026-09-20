@@ -58,6 +58,8 @@ class SlideShape(BaseModel):
     opacity: float | None = 1.0
     text: str | None = None
     border: bool | None = False
+    font_family: str | None = None
+    font_size: float | None = None
 
 
 class ChartData(BaseModel):
@@ -127,6 +129,8 @@ class Slide(BaseModel):
     # Пользовательские переопределения стилей и размеров (Canva Lite)
     font_family: str | None = None
     font_size_scale: float | None = None  # 0.8, 1.0, 1.25 и т.д.
+    element_fonts: dict[str, str] = Field(default_factory=dict)
+    element_scales: dict[str, float] = Field(default_factory=dict)
     block_density: Literal["compact", "normal", "spacious"] | None = None
 
 
@@ -146,6 +150,8 @@ class SlideUpdate(BaseModel):
     notes: str | None = None
     font_family: str | None = None
     font_size_scale: float | None = None
+    element_fonts: dict[str, str] | None = None
+    element_scales: dict[str, float] | None = None
     block_density: Literal["compact", "normal", "spacious"] | None = None
     image: ImageSpec | None = None
     layout_key: str | None = None

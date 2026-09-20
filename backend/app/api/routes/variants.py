@@ -182,6 +182,7 @@ async def update_slide(
     for field, val in updates.items():
         if val is not None or field in (
             "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
+            "element_fonts", "element_scales",
             "block_density", "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
         ):
             setattr(slide, field, val)

@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import type { Slide, SlideKind, SlidePattern, SlideTheme } from '../api/types'
-import { SLIDE_KIND_LABELS } from '../lib/labels'
+import { PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 import { Button } from './ui'
 
 interface Message {
@@ -269,7 +269,7 @@ export function SlideAssistantPanel({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
                 {patterns.map((p) => {
                   const isCurrent = slide.pattern_id === p.id
-                  const label = (SLIDE_KIND_LABELS as Record<string, string>)[p.type] || p.type
+                  const label = PATTERN_TYPE_LABELS[p.type] || (SLIDE_KIND_LABELS as Record<string, string>)[p.type] || p.type
                   return (
                     <button
                       key={p.id}

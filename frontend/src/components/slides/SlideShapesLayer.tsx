@@ -160,6 +160,10 @@ export function SlideShapesLayer({
                 className="slide-shape-text"
                 contentEditable={editable && isSelected}
                 suppressContentEditableWarning
+                style={{
+                  fontFamily: shape.font_family ? `"${shape.font_family}", var(--slide-heading-font)` : undefined,
+                  fontSize: shape.font_size ? `${shape.font_size}em` : undefined,
+                }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onBlur={(e) => {
                   const txt = e.currentTarget.textContent || ''

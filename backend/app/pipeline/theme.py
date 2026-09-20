@@ -110,8 +110,6 @@ def slide_theme(
     cover_keys = {roles.get(role) for role in ("title", "section", "closing")} - {roles.get("content")}
     width_pt = (size.get("width_emu") or 12192000) / 12700
     for layout in layouts or []:
-        if layout.get("key") not in role_keys:
-            continue
         bg = _valid(layout.get("background")) or background
         if layout["key"] in cover_keys:
             fg = WHITE if contrast_ratio(WHITE, bg) >= 3.0 else text_on(bg, dark, minimum=3.0)
