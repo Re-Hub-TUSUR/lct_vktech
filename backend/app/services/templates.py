@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.models import Template
 from app.pipeline.ai.vlm import enrich_patterns, vlm_enabled
 from app.pipeline.export.render import libreoffice_available
-from app.pipeline.parsing.renders import TemplateRenders, layout_image_name, render_template
+from app.pipeline.parsing.renders import TemplateRenders, layout_image_name, render_template, slide_image_name
 from app.pipeline.parsing.template_parser import PARSER_VERSION, ParsedTemplate, parse_template
 from app.pipeline.theme import slide_theme
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def template_dir(template_id: uuid.UUID) -> Path:
-    return settings.storage_dir / "templates" / str(template_id)
+    return Path(settings.storage_dir) / "templates" / str(template_id)
 
 
 def layout_images_dir(template_id: uuid.UUID) -> Path:
@@ -58,6 +58,7 @@ def apply_parsed(template: Template, parsed: ParsedTemplate) -> None:
     template.slide_width = parsed.slide_width
     template.slide_height = parsed.slide_height
     template.slides_count = parsed.slides_count
+    template.layouts_count = parsed.layouts_count
     template.tokens = parsed.tokens
     template.layouts = parsed.layouts
     template.layout_roles = parsed.roles
@@ -81,7 +82,15 @@ def template_theme(template: Template | None) -> dict[str, Any]:
     theme = slide_theme(
         template.tokens, template.layouts, template.layout_roles, image_url=image_url, extra_keys=pattern_layouts
     )
-    theme["patterns"] = template.patterns or []
+    patterns = []
+    for p in template.patterns or []:
+        p_copy = dict(p)
+        render_file = p.get("render") or slide_image_name(p.get("slide_index", 0))
+        p_copy["render"] = render_file
+        p_copy["render_url"] = f"/api/templates/{template.id}/slides/{render_file}?v={version}"
+        patterns.append(p_copy)
+    theme["patterns"] = patterns
+    theme["template_id"] = str(template.id)
     return theme
 
 

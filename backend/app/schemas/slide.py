@@ -131,6 +131,7 @@ class Slide(BaseModel):
 
 
 class SlideUpdate(BaseModel):
+    kind: SlideKind | None = None
     title: str | None = None
     subtitle: str | None = None
     summary: str | None = None
@@ -148,6 +149,8 @@ class SlideUpdate(BaseModel):
     block_density: Literal["compact", "normal", "spacious"] | None = None
     image: ImageSpec | None = None
     layout_key: str | None = None
+    layout_name: str | None = None
+    pattern_id: str | None = None
 
 
 class RegenerateSlideRequest(BaseModel):

@@ -14,11 +14,15 @@ import type {
   ResolveResponse,
   Severity,
   Slide,
+  SlideKind,
+  SlidePattern,
   SlideShape,
   SlideUpdate,
   VariantDetail,
 } from '../api/types'
 import { PresentationHeader } from '../components/PresentationHeader'
+import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
+import { SlideDesignModal } from '../components/SlideDesignModal'
 import { SlideEditToolbar } from '../components/SlideEditToolbar'
 import { SlideView, slideRender, type Highlights } from '../components/slides/SlideView'
 import { useToast } from '../components/Toast'
@@ -189,6 +193,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
   const [activeElement, setActiveElement] = useState<string | null>(null)
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
+  const [showDesignModal, setShowDesignModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Вычисляем активный слайд синхронно: правки накладываются на текущий слайд!
@@ -196,12 +201,15 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
   const activeSlide = useMemo<Slide>(() => {
     if (!currentSlide) return currentSlide
     const edits = slideEdits[currentSlide.id]
-    const pattern = currentSlide.pattern_id && theme?.patterns
-      ? theme.patterns.find((p) => p.id === currentSlide.pattern_id)
+    const effectivePatternId = edits?.pattern_id !== undefined ? edits.pattern_id : currentSlide.pattern_id
+    const pattern = effectivePatternId && theme?.patterns
+      ? theme.patterns.find((p) => p.id === effectivePatternId)
       : undefined
-    const baseShapes = currentSlide.shapes && currentSlide.shapes.length > 0
-      ? currentSlide.shapes
-      : (pattern?.shapes || [])
+    const baseShapes: SlideShape[] = (edits?.shapes !== undefined && edits.shapes !== null)
+      ? edits.shapes
+      : (currentSlide.shapes && currentSlide.shapes.length > 0
+          ? currentSlide.shapes
+          : (effectivePatternId ? (pattern?.shapes || []) : []))
 
     if (!edits) {
       return {
@@ -211,6 +219,7 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
     }
     return {
       ...currentSlide,
+      kind: edits.kind !== undefined && edits.kind !== null ? edits.kind : currentSlide.kind,
       title: edits.title !== undefined && edits.title !== null ? edits.title : currentSlide.title,
       subtitle: edits.subtitle !== undefined ? edits.subtitle : currentSlide.subtitle,
       bullets: edits.bullets ?? currentSlide.bullets,
@@ -220,7 +229,11 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
       quote: edits.quote !== undefined ? edits.quote : currentSlide.quote,
       table: edits.table !== undefined ? edits.table : currentSlide.table,
       chart: edits.chart !== undefined ? edits.chart : currentSlide.chart,
-      shapes: edits.shapes ?? baseShapes,
+      shapes: (edits.shapes !== undefined && edits.shapes !== null) ? edits.shapes : baseShapes,
+      image: edits.image !== undefined ? edits.image : currentSlide.image,
+      pattern_id: edits.pattern_id !== undefined ? edits.pattern_id : currentSlide.pattern_id,
+      layout_key: edits.layout_key !== undefined ? edits.layout_key : currentSlide.layout_key,
+      layout_name: edits.layout_name !== undefined ? edits.layout_name : currentSlide.layout_name,
       font_family: edits.font_family !== undefined ? edits.font_family : currentSlide.font_family,
       font_size_scale: edits.font_size_scale !== undefined ? edits.font_size_scale : currentSlide.font_size_scale,
       block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
@@ -306,6 +319,19 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
     },
     onSuccess: (result) => {
       applyResult(result)
+      const updatedVariant = 'variant' in result ? result.variant : variant
+      const updatedSlide = updatedVariant.slides.find((s) => s.id === currentSlide?.id)
+      if (updatedSlide && currentSlide) {
+        setSlideEdits((prev) => ({
+          ...prev,
+          [currentSlide.id]: {
+            ...(prev[currentSlide.id] || {}),
+            kind: updatedSlide.kind,
+            image: updatedSlide.image,
+            bullets: updatedSlide.bullets,
+          },
+        }))
+      }
       notify('Изображение успешно загружено на слайд')
     },
     onError: (error) => notify(error.message, 'error'),
@@ -316,8 +342,14 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
       api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, { instruction }),
     onSuccess: (result) => {
       applyResult(result)
+      if (currentSlide) {
+        setSlideEdits((prev) => {
+          const next = { ...prev }
+          delete next[currentSlide.id]
+          return next
+        })
+      }
       notify('Слайд перегенерирован')
-      setIsEditing(false)
     },
     onError: (error) => notify(error.message, 'error'),
   })
@@ -331,6 +363,177 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
         ...updates,
       },
     }))
+  }
+
+  const handleChangeKind = (newKind: SlideKind) => {
+    if (!currentSlide) return
+    const currentBullets = activeSlide.bullets || []
+    const updates: SlideUpdate = { kind: newKind }
+
+    if (newKind === 'cards' && (!activeSlide.columns || activeSlide.columns.length === 0)) {
+      updates.columns = currentBullets.length > 0
+        ? currentBullets.map((b) => ({ title: b, bullets: [] }))
+        : [
+            { title: 'Карточка 1', bullets: ['Описание и детали первого пункта'] },
+            { title: 'Карточка 2', bullets: ['Описание и детали второго пункта'] },
+          ]
+    } else if (newKind === 'kpi' && (!activeSlide.kpis || activeSlide.kpis.length === 0)) {
+      updates.kpis = [
+        { value: '100+', label: currentBullets[0] || 'Показатель успеха' },
+        { value: '85%', label: currentBullets[1] || 'Уровень конверсии' },
+        { value: '3x', label: currentBullets[2] || 'Рост эффективности' },
+      ]
+    } else if (newKind === 'bullets' && (!activeSlide.bullets || activeSlide.bullets.length === 0)) {
+      if (activeSlide.columns && activeSlide.columns.length > 0) {
+        updates.bullets = activeSlide.columns.map((c) => c.title + (c.bullets?.length ? `: ${c.bullets.join(', ')}` : ''))
+      } else if (activeSlide.kpis && activeSlide.kpis.length > 0) {
+        updates.bullets = activeSlide.kpis.map((k) => `${k.value} — ${k.label}`)
+      } else {
+        updates.bullets = ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3']
+      }
+    } else if (newKind === 'timeline' && (!activeSlide.timeline || activeSlide.timeline.length === 0)) {
+      updates.timeline = [
+        { date: 'Этап 1', title: 'Планирование', text: 'Формирование целей и задач' },
+        { date: 'Этап 2', title: 'Реализация', text: 'Разработка основных модулей' },
+        { date: 'Этап 3', title: 'Запуск', text: 'Внедрение и оценка результатов' },
+      ]
+    } else if (newKind === 'quote' && !activeSlide.quote) {
+      updates.quote = {
+        text: activeSlide.subtitle || (currentBullets[0] ?? 'Сильные идеи формируют будущее проектов и вдохновляют команды.'),
+        author: 'Автор цитаты',
+      }
+    } else if (newKind === 'chart' && !activeSlide.chart) {
+      updates.chart = {
+        type: 'bar',
+        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
+        series: [{ name: 'Результат', values: [25, 45, 60, 95] }],
+        caption: 'Динамика показателей по кварталам',
+        unit: 'тыс. руб.',
+      }
+    } else if (newKind === 'table' && !activeSlide.table) {
+      updates.table = {
+        columns: ['Параметр', 'Значение', 'Статус'],
+        rows: [
+          ['Охват аудитории', '1.2M', 'Выполнено'],
+          ['Вовлеченность', '64%', 'В процессе'],
+          ['ROI', '+140%', 'Превышено'],
+        ],
+      }
+    }
+
+    handleSlideChange(updates)
+  }
+
+  const handleSelectPattern = (pattern: SlidePattern) => {
+    if (!currentSlide) return
+    const patch: SlideUpdate = {
+      pattern_id: pattern.id,
+      layout_key: pattern.layout_key,
+      layout_name: pattern.layout_name || (pattern.layout_key && theme.layouts?.[pattern.layout_key]?.name) || pattern.layout_key,
+      shapes: pattern.shapes && pattern.shapes.length > 0 ? pattern.shapes : [],
+    }
+    const newKind = (pattern.type && Object.keys(SLIDE_KIND_LABELS).includes(pattern.type))
+      ? (pattern.type as SlideKind)
+      : activeSlide.kind
+
+    patch.kind = newKind
+
+    // Умная адаптация контента под выбранный шаблон
+    const currentBullets = activeSlide.bullets || []
+    const existingTexts = currentBullets.length > 0
+      ? currentBullets
+      : (activeSlide.columns?.flatMap((c) => (c.bullets?.length ? [c.title, ...c.bullets] : [c.title]))
+        || activeSlide.kpis?.map((k) => `${k.value} ${k.label}`)
+        || activeSlide.timeline?.map((t) => `${t.date}: ${t.title}`)
+        || ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3'])
+
+    const targetCount = Math.max(pattern.items_count || 3, 2)
+
+    if (newKind === 'cards') {
+      patch.columns = Array.from({ length: targetCount }, (_, i) => {
+        const title = activeSlide.columns?.[i]?.title || existingTexts[i] || `Тезис ${i + 1}`
+        const bullets = activeSlide.columns?.[i]?.bullets?.length
+          ? activeSlide.columns[i].bullets
+          : ['Описание и ключевые детали пункта']
+        return { title, bullets }
+      })
+    } else if (newKind === 'two_columns') {
+      const half = Math.ceil(existingTexts.length / 2)
+      patch.columns = [
+        {
+          title: activeSlide.columns?.[0]?.title || 'Направление 1',
+          bullets: existingTexts.slice(0, half).length > 0 ? existingTexts.slice(0, half) : ['Ключевой тезис первой колонки'],
+        },
+        {
+          title: activeSlide.columns?.[1]?.title || 'Направление 2',
+          bullets: existingTexts.slice(half).length > 0 ? existingTexts.slice(half) : ['Ключевой тезис второй колонки'],
+        },
+      ]
+    } else if (newKind === 'kpi') {
+      const fallbackKpis = [
+        { value: '100+', label: 'Показатель успеха' },
+        { value: '85%', label: 'Уровень конверсии' },
+        { value: '3x', label: 'Рост эффективности' },
+        { value: '24/7', label: 'Непрерывная работа' },
+      ]
+      patch.kpis = Array.from({ length: targetCount }, (_, i) => {
+        return activeSlide.kpis?.[i] || fallbackKpis[i % fallbackKpis.length]
+      })
+    } else if (newKind === 'timeline') {
+      patch.timeline = Array.from({ length: targetCount }, (_, i) => {
+        return (
+          activeSlide.timeline?.[i] || {
+            date: `Этап ${i + 1}`,
+            title: existingTexts[i] || `Веха ${i + 1}`,
+            text: 'Реализация и внедрение запланированных шагов',
+          }
+        )
+      })
+    } else if (newKind === 'bullets') {
+      patch.bullets = existingTexts.slice(0, Math.max(targetCount, 3))
+    } else if (newKind === 'quote' && !activeSlide.quote) {
+      patch.quote = {
+        text: activeSlide.subtitle || existingTexts[0] || 'Сильные идеи формируют будущее проектов и вдохновляют команды.',
+        author: 'Автор цитаты',
+      }
+    } else if (newKind === 'chart' && !activeSlide.chart) {
+      patch.chart = {
+        type: 'bar',
+        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
+        series: [{ name: 'Результат', values: [25, 45, 60, 95] }],
+        caption: 'Динамика показателей по кварталам',
+        unit: 'тыс. руб.',
+      }
+    } else if (newKind === 'table' && !activeSlide.table) {
+      patch.table = {
+        columns: ['Параметр', 'Значение', 'Статус'],
+        rows: [
+          ['Охват аудитории', '1.2M', 'Выполнено'],
+          ['Вовлеченность', '64%', 'В процессе'],
+          ['ROI', '+140%', 'Превышено'],
+        ],
+      }
+    }
+
+    handleSlideChange(patch)
+  }
+
+  const handleSelectLayout = (layoutKey: string, layoutName: string) => {
+    if (!currentSlide) return
+    const patch: SlideUpdate = {
+      layout_key: layoutKey,
+      layout_name: layoutName,
+      pattern_id: null,
+      shapes: [], // Очищаем декоративные фигуры старого паттерна, чтобы они не накладывались на новый макет
+    }
+
+    // Если макет привязан к конкретной роли (например title, closing, section, agenda, two_columns)
+    const roleForLayout = Object.entries(theme.roles || {}).find(([_, k]) => k === layoutKey)?.[0]
+    if (roleForLayout && Object.keys(SLIDE_KIND_LABELS).includes(roleForLayout)) {
+      patch.kind = roleForLayout as SlideKind
+    }
+
+    handleSlideChange(patch)
   }
 
   const handleFieldChange = (path: string, value: string) => {
@@ -445,13 +648,10 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
           onChange={handleSlideChange}
           onSave={handleSaveSlide}
           onTriggerImageUpload={() => fileInputRef.current?.click()}
-          onRegenerate={async (instruction) => {
-            await regenerateSlideMutation.mutateAsync(instruction)
-          }}
+          onOpenDesignModal={() => setShowDesignModal(true)}
           onClose={handleCloseEdit}
           isSaving={updateSlideMutation.isPending}
           isUploading={uploadImageMutation.isPending}
-          isRegenerating={regenerateSlideMutation.isPending}
           hasChanges={hasChanges}
         />
       ) : (
@@ -585,135 +785,163 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
         </section>
 
         <aside className="audit-panel">
-          <div className="tabs">
-            <button type="button" className={clsx(tab === 'issues' && 'is-active')} onClick={() => setTab('issues')}>
-              Замечания <Badge>{openIssues.length}</Badge>
-            </button>
-            <button type="button" className={clsx(tab === 'checks' && 'is-active')} onClick={() => setTab('checks')}>
-              Все проверки <Badge>{report.checks.length}</Badge>
-            </button>
-          </div>
-
-          {tab === 'checks' ? (
-            <ChecksCatalog report={report} />
+          {isEditing && currentSlide ? (
+            <SlideAssistantPanel
+              slide={activeSlide}
+              theme={theme}
+              slideIndex={slideIndex}
+              onRegenerate={async (instruction) => {
+                await regenerateSlideMutation.mutateAsync(instruction)
+              }}
+              onChangeKind={handleChangeKind}
+              onSelectPattern={handleSelectPattern}
+              onOpenDesignModal={() => setShowDesignModal(true)}
+              isRegenerating={regenerateSlideMutation.isPending}
+            />
           ) : (
             <>
-              <div className="audit-filters">
-                <Segmented<Scope>
-                  value={scope}
-                  onChange={setScope}
-                  options={[
-                    { value: 'slide', label: `Слайд ${slideIndex + 1}` },
-                    { value: 'all', label: 'Вся колода' },
-                  ]}
-                />
-                <Segmented<KindFilter>
-                  value={kind}
-                  onChange={setKind}
-                  options={[
-                    { value: 'all', label: 'Все' },
-                    { value: 'deterministic', label: 'Детерм.' },
-                    { value: 'contextual', label: 'Контекст.' },
-                  ]}
-                />
+              <div className="tabs">
+                <button type="button" className={clsx(tab === 'issues' && 'is-active')} onClick={() => setTab('issues')}>
+                  Замечания <Badge>{openIssues.length}</Badge>
+                </button>
+                <button type="button" className={clsx(tab === 'checks' && 'is-active')} onClick={() => setTab('checks')}>
+                  Все проверки <Badge>{report.checks.length}</Badge>
+                </button>
               </div>
 
-              {visible.length === 0 ? (
-                <p className="audit-empty">
-                  {scope === 'slide' ? 'На этом слайде замечаний нет.' : 'Замечаний нет — колода готова к экспорту.'}
-                </p>
+              {tab === 'checks' ? (
+                <ChecksCatalog report={report} />
               ) : (
-                <ul className="issues">
-                  {visible.map((issue) => (
-                    <li
-                      key={issue.id}
-                      className={clsx('issue', activeIssue === issue.id && 'is-active')}
-                      onMouseEnter={() => setActiveIssue(issue.id)}
-                      onMouseLeave={() => setActiveIssue(null)}
-                      onClick={() => {
-                        if (issue.slide_index !== null) setSlideIndex(issue.slide_index)
-                        setActiveIssue(issue.id)
-                      }}
+                <>
+                  <div className="audit-filters">
+                    <Segmented<Scope>
+                      value={scope}
+                      onChange={setScope}
+                      options={[
+                        { value: 'slide', label: `Слайд ${slideIndex + 1}` },
+                        { value: 'all', label: 'Вся колода' },
+                      ]}
+                    />
+                    <Segmented<KindFilter>
+                      value={kind}
+                      onChange={setKind}
+                      options={[
+                        { value: 'all', label: 'Все' },
+                        { value: 'deterministic', label: 'Детерм.' },
+                        { value: 'contextual', label: 'Контекст.' },
+                      ]}
+                    />
+                  </div>
+
+                  {visible.length === 0 ? (
+                    <p className="audit-empty">
+                      {scope === 'slide' ? 'На этом слайде замечаний нет.' : 'Замечаний нет — колода готова к экспорту.'}
+                    </p>
+                  ) : (
+                    <ul className="issues">
+                      {visible.map((issue) => (
+                        <li
+                          key={issue.id}
+                          className={clsx('issue', activeIssue === issue.id && 'is-active')}
+                          onMouseEnter={() => setActiveIssue(issue.id)}
+                          onMouseLeave={() => setActiveIssue(null)}
+                          onClick={() => {
+                            if (issue.slide_index !== null) setSlideIndex(issue.slide_index)
+                            setActiveIssue(issue.id)
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked.has(issue.id)}
+                            onChange={() => toggle(issue.id)}
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label="Выбрать"
+                          />
+                          <div className="issue__body">
+                            <div className="issue__title">
+                              <SeverityIcon severity={issue.severity} />
+                              <strong>{issue.check_title}</strong>
+                            </div>
+                            <p>{issue.message}</p>
+                            <div className="issue__meta">
+                              {scope === 'all' && issue.slide_index !== null && <Badge>Слайд {issue.slide_index + 1}</Badge>}
+                              <Badge tone={SEVERITY_TONES[issue.severity]}>{SEVERITY_LABELS[issue.severity]}</Badge>
+                              <Badge tone={issue.kind === 'contextual' ? 'purple' : 'neutral'}>{KIND_LABELS[issue.kind]}</Badge>
+                              <Badge>{report.categories[issue.category] ?? issue.category}</Badge>
+                            </div>
+                            <small className="issue__fix">
+                              {issue.fixable ? `Автоисправление: ${issue.fix_hint ?? 'доступно'}` : 'Требует ручной правки — можно скрыть'}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <div className="audit-actions">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={fixableVisible.length === 0}
+                      onClick={() => setChecked(new Set(fixableVisible.map((issue) => issue.id)))}
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked.has(issue.id)}
-                        onChange={() => toggle(issue.id)}
-                        onClick={(event) => event.stopPropagation()}
-                        aria-label="Выбрать"
-                      />
-                      <div className="issue__body">
-                        <div className="issue__title">
-                          <SeverityIcon severity={issue.severity} />
-                          <strong>{issue.check_title}</strong>
-                        </div>
-                        <p>{issue.message}</p>
-                        <div className="issue__meta">
-                          {scope === 'all' && issue.slide_index !== null && <Badge>Слайд {issue.slide_index + 1}</Badge>}
-                          <Badge tone={SEVERITY_TONES[issue.severity]}>{SEVERITY_LABELS[issue.severity]}</Badge>
-                          <Badge tone={issue.kind === 'contextual' ? 'purple' : 'neutral'}>{KIND_LABELS[issue.kind]}</Badge>
-                          <Badge>{report.categories[issue.category] ?? issue.category}</Badge>
-                        </div>
-                        <small className="issue__fix">
-                          {issue.fixable ? `Автоисправление: ${issue.fix_hint ?? 'доступно'}` : 'Требует ручной правки — можно скрыть'}
-                        </small>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                      Выбрать исправимые ({fixableVisible.length})
+                    </Button>
+                    <div className="row">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={<Ban size={14} />}
+                        disabled={checkedIds.length === 0}
+                        loading={resolve.isPending && resolve.variables?.action === 'ignore'}
+                        onClick={() => resolve.mutate({ ids: checkedIds, action: 'ignore' })}
+                      >
+                        Скрыть
+                      </Button>
+                      <Button
+                        size="sm"
+                        icon={<WandSparkles size={14} />}
+                        disabled={checkedIds.length === 0}
+                        loading={resolve.isPending && resolve.variables?.action === 'fix'}
+                        onClick={() => resolve.mutate({ ids: checkedIds, action: 'fix' })}
+                      >
+                        Исправить ({checkedIds.length})
+                      </Button>
+                    </div>
+                  </div>
 
-              <div className="audit-actions">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={fixableVisible.length === 0}
-                  onClick={() => setChecked(new Set(fixableVisible.map((issue) => issue.id)))}
-                >
-                  Выбрать исправимые ({fixableVisible.length})
-                </Button>
-                <div className="row">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={<Ban size={14} />}
-                    disabled={checkedIds.length === 0}
-                    loading={resolve.isPending && resolve.variables?.action === 'ignore'}
-                    onClick={() => resolve.mutate({ ids: checkedIds, action: 'ignore' })}
-                  >
-                    Скрыть
-                  </Button>
-                  <Button
-                    size="sm"
-                    icon={<WandSparkles size={14} />}
-                    disabled={checkedIds.length === 0}
-                    loading={resolve.isPending && resolve.variables?.action === 'fix'}
-                    onClick={() => resolve.mutate({ ids: checkedIds, action: 'fix' })}
-                  >
-                    Исправить ({checkedIds.length})
-                  </Button>
-                </div>
-              </div>
-
-              {resolvedIssues.length > 0 && (
-                <details className="resolved">
-                  <summary>Исправленные и скрытые ({resolvedIssues.length})</summary>
-                  <ul>
-                    {resolvedIssues.map((issue) => (
-                      <li key={issue.id}>
-                        <Badge tone={issue.status === 'fixed' ? 'success' : 'neutral'}>
-                          {issue.status === 'fixed' ? 'исправлено' : 'скрыто'}
-                        </Badge>
-                        <span>{issue.check_title}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
+                  {resolvedIssues.length > 0 && (
+                    <details className="resolved">
+                      <summary>Исправленные и скрытые ({resolvedIssues.length})</summary>
+                      <ul>
+                        {resolvedIssues.map((issue) => (
+                          <li key={issue.id}>
+                            <Badge tone={issue.status === 'fixed' ? 'success' : 'neutral'}>
+                              {issue.status === 'fixed' ? 'исправлено' : 'скрыто'}
+                            </Badge>
+                            <span>{issue.check_title}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </>
               )}
             </>
           )}
         </aside>
       </div>
+
+      {currentSlide && (
+        <SlideDesignModal
+          isOpen={showDesignModal}
+          slide={activeSlide}
+          theme={theme}
+          onSelectPattern={handleSelectPattern}
+          onSelectLayout={handleSelectLayout}
+          onClose={() => setShowDesignModal(false)}
+        />
+      )}
     </>
   )
 }

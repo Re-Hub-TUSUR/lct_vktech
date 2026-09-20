@@ -36,6 +36,16 @@ async def get_current_user(request: Request, db: DbSession) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+async def get_optional_user(request: Request, db: DbSession) -> User | None:
+    token = session_token(request)
+    user_id = await resolve_session(redis_client, token) if token else None
+    user = await db.get(User, user_id) if user_id else None
+    return user if user and user.is_active else None
+
+
+OptionalUser = Annotated[User | None, Depends(get_optional_user)]
+
+
 def get_arq(request: Request) -> ArqRedis:
     return request.app.state.arq
 

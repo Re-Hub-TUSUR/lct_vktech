@@ -123,6 +123,7 @@ def slide_theme(
             title_color = fg
         size_pt = style.get("size_pt")
         skins[layout["key"]] = {
+            "name": layout.get("name") or layout["key"],
             "background": bg,
             "text": fg,
             "muted": mix(fg, bg, 0.45),

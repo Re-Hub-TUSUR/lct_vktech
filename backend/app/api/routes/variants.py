@@ -9,7 +9,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 
-from app.api.deps import Arq, CurrentUser, DbSession, get_variant_for_user
+from app.api.deps import Arq, CurrentUser, DbSession, OptionalUser, get_variant_for_user
 from app.api.serializers import variant_out
 from app.core.storage import save_upload, storage_path
 from app.pipeline.export.pptx_export import ExportError
@@ -181,8 +181,8 @@ async def update_slide(
     updates = payload.model_dump(exclude_unset=True)
     for field, val in updates.items():
         if val is not None or field in (
-            "subtitle", "summary", "notes", "font_family", "font_size_scale",
-            "block_density", "quote", "chart", "table", "timeline", "shapes"
+            "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
+            "block_density", "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
         ):
             setattr(slide, field, val)
 
@@ -229,6 +229,19 @@ async def upload_slide_image(
     image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
     target.image = ImageSpec(prompt="Пользовательское изображение", url=image_url, status="generated")
 
+    # При загрузке изображения на слайд переводим его в тип image_text, если он был другим,
+    # и обеспечиваем наличие тезисов (текстовой части)
+    if target.kind != "image_text":
+        if not target.bullets and target.columns:
+            target.bullets = [f"{c.title}: {', '.join(c.bullets)}" if c.bullets else c.title for c in target.columns]
+        elif not target.bullets and target.kpis:
+            target.bullets = [f"{k.label}: {k.value}" for k in target.kpis]
+        elif not target.bullets and target.quote:
+            target.bullets = [target.quote.text]
+        elif not target.bullets:
+            target.bullets = ["Описание к изображению"]
+        target.kind = "image_text"
+
     variant.slides = [s.model_dump(mode="json") for s in slides]
     await schedule_render(db, arq, variant, template)
     await db.commit()
@@ -241,16 +254,24 @@ async def upload_slide_image(
 
 
 @router.get("/{variant_id}/images/{filename}")
-async def get_uploaded_image(variant_id: uuid.UUID, filename: str, user: CurrentUser, db: DbSession) -> FileResponse:
-    """Раздача загруженного пользователем изображения для слайда."""
-    await get_variant_for_user(db, variant_id, user)
-    # Защита пути
+async def get_uploaded_image(
+    variant_id: uuid.UUID,
+    filename: str,
+    user: OptionalUser,
+    db: DbSession,
+) -> FileResponse:
+    """Раздача загруженного пользователем изображения для слайда (включая capability URLs для рендера)."""
     safe_name = Path(filename).name
+    if user is not None:
+        await get_variant_for_user(db, variant_id, user)
+    elif not safe_name.startswith(f"{variant_id}_"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Доступ запрещён")
+
     path = storage_path("user_images", safe_name)
     if not path.exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Изображение не найдено")
     media = "image/svg+xml" if path.suffix == ".svg" else f"image/{path.suffix.lstrip('.')}"
-    return FileResponse(path, media_type=media)
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "private, max-age=604800"})
 
 
 @router.post("/{variant_id}/slides/{slide_id}/regenerate", response_model=ResolveResponse)

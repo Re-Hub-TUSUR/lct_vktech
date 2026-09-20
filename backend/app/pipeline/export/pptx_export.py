@@ -23,6 +23,7 @@ from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
+from app.core.storage import storage_path
 from app.pipeline.export.pattern_fill import clone_slide, fill_pattern
 from app.pipeline.geometry import content_frame
 from app.pipeline.layout.matcher import fits
@@ -127,6 +128,18 @@ def build_deck(
             slide = clone_slide(prs, sources[pattern["slide_index"]])
             targets.append(fill_pattern(slide, pattern, spec))
             _shapes(slide, spec.shapes, slide_ctx, pattern_shapes=pattern.get("shapes"))
+            if spec.image and spec.image.url and spec.kind == "image_text":
+                img_name = Path(spec.image.url).name
+                try:
+                    local_path = storage_path("user_images", img_name)
+                    if local_path.exists():
+                        left = int(slide_ctx.width * 0.55)
+                        top = int(slide_ctx.height * 0.25)
+                        img_w = int(slide_ctx.width * 0.38)
+                        img_h = int(slide_ctx.height * 0.55)
+                        slide.shapes.add_picture(str(local_path), left, top, img_w, img_h)
+                except Exception:
+                    pass
             continue
         targets.append(_render(prs.slides.add_slide(layout), spec, slide_ctx))
     clear_slides(prs, len(sources))
@@ -364,7 +377,20 @@ def _image_text(slide, spec: Slide, area, ctx: _Ctx) -> None:
     text_width = int(w * 0.52)
     _bullets_box(slide, (x, y, text_width, h), spec.bullets, ctx, size=18)
     left = x + int(w * 0.57)
-    frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, y, x + w - left, h)
+    img_width = x + w - left
+    img_height = h
+
+    if spec.image and spec.image.url:
+        img_name = Path(spec.image.url).name
+        try:
+            local_path = storage_path("user_images", img_name)
+            if local_path.exists():
+                slide.shapes.add_picture(str(local_path), left, y, img_width, img_height)
+                return
+        except Exception:
+            pass
+
+    frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, y, img_width, img_height)
     frame.fill.solid()
     frame.fill.fore_color.rgb = ctx.rgb(ctx.surface)
     frame.line.fill.background()

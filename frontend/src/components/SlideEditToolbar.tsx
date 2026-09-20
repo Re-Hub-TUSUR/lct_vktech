@@ -1,7 +1,8 @@
-import { BarChart3, Check, Copy, ImagePlus, Minus, Plus, RefreshCw, Shapes, Trash2, Type, Wand2, X } from 'lucide-react'
+import { BarChart3, Check, Copy, ImagePlus, LayoutTemplate, Minus, Plus, Shapes, Trash2, Type, X } from 'lucide-react'
 import { useState } from 'react'
 
-import type { ChartData, Column, Kpi, Slide, SlideShape, SlideTheme, SlideUpdate, TableData, TimelineItem } from '../api/types'
+import type { ChartData, Column, Kpi, Slide, SlideKind, SlideShape, SlideTheme, SlideUpdate, TableData, TimelineItem } from '../api/types'
+import { SLIDE_KIND_LABELS } from '../lib/labels'
 import { SlideChartEditor } from './SlideChartEditor'
 import { Button } from './ui'
 
@@ -14,11 +15,10 @@ interface SlideEditToolbarProps {
   onChange: (updates: SlideUpdate) => void
   onSave: () => Promise<void>
   onTriggerImageUpload: () => void
-  onRegenerate: (instruction: string) => Promise<void>
+  onOpenDesignModal: () => void
   onClose: () => void
   isSaving: boolean
   isUploading: boolean
-  isRegenerating: boolean
   hasChanges: boolean
 }
 
@@ -31,15 +31,12 @@ export function SlideEditToolbar({
   onChange,
   onSave,
   onTriggerImageUpload,
-  onRegenerate,
+  onOpenDesignModal,
   onClose,
   isSaving,
   isUploading,
-  isRegenerating,
   hasChanges,
 }: SlideEditToolbarProps) {
-  const [showRegenerate, setShowRegenerate] = useState(false)
-  const [regeneratePrompt, setRegeneratePrompt] = useState('')
   const [showChartModal, setShowChartModal] = useState(false)
   const [showShapeMenu, setShowShapeMenu] = useState(false)
 
@@ -64,6 +61,103 @@ export function SlideEditToolbar({
 
   const handleScaleChange = (scale: number) => {
     onChange({ font_size_scale: Math.round(scale * 100) / 100 })
+  }
+
+  const handleSlideKindChange = (newKind: SlideKind) => {
+    if (newKind === slide.kind) return
+    const updates: SlideUpdate = { kind: newKind }
+
+    if (newKind === 'cards') {
+      if (!slide.columns || slide.columns.length === 0) {
+        if (slide.bullets && slide.bullets.length > 0) {
+          updates.columns = slide.bullets.map((b, i) => ({
+            title: `Пункт ${i + 1}`,
+            bullets: [b],
+          }))
+        } else {
+          updates.columns = [
+            { title: 'Карточка 1', bullets: ['Описание или первый тезис'] },
+            { title: 'Карточка 2', bullets: ['Описание или второй тезис'] },
+            { title: 'Карточка 3', bullets: ['Описание или третий тезис'] },
+          ]
+        }
+      }
+    } else if (newKind === 'two_columns') {
+      if (!slide.columns || slide.columns.length < 2) {
+        const mid = Math.ceil((slide.bullets?.length || 0) / 2)
+        const left = slide.bullets?.slice(0, mid) || ['Тезис левой колонки']
+        const right = slide.bullets?.slice(mid) || ['Тезис правой колонки']
+        updates.columns = [
+          { title: 'Колонка 1', bullets: left.length ? left : ['Тезис 1'] },
+          { title: 'Колонка 2', bullets: right.length ? right : ['Тезис 2'] },
+        ]
+      }
+    } else if (newKind === 'bullets' || newKind === 'agenda') {
+      if (!slide.bullets || slide.bullets.length === 0) {
+        if (slide.columns && slide.columns.length > 0) {
+          updates.bullets = slide.columns.map((c) => (c.bullets?.[0] ? `${c.title}: ${c.bullets[0]}` : c.title))
+        } else if (slide.kpis && slide.kpis.length > 0) {
+          updates.bullets = slide.kpis.map((k) => `${k.label}: ${k.value}`)
+        } else {
+          updates.bullets = ['Ключевой тезис слайда', 'Дополнительный пункт с пояснением']
+        }
+      }
+    } else if (newKind === 'chart') {
+      if (!slide.chart) {
+        updates.chart = {
+          type: 'bar',
+          caption: 'Динамика ключевых показателей',
+          unit: '%',
+          categories: ['Q1', 'Q2', 'Q3', 'Q4'],
+          series: [
+            { name: 'Показатель 1', values: [35, 55, 75, 95] },
+            { name: 'Показатель 2', values: [25, 45, 65, 80] },
+          ],
+          show_values: true,
+          show_legend: true,
+        }
+      }
+    } else if (newKind === 'table') {
+      if (!slide.table) {
+        updates.table = {
+          columns: ['Параметр', 'Значение', 'Динамика'],
+          rows: [
+            ['Выручка', '12.4 млн ₽', '+18%'],
+            ['Конверсия', '4.8%', '+1.2%'],
+            ['Активные пользователи', '45 200', '+24%'],
+          ],
+        }
+      }
+    } else if (newKind === 'kpi') {
+      if (!slide.kpis || slide.kpis.length === 0) {
+        updates.kpis = [
+          { value: '+45%', label: 'Рост эффективности' },
+          { value: '2.4x', label: 'Увеличение скорости работы' },
+          { value: '98%', label: 'Точность соблюдения гайдлайнов' },
+        ]
+      }
+    } else if (newKind === 'timeline') {
+      if (!slide.timeline || slide.timeline.length === 0) {
+        updates.timeline = [
+          { date: 'Этап 1', title: 'Анализ и подготовка', text: 'Сбор исходных данных и шаблонов' },
+          { date: 'Этап 2', title: 'Разработка решения', text: 'Автоматическая верстка и аудит' },
+          { date: 'Этап 3', title: 'Внедрение и запуск', text: 'Интеграция в рабочие процессы' },
+        ]
+      }
+    } else if (newKind === 'quote') {
+      if (!slide.quote) {
+        updates.quote = {
+          text: slide.summary || slide.bullets?.[0] || 'Ключевая цитата или мысль слайда',
+          author: 'Автор цитаты',
+        }
+      }
+    } else if (newKind === 'image_text') {
+      if (!slide.bullets || slide.bullets.length === 0) {
+        updates.bullets = ['Ключевое описание иллюстрации', 'Поясняющий тезис к изображению']
+      }
+    }
+
+    onChange(updates)
   }
 
   // --- Управление фигурами и объектами окружения ---
@@ -255,6 +349,36 @@ export function SlideEditToolbar({
             <Type size={15} />
             {getBadgeLabel()}
           </span>
+
+          {/* Выбор типа слайда */}
+          <div className="slide-edit-topbar__item">
+            <label className="slide-edit-topbar__label">Тип:</label>
+            <select
+              className="slide-edit-select"
+              value={slide.kind}
+              onChange={(e) => handleSlideKindChange(e.target.value as SlideKind)}
+              title="Изменить тип визуализации слайда"
+            >
+              {Object.entries(SLIDE_KIND_LABELS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Кнопка выбора готового шаблона дизайна */}
+          <div className="slide-edit-topbar__item">
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={<LayoutTemplate size={15} />}
+              onClick={onOpenDesignModal}
+              title="Выбрать готовый шаблон слайда из темы оформления"
+            >
+              Шаблон дизайна
+            </Button>
+          </div>
 
           {/* Выбор шрифта из дизайн-системы */}
           <div className="slide-edit-topbar__item">
@@ -562,29 +686,28 @@ export function SlideEditToolbar({
             </div>
           )}
 
-          {/* Загрузка картинки */}
+          {/* Загрузка и удаление картинки */}
           <div className="slide-edit-topbar__item">
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<ImagePlus size={15} />}
-              loading={isUploading}
-              onClick={onTriggerImageUpload}
-            >
-              {slide.image?.url ? 'Заменить картинку' : 'Вставить картинку'}
-            </Button>
-          </div>
-
-          {/* Перегенерация */}
-          <div className="slide-edit-topbar__item">
-            <Button
-              size="sm"
-              variant={showRegenerate ? 'primary' : 'ghost'}
-              icon={<Wand2 size={15} />}
-              onClick={() => setShowRegenerate(!showRegenerate)}
-            >
-              Перегенерировать
-            </Button>
+            <div className="row row--xs">
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<ImagePlus size={15} />}
+                loading={isUploading}
+                onClick={onTriggerImageUpload}
+              >
+                {slide.image?.url ? 'Заменить картинку' : 'Вставить картинку'}
+              </Button>
+              {slide.image?.url && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Trash2 size={13} />}
+                  title="Удалить картинку со слайда"
+                  onClick={() => onChange({ image: null, kind: 'bullets' })}
+                />
+              )}
+            </div>
           </div>
         </div>
 
@@ -613,34 +736,6 @@ export function SlideEditToolbar({
             <X size={18} />
           </button>
         </div>
-
-        {showRegenerate && (
-          <div className="slide-edit-topbar__regenerate-popover">
-            <span className="text-sm" style={{ fontWeight: 600 }}>
-              Инструкция для перегенерации слайда:
-            </span>
-            <div className="row row--sm" style={{ marginTop: 6 }}>
-              <input
-                type="text"
-                placeholder="Например: Сформулируй тезисы более лаконично..."
-                value={regeneratePrompt}
-                onChange={(e) => setRegeneratePrompt(e.target.value)}
-                disabled={isRegenerating}
-              />
-              <Button
-                size="sm"
-                icon={<RefreshCw size={14} />}
-                loading={isRegenerating}
-                onClick={() => {
-                  onRegenerate(regeneratePrompt)
-                  setShowRegenerate(false)
-                }}
-              >
-                Сгенерировать
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       {showChartModal && slide.chart && (

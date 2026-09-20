@@ -108,7 +108,9 @@ export function SlideView({
     (layoutKey && theme.layouts?.[layoutKey]) ||
     (roleKey && theme.layouts?.[roleKey]) ||
     undefined
-  const effectiveShapes = slide.shapes && slide.shapes.length > 0 ? slide.shapes : (pattern?.shapes || [])
+  const effectiveShapes = slide.shapes !== undefined && slide.shapes !== null
+    ? slide.shapes
+    : (slide.pattern_id ? (pattern?.shapes || []) : [])
 
   const surface = surfaceFor(slide, theme, skin)
   const headingFont = slide.font_family ? `"${slide.font_family}", "${theme.heading_font}", var(--font-sans)` : `"${theme.heading_font}", var(--font-sans)`
@@ -686,7 +688,7 @@ function SlideContent({
       return (
         <div className="slide__image-text">
           <ul className={clsx('slide__bullets', flag('bullets'))}>
-            {slide.bullets.map((item, i) => (
+            {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : ['Описание или ключевой тезис']).map((item, i) => (
               <li
                 key={i}
                 className={flag(`bullets.${i}`)}
@@ -723,9 +725,40 @@ function SlideContent({
 
     case 'bullets':
     default:
+      if (slide.image?.url) {
+        return (
+          <div className="slide__image-text">
+            <ul className={clsx('slide__bullets', flag('bullets'))}>
+              {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : ['Описание или ключевой тезис']).map((item, i) => (
+                <li
+                  key={i}
+                  className={flag(`bullets.${i}`)}
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  onFocus={() => onElementSelect?.(`bullets.${i}`)}
+                  onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <div
+              className={clsx('slide__image', flag('image'))}
+              onClick={() => {
+                if (editable) {
+                  onElementSelect?.('image')
+                  onImageClick?.()
+                }
+              }}
+            >
+              <img src={slide.image.url} alt="" />
+            </div>
+          </div>
+        )
+      }
       return (
         <ul className={clsx('slide__bullets', flag('bullets'))}>
-          {slide.bullets.map((item, i) => (
+          {(slide.bullets || []).map((item, i) => (
             <li
               key={i}
               className={flag(`bullets.${i}`)}

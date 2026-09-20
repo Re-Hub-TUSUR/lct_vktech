@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Trash2 } from 'lucide-react'
+import { Move, Trash2 } from 'lucide-react'
 import { useRef } from 'react'
 
 import type { SlideShape, SlideTheme } from '../../api/types'
@@ -24,54 +24,66 @@ export function SlideShapesLayer({
   onDeleteShape,
 }: SlideShapesLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const dragRef = useRef<{
-    shapeId: string
-    startX: number
-    startY: number
-    origX: number
-    origY: number
-  } | null>(null)
 
   if (!shapes || shapes.length === 0) return null
 
-  const handlePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
+  const startDrag = (e: React.PointerEvent, shape: SlideShape, immediate: boolean) => {
     if (!editable) return
     e.stopPropagation()
-    onSelectShape?.(shape.id)
 
     const container = containerRef.current?.getBoundingClientRect()
     if (!container) return
 
-    dragRef.current = {
-      shapeId: shape.id,
-      startX: e.clientX,
-      startY: e.clientY,
-      origX: shape.x,
-      origY: shape.y,
-    }
+    const startX = e.clientX
+    const startY = e.clientY
+    const origX = shape.x
+    const origY = shape.y
+    let hasMoved = immediate
 
     const onPointerMove = (moveEv: PointerEvent) => {
-      if (!dragRef.current || !container) return
-      const dx = (moveEv.clientX - dragRef.current.startX) / container.width
-      const dy = (moveEv.clientY - dragRef.current.startY) / container.height
+      if (!hasMoved) {
+        const dist = Math.hypot(moveEv.clientX - startX, moveEv.clientY - startY)
+        if (dist < 8) return // Порог 8px исключает случайные сдвиги при клике
+        hasMoved = true
+      }
 
-      const newX = Math.max(0, Math.min(0.95, dragRef.current.origX + dx))
-      const newY = Math.max(0, Math.min(0.95, dragRef.current.origY + dy))
+      const dx = (moveEv.clientX - startX) / container.width
+      const dy = (moveEv.clientY - startY) / container.height
 
-      onUpdateShape?.(dragRef.current.shapeId, {
+      const newX = Math.max(0, Math.min(0.95, origX + dx))
+      const newY = Math.max(0, Math.min(0.95, origY + dy))
+
+      onUpdateShape?.(shape.id, {
         x: Math.round(newX * 1000) / 1000,
         y: Math.round(newY * 1000) / 1000,
       })
     }
 
     const onPointerUp = () => {
-      dragRef.current = null
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
     }
 
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
+  }
+
+  const handleShapePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
+    if (!editable) return
+    e.stopPropagation()
+    onSelectShape?.(shape.id)
+
+    // Если фигура не была выделена, нажатие ТОЛЬКО выделяет её.
+    if (selectedShapeId !== shape.id) {
+      return
+    }
+
+    // Если фигура уже выделена, позволяем перетаскивать только при явном движении (порог 8px)
+    startDrag(e, shape, false)
+  }
+
+  const handleMoveHandlePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
+    startDrag(e, shape, true)
   }
 
   const handleResizePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
@@ -140,7 +152,7 @@ export function SlideShapesLayer({
             key={shape.id}
             className={clsx('slide-shape-item', `slide-shape-item--${shape.kind}`, isSelected && 'is-selected')}
             style={style}
-            onPointerDown={(e) => handlePointerDown(e, shape)}
+            onPointerDown={(e) => handleShapePointerDown(e, shape)}
           >
             {/* Shape text content */}
             {!isLine && (
@@ -148,12 +160,24 @@ export function SlideShapesLayer({
                 className="slide-shape-text"
                 contentEditable={editable && isSelected}
                 suppressContentEditableWarning
+                onPointerDown={(e) => e.stopPropagation()}
                 onBlur={(e) => {
                   const txt = e.currentTarget.textContent || ''
                   onUpdateShape?.(shape.id, { text: txt || null })
                 }}
               >
                 {shape.text || (isSelected && !shape.text ? '' : null)}
+              </span>
+            )}
+
+            {/* Move handle in top-left corner */}
+            {isSelected && (
+              <span
+                className="slide-shape-move-handle"
+                title="Переместить фигуру"
+                onPointerDown={(e) => handleMoveHandlePointerDown(e, shape)}
+              >
+                <Move size={11} />
               </span>
             )}
 
@@ -172,7 +196,7 @@ export function SlideShapesLayer({
               </button>
             )}
 
-            {/* Resize handle */}
+            {/* Resize handle in bottom-right corner */}
             {isSelected && !isLine && (
               <span
                 className="slide-shape-resize-handle"

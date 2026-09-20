@@ -110,6 +110,7 @@ export interface Slide {
 }
 
 export interface SlideUpdate {
+  kind?: SlideKind | null
   title?: string | null
   subtitle?: string | null
   summary?: string | null
@@ -127,6 +128,8 @@ export interface SlideUpdate {
   block_density?: 'compact' | 'normal' | 'spacious' | null
   image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
   layout_key?: string | null
+  layout_name?: string | null
+  pattern_id?: string | null
 }
 
 export interface RegenerateSlideRequest {
@@ -143,6 +146,7 @@ export interface SurfaceColors {
 export type FrameRect = [number, number, number, number]
 
 export interface LayoutSkin {
+  name?: string | null
   background: string
   text: string
   muted: string
@@ -155,6 +159,7 @@ export interface LayoutSkin {
 }
 
 export interface SlideTheme {
+  template_id?: string | null
   background: string
   text: string
   muted: string
@@ -253,6 +258,7 @@ export interface SlidePattern {
   id: string
   slide_index: number
   layout_key: string | null
+  layout_name?: string | null
   type: PatternType
   category: PatternCategory
   usable: boolean
@@ -267,6 +273,7 @@ export interface SlidePattern {
   source: 'rules' | 'vlm'
   /** Имя файла рендера слайда-примера: /api/templates/{id}/slides/{render} */
   render?: string | null
+  render_url?: string | null
   purpose?: string
   usage?: string
   confidence?: number
