@@ -1,4 +1,4 @@
-import { BarChart3, Check, ImagePlus, Minus, Plus, RefreshCw, Shapes, Trash2, Type, Wand2, X } from 'lucide-react'
+import { BarChart3, Check, Copy, ImagePlus, Minus, Plus, RefreshCw, Shapes, Trash2, Type, Wand2, X } from 'lucide-react'
 import { useState } from 'react'
 
 import type { ChartData, Column, Kpi, Slide, SlideShape, SlideTheme, SlideUpdate, TableData, TimelineItem } from '../api/types'
@@ -100,6 +100,20 @@ export function SlideEditToolbar({
     const next = (slide.shapes || []).filter((s) => s.id !== selectedShapeId)
     onChange({ shapes: next })
     onSelectShape?.(null)
+  }
+
+  const handleDuplicateSelectedShape = () => {
+    if (!selectedShape) return
+    const id = Math.random().toString(36).substring(2, 10)
+    const dup: SlideShape = {
+      ...selectedShape,
+      id,
+      template_shape_id: null,
+      x: Math.min(0.85, selectedShape.x + 0.04),
+      y: Math.min(0.85, selectedShape.y + 0.04),
+    }
+    onChange({ shapes: [...(slide.shapes || []), dup] })
+    onSelectShape?.(id)
   }
 
   const handleScaleSelectedShape = (delta: number) => {
@@ -355,16 +369,18 @@ export function SlideEditToolbar({
           {/* Панель настройки выбранной фигуры */}
           {selectedShape && (
             <div className="slide-edit-topbar__shape-bar">
-              <span style={{ fontSize: 12, fontWeight: 700 }}>
-                {selectedShape.kind === 'circle'
-                  ? 'Круг'
-                  : selectedShape.kind === 'badge'
-                    ? 'Плашка'
-                    : selectedShape.kind === 'line'
-                      ? 'Линия'
-                      : 'Фигура'}
-                :
-              </span>
+              <select
+                value={selectedShape.kind}
+                className="select select-sm"
+                style={{ height: 24, fontSize: 11, padding: '0 6px', fontWeight: 600 }}
+                onChange={(e) => handleUpdateSelectedShape({ kind: e.target.value as SlideShape['kind'] })}
+              >
+                <option value="circle">Круг</option>
+                <option value="rect">Прямоугольник</option>
+                <option value="badge">Бейдж</option>
+                <option value="pill">Капсула</option>
+                <option value="line">Линия</option>
+              </select>
 
               {/* Цветовые кружки */}
               <div className="row row--xs" style={{ alignItems: 'center', gap: 4 }}>
@@ -450,6 +466,16 @@ export function SlideEditToolbar({
                 />
                 Контур
               </label>
+
+              {/* Кнопка дублирования */}
+              <button
+                type="button"
+                className="icon-btn-tiny"
+                title="Дублировать фигуру"
+                onClick={handleDuplicateSelectedShape}
+              >
+                <Copy size={13} />
+              </button>
 
               {/* Кнопка удаления */}
               <button

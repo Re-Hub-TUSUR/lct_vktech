@@ -196,7 +196,19 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
   const activeSlide = useMemo<Slide>(() => {
     if (!currentSlide) return currentSlide
     const edits = slideEdits[currentSlide.id]
-    if (!edits) return currentSlide
+    const pattern = currentSlide.pattern_id && theme?.patterns
+      ? theme.patterns.find((p) => p.id === currentSlide.pattern_id)
+      : undefined
+    const baseShapes = currentSlide.shapes && currentSlide.shapes.length > 0
+      ? currentSlide.shapes
+      : (pattern?.shapes || [])
+
+    if (!edits) {
+      return {
+        ...currentSlide,
+        shapes: baseShapes,
+      }
+    }
     return {
       ...currentSlide,
       title: edits.title !== undefined && edits.title !== null ? edits.title : currentSlide.title,
@@ -208,12 +220,12 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
       quote: edits.quote !== undefined ? edits.quote : currentSlide.quote,
       table: edits.table !== undefined ? edits.table : currentSlide.table,
       chart: edits.chart !== undefined ? edits.chart : currentSlide.chart,
-      shapes: edits.shapes ?? currentSlide.shapes ?? [],
+      shapes: edits.shapes ?? baseShapes,
       font_family: edits.font_family !== undefined ? edits.font_family : currentSlide.font_family,
       font_size_scale: edits.font_size_scale !== undefined ? edits.font_size_scale : currentSlide.font_size_scale,
       block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
     }
-  }, [currentSlide, slideEdits])
+  }, [currentSlide, slideEdits, theme?.patterns])
 
   const hasChanges = !!(currentSlide && slideEdits[currentSlide.id])
   const openIssues = report.issues.filter((issue) => issue.status === 'open')
@@ -367,7 +379,10 @@ function AuditWorkspace({ detail, report }: { detail: VariantDetail; report: Aud
       setSelectedShapeId(null)
       return
     }
-    await updateSlideMutation.mutateAsync(edits)
+    await updateSlideMutation.mutateAsync({
+      ...edits,
+      shapes: activeSlide.shapes,
+    })
     setSlideEdits((prev) => {
       const next = { ...prev }
       delete next[currentSlide.id]

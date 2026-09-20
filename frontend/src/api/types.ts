@@ -38,6 +38,7 @@ export interface ChartSeries {
 
 export interface SlideShape {
   id: string
+  template_shape_id?: number | null
   kind: 'circle' | 'rect' | 'badge' | 'pill' | 'line'
   x: number // fraction 0..1
   y: number // fraction 0..1
@@ -169,6 +170,7 @@ export interface SlideTheme {
   /** Ключ макета → оформление (только макеты, назначенные ролям). */
   layouts: Record<string, LayoutSkin>
   roles: Record<string, string | null>
+  patterns?: SlidePattern[]
 }
 
 // --- Шаблоны --------------------------------------------------------------
@@ -260,6 +262,7 @@ export interface SlidePattern {
   items: { bbox: FrameRect; group: number | null; shapes: number[]; slots: PatternSlot[]; image: number | null }[]
   frames: Record<string, { id: number; bbox: FrameRect }>
   images: { id: number; bbox: FrameRect }[]
+  shapes?: SlideShape[]
   /** rules — эвристики парсера, vlm — уточнено моделью по рендеру слайда. */
   source: 'rules' | 'vlm'
   /** Имя файла рендера слайда-примера: /api/templates/{id}/slides/{render} */

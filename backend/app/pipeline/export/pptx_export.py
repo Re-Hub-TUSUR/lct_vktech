@@ -126,7 +126,7 @@ def build_deck(
         if pattern is not None and pattern["slide_index"] < len(sources) and fits(spec, pattern):
             slide = clone_slide(prs, sources[pattern["slide_index"]])
             targets.append(fill_pattern(slide, pattern, spec))
-            _shapes(slide, spec.shapes, slide_ctx)
+            _shapes(slide, spec.shapes, slide_ctx, pattern_shapes=pattern.get("shapes"))
             continue
         targets.append(_render(prs.slides.add_slide(layout), spec, slide_ctx))
     clear_slides(prs, len(sources))
@@ -493,9 +493,29 @@ def _timeline(slide, spec: Slide, area, ctx: _Ctx) -> None:
             _run(frame.add_paragraph(), item.text, ctx, size=14, color=ctx.muted)
 
 
-def _shapes(slide, shapes: list, ctx: _Ctx) -> None:
+def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) -> None:
+    existing = {s.shape_id: s for s in slide.shapes}
+    pattern_shapes = pattern_shapes or []
+
+    # Если шаблонные фигуры были удалены пользователем из spec.shapes:
+    if pattern_shapes:
+        kept_tpl_ids = {
+            getattr(s, "template_shape_id", None) or (s.get("template_shape_id") if isinstance(s, dict) else None)
+            for s in (shapes or [])
+        }
+        for ps in pattern_shapes:
+            pid = ps.get("template_shape_id")
+            if pid and pid not in kept_tpl_ids and pid in existing:
+                try:
+                    el = existing[pid]._element
+                    if el.getparent() is not None:
+                        el.getparent().remove(el)
+                except Exception:
+                    pass
+
     if not shapes:
         return
+
     for s in shapes:
         kind = getattr(s, "kind", "circle") if not isinstance(s, dict) else s.get("kind", "circle")
         x = getattr(s, "x", 0.5) if not isinstance(s, dict) else s.get("x", 0.5)
@@ -505,6 +525,7 @@ def _shapes(slide, shapes: list, ctx: _Ctx) -> None:
         color = getattr(s, "color", None) if not isinstance(s, dict) else s.get("color")
         text = getattr(s, "text", None) if not isinstance(s, dict) else s.get("text")
         border = getattr(s, "border", False) if not isinstance(s, dict) else s.get("border", False)
+        tpl_id = getattr(s, "template_shape_id", None) if not isinstance(s, dict) else s.get("template_shape_id")
 
         left = int(x * ctx.width)
         top = int(y * ctx.height)
@@ -512,6 +533,23 @@ def _shapes(slide, shapes: list, ctx: _Ctx) -> None:
         height = int(h * ctx.height)
 
         fill_color = color or ctx.theme.get("accent", "#0077FF")
+
+        # Если это существующая фигура шаблона на клонированном слайде:
+        if tpl_id and tpl_id in existing:
+            sp = existing[tpl_id]
+            sp.left = left
+            sp.top = top
+            sp.width = width
+            sp.height = height
+            if color:
+                try:
+                    sp.fill.solid()
+                    sp.fill.fore_color.rgb = ctx.rgb(fill_color)
+                except Exception:
+                    pass
+            if text and sp.has_text_frame:
+                sp.text_frame.text = text
+            continue
 
         if kind == "circle":
             sp = slide.shapes.add_shape(MSO_SHAPE.OVAL, left, top, width, height)

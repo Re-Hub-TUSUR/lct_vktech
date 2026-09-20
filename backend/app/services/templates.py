@@ -78,9 +78,11 @@ def template_theme(template: Template | None) -> dict[str, Any]:
     pattern_layouts = {
         pattern["layout_key"] for pattern in template.patterns or [] if pattern.get("usable") and pattern.get("layout_key")
     }
-    return slide_theme(
+    theme = slide_theme(
         template.tokens, template.layouts, template.layout_roles, image_url=image_url, extra_keys=pattern_layouts
     )
+    theme["patterns"] = template.patterns or []
+    return theme
 
 
 def layout_images(template: Template | None) -> dict[str, bytes]:

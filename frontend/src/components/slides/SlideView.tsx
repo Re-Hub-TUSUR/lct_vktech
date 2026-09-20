@@ -101,14 +101,14 @@ export function SlideView({
     )
   }
 
-  // При инлайн-редактировании или отсутствии рендера берем skin макета.
-  // Если у слайда нет явного layout_key (например, при pattern_id), берем подходящий макет роли шаблона,
-  // чтобы слайд не терял графическое оформление и цвета!
+  const pattern = slide.pattern_id && theme?.patterns ? theme.patterns.find((p) => p.id === slide.pattern_id) : undefined
+  const layoutKey = slide.layout_key || pattern?.layout_key || undefined
   const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
   const skin =
-    (slide.layout_key && theme.layouts?.[slide.layout_key]) ||
+    (layoutKey && theme.layouts?.[layoutKey]) ||
     (roleKey && theme.layouts?.[roleKey]) ||
     undefined
+  const effectiveShapes = slide.shapes && slide.shapes.length > 0 ? slide.shapes : (pattern?.shapes || [])
 
   const surface = surfaceFor(slide, theme, skin)
   const headingFont = slide.font_family ? `"${slide.font_family}", "${theme.heading_font}", var(--font-sans)` : `"${theme.heading_font}", var(--font-sans)`
@@ -174,7 +174,7 @@ export function SlideView({
 
       {/* Слой фигур и объектов окружения */}
       <SlideShapesLayer
-        shapes={slide.shapes || []}
+        shapes={effectiveShapes}
         theme={theme}
         editable={editable}
         selectedShapeId={selectedShapeId}

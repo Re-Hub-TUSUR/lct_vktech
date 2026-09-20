@@ -177,6 +177,9 @@ def assign_patterns(
         if pattern.get("layout_key"):
             slide.layout_key = pattern["layout_key"]
             slide.layout_name = names.get(pattern["layout_key"], slide.layout_name)
+        if not slide.shapes and pattern.get("shapes"):
+            from app.schemas.slide import SlideShape
+            slide.shapes = [SlideShape.model_validate(s) for s in pattern["shapes"]]
         used[pattern["id"]] += 1
         previous = pattern["id"]
 

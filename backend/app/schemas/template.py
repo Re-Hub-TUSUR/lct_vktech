@@ -58,6 +58,7 @@ class SlideTheme(BaseModel):
     # Ключ макета → оформление; только макеты, назначенные ролям.
     layouts: dict[str, LayoutSkin] = {}
     roles: dict[str, str | None] = {}
+    patterns: list[dict[str, Any]] = []
 
 
 class TemplateSummary(BaseModel):

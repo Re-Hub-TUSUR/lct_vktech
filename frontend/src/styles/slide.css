@@ -494,4 +494,21 @@
   background: #dc2626;
   transform: scale(1.1);
 }
+.slide-shape-resize-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 2px solid #0077ff;
+  border-radius: 2px;
+  cursor: nwse-resize;
+  z-index: 20;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.slide-shape-resize-handle:hover {
+  background: #0077ff;
+}
+
 

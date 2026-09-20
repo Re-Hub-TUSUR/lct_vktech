@@ -78,6 +78,9 @@ class Leaf:
     bold: bool = False
     top: int = 0  # фигура верхнего уровня (сама фигура или её группа)
     grouped: bool = False
+    shape_type: str = "rect"  # circle | rect | badge | pill | line
+    color: str | None = None
+    border: bool = False
 
     @property
     def cx(self) -> float:
@@ -136,7 +139,14 @@ def _kind(shape) -> str:
     return "shape"
 
 
-def flatten(shapes, width: int, height: int, transform=(0.0, 0.0, 1.0, 1.0), top: int | None = None):
+def flatten(
+    shapes,
+    width: int,
+    height: int,
+    transform=(0.0, 0.0, 1.0, 1.0),
+    top: int | None = None,
+    theme_colors: dict[str, str] | None = None,
+):
     """Все фигуры слайда с абсолютной геометрией (группы раскрываются)."""
     ox, oy, sx, sy = transform
     for shape in shapes:
@@ -155,7 +165,7 @@ def flatten(shapes, width: int, height: int, transform=(0.0, 0.0, 1.0, 1.0), top
             ch = int(ch_ext.get("cy")) or 1
             gsx, gsy = w / cw, h / ch
             inner = (left - int(ch_off.get("x")) * gsx, top_px - int(ch_off.get("y")) * gsy, gsx, gsy)
-            yield from flatten(shape.shapes, width, height, inner, owner)
+            yield from flatten(shape.shapes, width, height, inner, owner, theme_colors=theme_colors)
             continue
         kind = _kind(shape)
         if kind == "table":
@@ -163,12 +173,52 @@ def flatten(shapes, width: int, height: int, transform=(0.0, 0.0, 1.0, 1.0), top
             grid_width = sum(int(col.get("w", "0")) for col in shape._element.iter(f"{{{NS_A}}}gridCol"))
             rows_height = sum(int(row.get("h", "0")) for row in shape._element.iter(f"{{{NS_A}}}tr"))
             w, h = max(w, grid_width * sx), max(h, rows_height * sy)
+
+        shape_type = "rect"
+        ast = None
+        try:
+            ast = shape.auto_shape_type
+        except Exception:
+            pass
+
+        if ast is not None:
+            ast_name = str(ast).upper()
+            if "OVAL" in ast_name:
+                shape_type = "circle"
+            elif "ROUNDED" in ast_name:
+                shape_type = "badge"
+            elif "RECT" in ast_name:
+                shape_type = "rect"
+            elif "LINE" in ast_name or "ARROW" in ast_name:
+                shape_type = "line"
+        elif kind == "line" or shape.shape_type == MSO_SHAPE_TYPE.LINE or getattr(shape._element, "tag", "").endswith("}cxnSp"):
+            shape_type = "line"
+
+        color = None
+        border = False
+        spPr = getattr(shape._element, "spPr", None)
+        if spPr is not None:
+            fill = spPr.find(f"{{{NS_A}}}solidFill")
+            if fill is not None and theme_colors:
+                for child in fill:
+                    from app.pipeline.parsing.template_parser import _resolve_color
+                    c = _resolve_color(child, theme_colors, {})
+                    if c:
+                        color = c
+                        break
+            ln = spPr.find(f"{{{NS_A}}}ln")
+            if ln is not None and ln.find(f"{{{NS_A}}}noFill") is None:
+                border = True
+
         leaf = Leaf(
             id=shape.shape_id,
             kind=kind,
             bbox=(left / width, top_px / height, w / width, h / height),
             top=owner,
             grouped=top is not None,
+            shape_type=shape_type,
+            color=color,
+            border=border,
         )
         if shape.has_text_frame:
             leaf.paragraphs = [p.text.replace("\x0b", " ").strip() for p in shape.text_frame.paragraphs]
@@ -361,9 +411,15 @@ def is_usable(pattern: dict[str, Any]) -> bool:
 
 
 def analyze_slide(
-    slide, index: int, layout_key: str | None, width: int, height: int, layout_name: str | None = None
+    slide,
+    index: int,
+    layout_key: str | None,
+    width: int,
+    height: int,
+    layout_name: str | None = None,
+    theme_colors: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    leaves = list(flatten(slide.shapes, width, height))
+    leaves = list(flatten(slide.shapes, width, height, theme_colors=theme_colors))
     texts = [leaf for leaf in leaves if leaf.kind == "text"]
     pattern: dict[str, Any] = {
         "id": f"s{index + 1}",
@@ -376,6 +432,7 @@ def analyze_slide(
         "title": None,
         "slots": [],
         "items": [],
+        "shapes": [],
         "frames": {},
         "images": [],
         "source": "rules",
@@ -526,6 +583,25 @@ def analyze_slide(
     pattern["slots"] = slots
     pattern["items"] = items
     pattern["items_count"] = len(items)
+
+    shapes: list[dict[str, Any]] = []
+    for leaf in leaves:
+        if leaf.kind in {"shape", "line"}:
+            if leaf.area >= 0.85:
+                continue
+            shapes.append({
+                "id": f"tpl-{leaf.id}",
+                "template_shape_id": leaf.id,
+                "kind": leaf.shape_type,
+                "x": round(leaf.bbox[0], 4),
+                "y": round(leaf.bbox[1], 4),
+                "width": round(leaf.bbox[2], 4),
+                "height": round(leaf.bbox[3], 4),
+                "color": leaf.color,
+                "border": leaf.border,
+                "text": leaf.text if leaf.text else None,
+            })
+    pattern["shapes"] = shapes
     pattern["type"] = _classify(pattern, leaves, items, used, title)
     pattern["usable"] = is_usable(pattern)
     return pattern
@@ -581,12 +657,15 @@ def _classify(
 
 
 def extract_patterns(
-    prs, slide_layout_keys: list[str | None], layout_names: dict[str, str] | None = None
+    prs,
+    slide_layout_keys: list[str | None],
+    layout_names: dict[str, str] | None = None,
+    theme_colors: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     width, height = int(prs.slide_width), int(prs.slide_height)
     names = layout_names or {}
     return [
-        analyze_slide(slide, index, key, width, height, names.get(key or ""))
+        analyze_slide(slide, index, key, width, height, names.get(key or ""), theme_colors=theme_colors)
         for index, (slide, key) in enumerate(zip(prs.slides, slide_layout_keys))
     ]
 

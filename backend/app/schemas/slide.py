@@ -48,6 +48,7 @@ class ChartSeries(BaseModel):
 
 class SlideShape(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex[:8])
+    template_shape_id: int | None = None
     kind: Literal["circle", "rect", "badge", "pill", "line"] = "circle"
     x: float = 0.5  # fraction 0..1
     y: float = 0.5  # fraction 0..1

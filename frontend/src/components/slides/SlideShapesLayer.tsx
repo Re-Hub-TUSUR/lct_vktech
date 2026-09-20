@@ -74,6 +74,39 @@ export function SlideShapesLayer({
     window.addEventListener('pointerup', onPointerUp)
   }
 
+  const handleResizePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
+    if (!editable) return
+    e.stopPropagation()
+    const container = containerRef.current?.getBoundingClientRect()
+    if (!container) return
+
+    const startX = e.clientX
+    const startY = e.clientY
+    const startW = shape.width
+    const startH = shape.height
+
+    const onPointerMove = (moveEv: PointerEvent) => {
+      const dw = (moveEv.clientX - startX) / container.width
+      const dh = (moveEv.clientY - startY) / container.height
+
+      const newW = Math.max(0.02, Math.min(1 - shape.x, startW + dw))
+      const newH = Math.max(0.01, Math.min(1 - shape.y, startH + dh))
+
+      onUpdateShape?.(shape.id, {
+        width: Math.round(newW * 1000) / 1000,
+        height: Math.round(newH * 1000) / 1000,
+      })
+    }
+
+    const onPointerUp = () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }
+
   return (
     <div
       ref={containerRef}
@@ -137,6 +170,15 @@ export function SlideShapesLayer({
               >
                 <Trash2 size={12} />
               </button>
+            )}
+
+            {/* Resize handle */}
+            {isSelected && !isLine && (
+              <span
+                className="slide-shape-resize-handle"
+                title="Изменить размер"
+                onPointerDown={(e) => handleResizePointerDown(e, shape)}
+              />
             )}
           </div>
         )

@@ -63,7 +63,9 @@ def parse_template(path: str | Path) -> ParsedTemplate:
         layout["assigned_roles"] = sorted(role for role, key in roles.items() if key == layout["key"])
 
     usage = _usage(path, theme, params)
-    patterns = extract_patterns(prs, slide_layout_keys, {layout["key"]: layout["name"] for layout in layouts})
+    patterns = extract_patterns(
+        prs, slide_layout_keys, {layout["key"]: layout["name"] for layout in layouts}, theme_colors=theme.get("colors") or {}
+    )
     tokens = {
         "slide_size": {
             "width_emu": width,
