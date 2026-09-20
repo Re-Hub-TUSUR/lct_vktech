@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +59,38 @@ async def login(payload: LoginRequest, request: Request, response: Response, db:
     user = await db.scalar(select(User).where(User.email == email))
     if not verify_password(payload.password, user.password_hash if user else None) or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
+    token = await create_session(redis_client, user.id)
+    _set_session_cookie(response, token)
+    return AuthResponse(user=UserOut.model_validate(user), token=token)
+
+
+@router.post("/demo", response_model=AuthResponse)
+async def demo_login(request: Request, response: Response, db: DbSession) -> AuthResponse:
+    """Создаёт технический аккаунт один раз и открывает для него новую сессию."""
+    client_ip = request.client.host if request.client else "unknown"
+    if not await check_rate_limit(redis_client, f"rl:demo:{client_ip}", max_requests=30, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Слишком много попыток демо-входа. Попробуйте через минуту.")
+
+    email = settings.demo_user_email.lower()
+    user = await db.scalar(select(User).where(User.email == email))
+    if user is None:
+        user = User(
+            email=email,
+            full_name=settings.demo_user_name,
+            password_hash=hash_password(secrets.token_urlsafe(32)),
+        )
+        db.add(user)
+        try:
+            await db.commit()
+        except IntegrityError:
+            # Два одновременных клика могут попытаться создать демо-пользователя.
+            # После конфликта используем уже созданную учётную запись.
+            await db.rollback()
+            user = await db.scalar(select(User).where(User.email == email))
+
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Демо-доступ временно недоступен")
+
     token = await create_session(redis_client, user.id)
     _set_session_cookie(response, token)
     return AuthResponse(user=UserOut.model_validate(user), token=token)

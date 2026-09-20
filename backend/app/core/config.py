@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     session_cookie_name: str = "session"
     session_ttl_hours: int = 24 * 7
     cookie_secure: bool = False
+    demo_user_email: str = "demo.expert@vk.tech"
+    demo_user_name: str = "Тестовый эксперт"
 
     storage_dir: Path = Path("/data")
     builtin_templates_dir: Path = Path("/builtin_templates")

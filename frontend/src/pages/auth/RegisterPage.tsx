@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router'
 import { useAuth } from '../../auth/AuthProvider'
 import { Button, ErrorState, Field } from '../../components/ui'
 import { AuthLayout } from './AuthLayout'
+import { PasswordInput } from './PasswordInput'
 
 const MIN_PASSWORD = 8
 
@@ -70,23 +71,10 @@ export function RegisterPage() {
           hint={`Не короче ${MIN_PASSWORD} символов`}
           error={tooShort ? `Пароль должен быть не короче ${MIN_PASSWORD} символов` : null}
         >
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            required
-            minLength={MIN_PASSWORD}
-          />
+          <PasswordInput autoComplete="new-password" value={password} onChange={setPassword} minLength={MIN_PASSWORD} />
         </Field>
         <Field label="Повторите пароль" error={mismatch ? 'Пароли не совпадают' : null}>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={confirm}
-            onChange={(event) => setConfirm(event.target.value)}
-            required
-          />
+          <PasswordInput autoComplete="new-password" value={confirm} onChange={setConfirm} />
         </Field>
         {error ? <ErrorState error={error} /> : null}
         <Button type="submit" size="lg" loading={pending} disabled={mismatch || tooShort}>
