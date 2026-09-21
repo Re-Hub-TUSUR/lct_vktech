@@ -1277,6 +1277,19 @@ input[type='checkbox'] {
   text-align: center;
   color: var(--color-text-muted);
 }
+.auth__or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+.auth__or span {
+  height: 1px;
+  flex: 1;
+  background: var(--color-border);
+}
 @media (max-width: 900px) {
   .auth {
     grid-template-columns: 1fr;
