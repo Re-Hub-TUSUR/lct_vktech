@@ -229,6 +229,53 @@ export interface DesignTokens {
   patterns?: Record<string, number>
   /** Статистика разметки паттернов VLM (если она включена). */
   vlm?: { model: string; requested: number; labeled: number; failed: number }
+  /** Типографика по ролям текста — из стилей мастера и макетов. */
+  typography?: Record<string, TypeRole> | null
+  /** Сетка: поля, направляющие PowerPoint, края колонок (доли слайда). */
+  grid?: {
+    margins: { left: number | null; right: number | null; top: number | null; bottom: number | null }
+    safe_area: FrameRect | null
+    guides: { vertical: number[]; horizontal: number[] }
+    columns: number[]
+    rows: number[]
+  } | null
+  /** Номер слайда, колонтитул, дата и логотипы шаблона. */
+  chrome?: {
+    placeholders: Record<string, FrameRect>
+    usage: Record<string, number>
+    slide_number: boolean
+    footer_text: string | null
+    logos: { source: string; bbox: FrameRect; image: string; layout?: string | null; share?: number }[]
+  } | null
+  table_style?: {
+    style_id: string | null
+    first_row: boolean
+    band_row: boolean
+    header_fill: string | null
+    header_text: string | null
+    band_fill: string | null
+    font_size_pt: number | null
+  } | null
+  chart_style?: {
+    charts: number
+    series_colors: string[]
+    kinds: Record<string, number>
+    data_labels: boolean | null
+    font_size_pt: number | null
+    gap_width: number | null
+  } | null
+  /** Есть ли гарнитуры шаблона для рендера; недоступные LibreOffice подменит. */
+  fonts_check?: { name: string; available: boolean; substitute: string | null }[] | null
+  /** Библиотека пиктограмм шаблона: /api/templates/{id}/icons/{file} */
+  icons?: { id: string; file: string; slide_index: number; size_px: number[] | null; from_library: boolean; uses: number }[]
+}
+
+export interface TypeRole {
+  font: string | null
+  size_pt: number | null
+  bold: boolean | null
+  color: string | null
+  line_spacing: number | null
 }
 
 export type PatternType =
@@ -277,8 +324,18 @@ export interface SlidePattern {
   shapes?: SlideShape[]
   /** rules — эвристики парсера, vlm — уточнено моделью по рендеру слайда. */
   source: 'rules' | 'vlm'
+  /** slide — слайд-пример шаблона; layout — паттерн из макета (для шаблонов почти без примеров). */
+  origin?: 'slide' | 'layout'
+  /** Служебный пример (обложка, разделитель, финал) — используется для слайдов своего типа. */
+  service?: boolean
+  /** Схема слотов для генерации текста: сколько знаков и элементов помещается. */
+  schema?: Record<string, unknown>
+  /** Ошибка разбора слайда (паттерн не используется). */
+  error?: string
   /** Имя файла рендера слайда-примера: /api/templates/{id}/slides/{render} */
   render?: string | null
+  /** Рендер макета для паттерна из макета: /api/templates/{id}/layouts/{render_layout} */
+  render_layout?: string | null
   render_url?: string | null
   purpose?: string
   usage?: string

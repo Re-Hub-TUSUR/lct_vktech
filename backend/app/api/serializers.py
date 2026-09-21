@@ -8,7 +8,7 @@ from app.schemas.presentation import ContentFileOut, GenerationSettings, Present
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme, TemplateDetail, TemplateSummary
 from app.services.renders import render_state
-from app.services.templates import template_theme
+from app.services.templates import pattern_render_url, template_theme
 
 
 def template_summary(template: Template) -> TemplateSummary:
@@ -39,7 +39,7 @@ def template_detail(template: Template) -> TemplateDetail:
         tokens=template.tokens or {},
         layouts=template.layouts or [],
         layout_roles=template.layout_roles or {},
-        patterns=template.patterns or [],
+        patterns=[{**pattern, "render_url": pattern_render_url(template, pattern)} for pattern in template.patterns or []],
     )
 
 

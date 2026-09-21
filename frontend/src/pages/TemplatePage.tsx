@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, useTemplate } from '../api/queries'
+import { DesignSystemCard } from '../components/DesignSystemCard'
 import { PatternGallery } from '../components/PatternGallery'
 import { TemplatePreview } from '../components/TemplateCard'
 import { useToast } from '../components/Toast'
@@ -89,6 +90,8 @@ export function TemplatePage() {
           <PatternGallery template={template} />
         </Card>
       )}
+
+      {template.status === 'ready' && <DesignSystemCard template={template} />}
 
       {template.status === 'ready' && (
         <div className="grid grid-2">

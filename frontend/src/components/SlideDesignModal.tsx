@@ -3,7 +3,7 @@ import { Check, Eye, LayoutTemplate, Sparkles, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { Slide, SlidePattern, SlideTheme } from '../api/types'
-import { PATTERN_CATEGORY_LABELS, PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
+import { PATTERN_CATEGORY_LABELS, PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS, patternLabel } from '../lib/labels'
 import { Badge, Button } from './ui'
 
 interface SlideDesignModalProps {
@@ -69,7 +69,7 @@ export function SlideDesignModal({
   const getPatternImageUrl = (pattern: SlidePattern): string | undefined => {
     if (pattern.render_url) return pattern.render_url
     if (theme.template_id) {
-      const filename = pattern.render || `${pattern.slide_index + 1}.jpg`
+      const filename = pattern.render || `${Math.max(pattern.slide_index, 0) + 1}.jpg`
       return `/api/templates/${theme.template_id}/slides/${filename}`
     }
     return undefined
@@ -192,7 +192,7 @@ export function SlideDesignModal({
                         ) : (
                           <div className="slide-design-card__placeholder">
                             <LayoutTemplate size={24} />
-                            <span>№{pattern.slide_index + 1}</span>
+                            <span>{patternLabel(pattern)}</span>
                           </div>
                         )}
                         <span className="slide-design-card__badge">{patternTypeLabel}</span>
@@ -200,7 +200,7 @@ export function SlideDesignModal({
 
                       <div className="slide-design-card__header">
                         <span className="slide-design-card__title">
-                          Слайд-пример №{pattern.slide_index + 1}
+                          {pattern.origin === 'layout' ? 'Макет шаблона' : 'Слайд-пример'} {patternLabel(pattern)}
                         </span>
                         {isCurrent && (
                           <span className="badge badge-success" style={{ fontSize: 10 }}>
@@ -316,7 +316,7 @@ export function SlideDesignModal({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
                   <div className="row" style={{ justifyContent: 'space-between' }}>
                     <span className="muted">Слайд шаблона:</span>
-                    <strong>№{activePattern.slide_index + 1}</strong>
+                    <strong>{patternLabel(activePattern)}</strong>
                   </div>
                   <div className="row" style={{ justifyContent: 'space-between' }}>
                     <span className="muted">Тип структуры:</span>

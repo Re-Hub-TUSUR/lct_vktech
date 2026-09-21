@@ -21,7 +21,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from app.core.config import settings
-from app.pipeline.parsing.patterns import CATEGORIES, USABLE_TYPES, is_usable
+from app.pipeline.parsing.patterns import CATEGORIES, USABLE_TYPES, is_service, is_usable, pattern_schema
 from app.pipeline.skills import get_skill
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,8 @@ def apply_label(pattern: dict[str, Any], label: PatternLabel) -> bool:
         if shape_id in by_id and role in SLOT_ROLES and role != "title":
             by_id[shape_id]["role"] = role
     pattern["usable"] = is_usable(pattern)
+    pattern["service"] = is_service(pattern)
+    pattern["schema"] = pattern_schema(pattern)
     return True
 
 

@@ -5,6 +5,10 @@
 цвет, маркеры — из абзацев самого слота). Лишние карточки удаляются целиком, а текст
 примера, которому не нашлось содержимого, убирается — в готовом слайде остаются только
 сгенерированные тексты и оформление шаблона.
+
+Диаграмма слайда-примера копируется вместе со своими частями (данные, стиль, цвета)
+и получает новые данные через replace_data — оформление графика остаётся шаблонным.
+Паттерн из макета (origin=layout) — новый слайд на макете, текст ставится в плейсхолдеры.
 """
 
 import copy
@@ -13,10 +17,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from lxml import etree
+from pptx.chart.data import CategoryChartData
+from pptx.dml.color import RGBColor
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+from pptx.opc.package import Part, XmlPart
 from pptx.oxml.ns import qn
 
-from app.schemas.slide import Slide, TableData
+from app.pipeline.parsing.layout_patterns import slot_id
+from app.pipeline.parsing.patterns import _walk
+from app.schemas.slide import INVERSE_KINDS, ChartData, Slide, TableData
 
 R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 COPYABLE_RELTYPES = {
@@ -29,6 +38,9 @@ COPYABLE_RELTYPES = {
     "http://schemas.microsoft.com/office/2007/relationships/media",
 }
 LINK_TAGS = {qn("a:hlinkClick"), qn("a:hlinkHover")}
+# Порядок дочерних элементов a:pPr по схеме: маркер ставим перед табуляцией и стилем текста.
+PPR_TAIL = {qn("a:tabLst"), qn("a:defRPr"), qn("a:extLst")}
+BULLET_TAGS = {qn("a:buNone"), qn("a:buAutoNum"), qn("a:buChar"), qn("a:buBlip")}
 TREE_HEADER = {qn("p:nvGrpSpPr"), qn("p:grpSpPr")}
 AUTOFIT_TAGS = {qn("a:noAutofit"), qn("a:normAutofit"), qn("a:spAutoFit")}
 NUMBERING_RX = re.compile(r"^0?\d{1,2}[.)]?$")
@@ -103,8 +115,40 @@ def units(pattern: dict[str, Any], kind: str) -> list[dict[str, Any]]:
 # --- клонирование ------------------------------------------------------------------
 
 
+def _numbered(partname: str) -> str:
+    """/ppt/charts/chart12.xml → /ppt/charts/chart%d.xml — шаблон имени для следующей свободной части."""
+    return re.sub(r"\d+(\.\w+)$", r"%d\1", partname)
+
+
+def _remap_rids(element, mapping: dict[str, str]) -> None:
+    for node in element.iter():
+        for attr, value in list(node.attrib.items()):
+            if attr.startswith(R_NS) and value in mapping:
+                node.set(attr, mapping[value])
+
+
+def copy_part(part, package):
+    """Копия части пакета (диаграмма, её книга Excel, стиль и цвета) со своими связями: у каждого
+    слайда должна быть своя диаграмма, иначе новые данные попадут и в соседний слайд."""
+    partname = package.next_partname(_numbered(str(part.partname)))
+    # Тот же класс части (EmbeddedXlsxPart, ChartPart…): replace_data пишет новую книгу Excel через его API.
+    loader = type(part) if isinstance(part, (Part, XmlPart)) else Part
+    new = loader.load(partname, part.content_type, package, part.blob)
+    mapping: dict[str, str] = {}
+    for rel in part.rels.values():
+        if rel.is_external:
+            mapping[rel.rId] = new.relate_to(rel.target_ref, rel.reltype, is_external=True)
+        elif rel.reltype == RT.IMAGE:
+            mapping[rel.rId] = new.relate_to(rel.target_part, rel.reltype)
+        else:
+            mapping[rel.rId] = new.relate_to(copy_part(rel.target_part, package), rel.reltype)
+    if isinstance(new, XmlPart) and mapping:
+        _remap_rids(new._element, mapping)
+    return new
+
+
 def clone_slide(prs, source):
-    """Копия слайда-примера в конце презентации: фигуры, картинки, ссылки и фон."""
+    """Копия слайда-примера в конце презентации: фигуры, картинки, диаграммы, ссылки и фон."""
     slide = prs.slides.add_slide(source.slide_layout)
     tree = slide.shapes._spTree
     for element in list(tree):
@@ -116,6 +160,11 @@ def clone_slide(prs, source):
         if rel.reltype in COPYABLE_RELTYPES:
             target = rel.target_ref if rel.is_external else rel.target_part
             rid_map[rel.rId] = slide.part.relate_to(target, rel.reltype, is_external=rel.is_external)
+        elif rel.reltype == RT.CHART and not rel.is_external:
+            try:
+                rid_map[rel.rId] = slide.part.relate_to(copy_part(rel.target_part, slide.part.package), RT.CHART)
+            except Exception:  # noqa: BLE001 — не скопировалась диаграмма: фигура просто не попадёт в клон
+                continue
 
     def remap(element) -> bool:
         for node in list(element.iter()):
@@ -165,6 +214,22 @@ def shape_elements(slide) -> dict[int, Any]:
     return result
 
 
+def placeholder_elements(slide) -> dict[int, Any]:
+    """Для слайда на макете: id слота (PH_BASE + idx плейсхолдера) → элемент плейсхолдера."""
+    return {slot_id(ph.placeholder_format.idx): ph._element for ph in slide.placeholders}
+
+
+def prune_placeholders(slide, keep: set[int] | None = None) -> None:
+    """Пустые плейсхолдеры в PowerPoint показывают подсказки «Введите текст» — убираем их."""
+    keep = keep or set()
+    for ph in list(slide.placeholders):
+        if ph.placeholder_format.idx in keep:
+            continue
+        text = ph.text_frame.text.strip() if ph.has_text_frame else ""
+        if not text and ph._element.find(f".//{qn('p:blipFill')}") is None:
+            remove(ph._element)
+
+
 def _paragraph_text(paragraph) -> str:
     return "".join(node.text or "" for node in paragraph.iter(qn("a:t"))).strip()
 
@@ -208,7 +273,34 @@ def _autofit(body) -> None:
         body_pr.insert(0, autofit)
 
 
-def set_body(body, lines: list[str], *, head: str | None = None, autofit: bool = True) -> bool:
+def _plain_head(paragraph) -> None:
+    """Заголовок элемента внутри плейсхолдера списка: без маркера и отступа, жирным."""
+    props = paragraph.find(qn("a:pPr"))
+    if props is None:
+        props = etree.Element(qn("a:pPr"))
+        paragraph.insert(0, props)
+    props.set("marL", "0")
+    props.set("indent", "0")
+    for child in list(props):
+        if child.tag in BULLET_TAGS:
+            props.remove(child)
+    tail = next((child for child in props if child.tag in PPR_TAIL), None)
+    bullet = etree.Element(qn("a:buNone"))
+    if tail is not None:
+        tail.addprevious(bullet)
+    else:
+        props.append(bullet)
+    for run in paragraph.findall(qn("a:r")):
+        run_props = run.find(qn("a:rPr"))
+        if run_props is None:
+            run_props = etree.Element(qn("a:rPr"))
+            run.insert(0, run_props)
+        run_props.set("b", "1")
+
+
+def set_body(
+    body, lines: list[str], *, head: str | None = None, autofit: bool = True, plain_head: bool = False
+) -> bool:
     """Заменяет абзацы txBody. head — первый абзац в стиле первого абзаца шаблона (заголовок карточки)."""
     if body is None:
         return False
@@ -221,7 +313,10 @@ def set_body(body, lines: list[str], *, head: str | None = None, autofit: bool =
     for paragraph in paragraphs:
         body.remove(paragraph)
     if head is not None:
-        body.append(_filled_paragraph(templates[0], head))
+        head_paragraph = _filled_paragraph(templates[0], head)
+        if plain_head:
+            _plain_head(head_paragraph)
+        body.append(head_paragraph)
         templates = templates[1:] or templates
     for index, line in enumerate(lines if lines or head is not None else [""]):
         body.append(_filled_paragraph(templates[min(index, len(templates) - 1, 1)], line))
@@ -230,8 +325,8 @@ def set_body(body, lines: list[str], *, head: str | None = None, autofit: bool =
     return True
 
 
-def set_text(element, lines: list[str], *, head: str | None = None) -> bool:
-    return set_body(element.find(qn("p:txBody")), lines, head=head)
+def set_text(element, lines: list[str], *, head: str | None = None, plain_head: bool = False) -> bool:
+    return set_body(element.find(qn("p:txBody")), lines, head=head, plain_head=plain_head)
 
 
 def remove(element) -> None:
@@ -251,7 +346,9 @@ def drop(elements: dict[int, Any], slot: dict[str, Any]) -> None:
 # --- заполнение паттерна ------------------------------------------------------------
 
 
-def _fill_item(elements: dict[int, Any], unit: dict[str, Any], content: ItemContent, number: int) -> None:
+def _fill_item(
+    elements: dict[int, Any], unit: dict[str, Any], content: ItemContent, number: int, plain_head: bool = False
+) -> None:
     slots: dict[str, list[tuple[dict[str, Any], Any]]] = {}
     for slot in unit["slots"]:
         if (element := elements.get(slot["id"])) is not None:
@@ -291,7 +388,7 @@ def _fill_item(elements: dict[int, Any], unit: dict[str, Any], content: ItemCont
         if index:
             drop(elements, slot)
         elif slot["role"] == "title_text" or not text_capable:
-            set_text(element, lines, head=title)
+            set_text(element, lines, head=title, plain_head=plain_head)
             lines = []
         else:
             set_text(element, [title])
@@ -373,9 +470,47 @@ def _union(boxes: list[list[float]]) -> list[float]:
     return [round(x0, 4), round(y0, 4), round(x1 - x0, 4), round(y1 - y0, 4)]
 
 
-def fill_pattern(slide, pattern: dict[str, Any], spec: Slide) -> dict[str, list[float]]:
-    """Заполняет клон слайда-примера. Возвращает рамки элементов для подсветки аудита (адрес → [x, y, w, h])."""
-    elements = shape_elements(slide)
+def fill_chart(slide, frame_id: int, chart_spec: ChartData, accents: list[str] | None = None) -> bool:
+    """Данные слайда в диаграмму слайда-примера: цвета, шрифты и оси остаются шаблонными."""
+    shape = next(
+        (s for s in _walk(slide.shapes) if s.shape_id == frame_id and getattr(s, "has_chart", False) and s.has_chart),
+        None,
+    )
+    if shape is None or not chart_spec.series:
+        return False
+    chart = shape.chart
+    before = sum(len(list(plot.series)) for plot in chart.plots)
+    data = CategoryChartData()
+    data.categories = chart_spec.categories
+    for series in chart_spec.series:
+        data.add_series(series.name or "Серия", series.values)
+    chart.replace_data(data)
+    if chart.has_title:
+        if chart_spec.caption:
+            chart.chart_title.text_frame.text = chart_spec.caption
+        else:
+            chart.has_title = False
+    # Лишние ряды python-pptx клонирует из последнего — даём им свои цвета, чтобы не слились.
+    if accents and chart.plots:
+        for index, series in enumerate(chart.plots[0].series):
+            if index >= before:
+                color = accents[index % len(accents)].lstrip("#")
+                try:
+                    series.format.fill.solid()
+                    series.format.fill.fore_color.rgb = RGBColor.from_string(color)
+                except Exception:  # noqa: BLE001 — у линий нет заливки, красим линию
+                    series.format.line.color.rgb = RGBColor.from_string(color)
+    return True
+
+
+def fill_pattern(
+    slide, pattern: dict[str, Any], spec: Slide, *, accents: list[str] | None = None
+) -> dict[str, list[float]]:
+    """Заполняет клон слайда-примера (или новый слайд на макете для origin=layout).
+    Возвращает рамки элементов для подсветки аудита (адрес → [x, y, w, h])."""
+    from_layout = pattern.get("origin") == "layout"
+    elements = placeholder_elements(slide) if from_layout else shape_elements(slide)
+    plain_head = bool(pattern.get("plain_heads"))
     content = content_for(spec)
     targets: dict[str, list[float]] = {}
     handled: set[int] = set()
@@ -391,7 +526,7 @@ def fill_pattern(slide, pattern: dict[str, Any], spec: Slide) -> dict[str, list[
     for index, unit in enumerate(units(pattern, spec.kind)):
         handled.update(slot["id"] for slot in unit["slots"])
         if index < len(content.items):
-            _fill_item(elements, unit, content.items[index], index + 1)
+            _fill_item(elements, unit, content.items[index], index + 1, plain_head=plain_head)
             kept.append(unit["bbox"])
             if prefix:
                 targets[f"{prefix}.{index}"] = unit["bbox"]
@@ -408,7 +543,19 @@ def fill_pattern(slide, pattern: dict[str, Any], spec: Slide) -> dict[str, list[
     if table and spec.table and (frame := elements.get(table["id"])) is not None:
         fill_table(frame, spec.table)
         targets["table"] = table["bbox"]
+    chart = pattern["frames"].get("chart")
+    if chart and spec.chart and fill_chart(slide, chart["id"], spec.chart, accents):
+        targets["chart"] = chart["bbox"]
 
+    # Обложка, разделитель, финал: подзаголовок — в свой слот или в текстовый, номер раздела — в «01».
+    service = spec.kind in INVERSE_KINDS
+    has_subtitle_slot = any(slot["role"] == "subtitle" for slot in pattern["slots"])
+    number_slot = None
+    if spec.kind == "section" and content.subtitle and re.fullmatch(r"\d{1,2}", content.subtitle.strip()):
+        number_slot = next(
+            (slot for slot in pattern["slots"] if slot["role"] == "decor_text" and NUMBERING_RX.match(slot["sample"])),
+            None,
+        )
     filled: set[str] = set()
     use_body = bool(content.body) and not kept
     for slot in pattern["slots"]:
@@ -416,7 +563,21 @@ def fill_pattern(slide, pattern: dict[str, Any], spec: Slide) -> dict[str, list[
         if element is None or slot["id"] in handled:
             continue
         role = slot["role"]
-        if role == "body" and use_body and "body" not in filled:
+        if slot is number_slot:
+            set_text(element, [content.subtitle.strip()])
+            filled.add("subtitle")
+        elif (
+            service
+            and role in {"subtitle", "body"}
+            and (role == "subtitle" or not has_subtitle_slot)
+            and content.subtitle
+            and number_slot is None
+            and "subtitle" not in filled
+        ):
+            set_text(element, [content.subtitle])
+            targets["subtitle"] = slot["bbox"]
+            filled.add("subtitle")
+        elif role == "body" and use_body and "body" not in filled:
             set_text(element, content.body)
             targets["quote" if spec.kind == "quote" else "bullets"] = slot["bbox"]
             filled.add("body")
@@ -432,6 +593,10 @@ def fill_pattern(slide, pattern: dict[str, Any], spec: Slide) -> dict[str, list[
 
     if pattern["images"]:
         targets["image"] = pattern["images"][0]["bbox"]
+    if from_layout:
+        # Плейсхолдер картинки оставляем — в него вставит изображение сборка (или уберёт его сама).
+        keep = {image["id"] - slot_id(0) for image in pattern["images"] if image.get("placeholder")}
+        prune_placeholders(slide, keep=keep)
     if spec.notes:
         slide.notes_slide.notes_text_frame.text = spec.notes
     return targets

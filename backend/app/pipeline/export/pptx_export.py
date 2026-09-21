@@ -6,8 +6,14 @@
 Остальные — на макете шаблона: заголовки и тезисы в плейсхолдеры или текстовые
 поля, данные в нативные диаграммы, таблицы и фигуры. В конце слайды-примеры
 удаляются. Растровых слайдов нет.
+
+Токены дизайн-системы шаблона (theme["design"], см. parsing/design_tokens.py): новые
+таблицы берут стиль таблиц шаблона, диаграммы — цвета его рядов, текст на макетах —
+кегли из типографики; номер слайда и колонтитул переносятся, если их ставит шаблон.
 """
 
+import copy
+import logging
 import math
 from dataclasses import dataclass, field, replace
 from io import BytesIO
@@ -24,12 +30,14 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from app.core.storage import storage_path
-from app.pipeline.export.pattern_fill import clone_slide, fill_pattern
+from app.pipeline.export.pattern_fill import clone_slide, fill_pattern, remove, set_body
 from app.pipeline.geometry import content_frame
-from app.pipeline.layout.matcher import fits
+from app.pipeline.parsing.layout_patterns import PH_BASE
 from app.pipeline.parsing.template_parser import extract_theme, layout_background
 from app.pipeline.theme import mix, text_on
 from app.schemas.slide import Slide
+
+logger = logging.getLogger(__name__)
 
 TITLE_TYPES = {PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE}
 BODY_TYPES = {PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT, PP_PLACEHOLDER.SUBTITLE}
@@ -89,6 +97,19 @@ class _Ctx:
     def pt(self, size: float) -> Pt:
         return Pt(round(size * self.scale, 1))
 
+    @property
+    def design(self) -> dict:
+        return self.theme.get("design") or {}
+
+    def absolute(self, size_pt: float | None, fallback: float) -> float:
+        """Кегль шаблона (в пунктах его слайда) в масштабе _run/pt; без токена — запасной кегль."""
+        return size_pt / self.scale if size_pt else fallback
+
+    def role_size(self, role: str, fallback: float) -> float:
+        """Кегль роли текста из типографики шаблона (title, body, body_2, caption…)."""
+        typography = self.design.get("typography") or {}
+        return self.absolute((typography.get(role) or {}).get("size_pt"), fallback)
+
     def rgb(self, color: str) -> RGBColor:
         return RGBColor.from_string(color.lstrip("#"))
 
@@ -115,6 +136,9 @@ def build_deck(
     theme_colors = extract_theme(prs)["colors"]
     ctx = _Ctx(width=int(prs.slide_width), height=int(prs.slide_height), theme=theme)
 
+    chrome = ctx.design.get("chrome") or {}
+    # Ряды диаграмм — цветами диаграмм шаблона, если они есть, иначе акцентами темы.
+    chart_colors = (ctx.design.get("chart_style") or {}).get("series_colors") or theme["accents"]
     targets: list[Targets] = []
     for spec in slides:
         key = spec.layout_key if spec.layout_key in layouts else fallback_key
@@ -129,28 +153,17 @@ def build_deck(
             font_family=spec.font_family,
         )
         pattern = by_id.get(spec.pattern_id or "")
-        if pattern is not None and pattern["slide_index"] < len(sources):
+        if pattern is not None:
+            count_before = len(prs.slides)
             try:
-                slide = clone_slide(prs, sources[pattern["slide_index"]])
-                targets.append(fill_pattern(slide, pattern, spec))
-                _shapes(slide, spec.shapes, slide_ctx, pattern_shapes=pattern.get("shapes"))
-                if spec.image and spec.image.url and spec.kind == "image_text":
-                    img_name = Path(spec.image.url).name
-                    try:
-                        local_path = storage_path("user_images", img_name)
-                        if local_path.exists():
-                            left = int(slide_ctx.width * 0.55)
-                            top = int(slide_ctx.height * 0.25)
-                            img_w = int(slide_ctx.width * 0.38)
-                            img_h = int(slide_ctx.height * 0.55)
-                            slide.shapes.add_picture(str(local_path), left, top, img_w, img_h)
-                    except Exception:
-                        pass
+                targets.append(_pattern_slide(prs, pattern, spec, sources, layouts, slide_ctx, chart_colors, chrome))
                 continue
-            except Exception:
-                # В случае ошибки клонирования откатываемся на нативный макет
-                pass
-        targets.append(_render(prs.slides.add_slide(layout), spec, slide_ctx))
+            except Exception:  # noqa: BLE001 — сборка по паттерну не удалась: слайд собирается на макете
+                logger.exception("Паттерн %s не собрался для слайда %s", pattern.get("id"), spec.id)
+                _drop_slides_after(prs, count_before)
+        slide = prs.slides.add_slide(layout)
+        targets.append(_render(slide, spec, slide_ctx))
+        _add_chrome(slide, layout, chrome)
     clear_slides(prs, len(sources))
 
     buffer = BytesIO()
@@ -158,6 +171,87 @@ def build_deck(
     data = buffer.getvalue()
     _verify(data, expected=len(slides))
     return DeckBuild(data=data, targets=targets)
+
+
+def _user_image(spec: Slide) -> Path | None:
+    if not spec.image or not spec.image.url:
+        return None
+    path = storage_path("user_images", Path(spec.image.url).name)
+    return path if path.exists() else None
+
+
+def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
+    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
+    path = _user_image(spec) if spec.kind == "image_text" else None
+    placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
+    if placeholders:
+        idx = placeholders[0]["id"] - PH_BASE
+        holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
+        if holder is not None:
+            if path is not None and hasattr(holder, "insert_picture"):
+                holder.insert_picture(str(path))
+            else:
+                remove(holder._element)
+        return
+    if path is None:
+        return
+    x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
+    slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+
+
+def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx, chart_colors, chrome) -> Targets:
+    """Слайд по паттерну: клон слайда-примера или новый слайд на макете паттерна (origin=layout)."""
+    if pattern.get("origin") == "layout":
+        layout = layouts.get(pattern.get("layout_key") or "")
+        if layout is None:
+            raise ExportError(f"Макет паттерна {pattern['id']} не найден")
+        slide = prs.slides.add_slide(layout)
+        slide_targets = fill_pattern(slide, pattern, spec, accents=chart_colors)
+        _add_chrome(slide, layout, chrome)
+    else:
+        index = pattern.get("slide_index", -1)
+        if not 0 <= index < len(sources):
+            raise ExportError(f"Слайд-пример паттерна {pattern['id']} не найден")
+        slide = clone_slide(prs, sources[index])
+        slide_targets = fill_pattern(slide, pattern, spec, accents=chart_colors)
+    _place_image(slide, pattern, spec, ctx)
+    _shapes(slide, spec.shapes, ctx, pattern_shapes=pattern.get("shapes"))
+    return slide_targets
+
+
+def _drop_slides_after(prs, count: int) -> None:
+    """Убирает недособранные слайды (добавленные после count), чтобы не было дублей."""
+    slide_ids = prs.slides._sldIdLst
+    for slide_id in list(slide_ids)[count:]:
+        prs.part.drop_rel(slide_id.rId)
+        slide_ids.remove(slide_id)
+
+
+def _add_chrome(slide, layout, chrome: dict) -> None:
+    """Номер слайда и колонтитул с макета: python-pptx их не копирует, а шаблон их ставит."""
+    wanted = set()
+    if chrome.get("slide_number"):
+        wanted.add(PP_PLACEHOLDER.SLIDE_NUMBER)
+    if chrome.get("footer_text"):
+        wanted.add(PP_PLACEHOLDER.FOOTER)
+    if not wanted:
+        return
+    present = {ph.placeholder_format.type for ph in slide.placeholders}
+    tree = slide.shapes._spTree
+    next_id = max((int(el.get("id", "0")) for el in slide._element.iter(qn("p:cNvPr"))), default=1) + 1
+    for ph in layout.placeholders:
+        kind = ph.placeholder_format.type
+        if kind not in wanted or kind in present:
+            continue
+        element = copy.deepcopy(ph._element)
+        c_nv_pr = element.find(f"{qn('p:nvSpPr')}/{qn('p:cNvPr')}")
+        if c_nv_pr is not None:
+            c_nv_pr.set("id", str(next_id))
+            next_id += 1
+        if kind == PP_PLACEHOLDER.FOOTER:
+            set_body(element.find(qn("p:txBody")), [chrome["footer_text"]], autofit=False)
+        tree.append(element)
+        present.add(kind)
 
 
 def clear_slides(prs, count: int | None = None) -> None:
@@ -249,7 +343,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         items = spec.bullets
         if kind == "agenda":
             items = [f"{i:02d}   {item}" for i, item in enumerate(items, start=1)]
-        _bullets_box(slide, area, items, ctx, bullets=kind == "bullets")
+        _bullets_box(slide, area, items, ctx, bullets=kind == "bullets", size=ctx.role_size("body", 20))
     elif kind == "two_columns":
         _two_columns(slide, spec, area, ctx)
     elif kind == "cards":
@@ -432,10 +526,11 @@ def _image_text(slide, spec: Slide, area, ctx: _Ctx) -> None:
 
 def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
     chart_spec = spec.chart
+    chart_style = ctx.design.get("chart_style") or {}
     x, y, w, h = area
     if chart_spec.caption:
         caption = slide.shapes.add_textbox(x, y, w, int(h * 0.1))
-        _write(caption.text_frame, [chart_spec.caption], ctx, size=14, color=ctx.muted)
+        _write(caption.text_frame, [chart_spec.caption], ctx, size=ctx.role_size("caption", 14), color=ctx.muted)
         y, h = y + int(h * 0.11), int(h * 0.89)
 
     data = CategoryChartData()
@@ -445,7 +540,7 @@ def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
     graphic = slide.shapes.add_chart(CHART_TYPES[chart_spec.type], x, y, w, h, data)
     chart = graphic.chart
     chart.has_title = False  # подпись диаграммы — отдельным текстом над ней
-    chart.font.size = ctx.pt(14)
+    chart.font.size = ctx.pt(ctx.absolute(chart_style.get("font_size_pt"), 14))
     chart.font.color.rgb = ctx.rgb(ctx.fg)
     if chart_spec.show_legend is not None:
         chart.has_legend = chart_spec.show_legend
@@ -458,7 +553,7 @@ def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
     plot = chart.plots[0]
     plot.has_data_labels = chart_spec.show_values if chart_spec.show_values is not None else True
     plot.data_labels.font.size = ctx.pt(12)
-    accents = chart_spec.colors if chart_spec.colors else ctx.theme["accents"]
+    accents = chart_spec.colors or chart_style.get("series_colors") or ctx.theme["accents"]
     if chart_spec.type in ("pie", "donut"):
         for i, point in enumerate(plot.series[0].points):
             point.format.fill.solid()
@@ -486,13 +581,24 @@ def _table(slide, spec: Slide, area, ctx: _Ctx) -> None:
     rows = len(table_spec.rows) + 1
     row_height = min(h // rows, int(Pt(40 * ctx.scale)))
     table = slide.shapes.add_table(rows, columns, x, y, w, row_height * rows).table
+    # Стиль таблиц шаблона (tableStyles.xml) вместо стандартного стиля python-pptx.
+    style = ctx.design.get("table_style") or {}
+    if style.get("style_id"):
+        table_props = table._tbl.tblPr
+        style_id = table_props.find(qn("a:tableStyleId"))
+        if style_id is None:
+            style_id = etree.SubElement(table_props, qn("a:tableStyleId"))
+        style_id.text = style["style_id"]
+        table_props.set("firstRow", "1" if style.get("first_row", True) else "0")
+        table_props.set("bandRow", "1" if style.get("band_row", True) else "0")
+    size = ctx.absolute(style.get("font_size_pt"), 14)
     cells = [table_spec.columns, *table_spec.rows]
     for r, row in enumerate(cells):
         for c in range(columns):
             cell = table.cell(r, c)
             cell.text = ""
             text = row[c] if c < len(row) else ""
-            _run(cell.text_frame.paragraphs[0], text, ctx, size=14, bold=r == 0, styled=True)
+            _run(cell.text_frame.paragraphs[0], text, ctx, size=size, bold=r == 0, styled=True)
 
 
 def _kpis(slide, spec: Slide, area, ctx: _Ctx) -> None:
@@ -587,6 +693,10 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
 
         fill_color = color or ctx.theme.get("accent", "#0077FF")
 
+        # Фигура шаблона, которой нет среди фигур слайда верхнего уровня, лежит внутри группы
+        # или удалена сборкой вместе с лишней карточкой — пересоздавать её нельзя: будут дубли и «сироты».
+        if tpl_id and tpl_id not in existing:
+            continue
         # Если это существующая фигура шаблона на клонированном слайде:
         if tpl_id and tpl_id in existing:
             sp = existing[tpl_id]

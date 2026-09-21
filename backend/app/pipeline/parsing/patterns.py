@@ -16,6 +16,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
 
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -61,10 +62,27 @@ MAX_TEXT_SHAPES = 30
 MAX_LOOSE_DECOR = 12
 
 TITLE_PLACEHOLDERS = {PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE}
+# Колонтитулы, номер слайда и дата — оформление шаблона, а не слоты: сборка их не трогает.
+CHROME_PLACEHOLDERS = {PP_PLACEHOLDER.SLIDE_NUMBER, PP_PLACEHOLDER.FOOTER, PP_PLACEHOLDER.DATE}
 
 # Типы паттернов, которые умеет заполнять генерация.
-USABLE_TYPES = {"text", "cards", "two_columns", "kpi", "timeline", "table", "image_text", "agenda"}
+USABLE_TYPES = {"text", "cards", "two_columns", "kpi", "timeline", "table", "image_text", "agenda", "chart"}
 CATEGORIES = ("content", "cover", "section", "closing", "profile", "code", "quote", "library")
+# Служебные слайды-примеры (обложка, разделитель, финал) годятся для слайдов своего типа.
+SERVICE_CATEGORIES = {"cover", "section", "closing"}
+# Тип диаграммы шаблона → тип диаграммы слайда (ChartData.type). Остальные типы не заполняем.
+CHART_KINDS = {
+    XL_CHART_TYPE.COLUMN_CLUSTERED: "bar",
+    XL_CHART_TYPE.COLUMN_STACKED: "bar",
+    XL_CHART_TYPE.BAR_CLUSTERED: "horizontal_bar",
+    XL_CHART_TYPE.BAR_STACKED: "horizontal_bar",
+    XL_CHART_TYPE.LINE: "line",
+    XL_CHART_TYPE.LINE_MARKERS: "line",
+    XL_CHART_TYPE.PIE: "pie",
+    XL_CHART_TYPE.PIE_EXPLODED: "pie",
+    XL_CHART_TYPE.DOUGHNUT: "donut",
+    XL_CHART_TYPE.DOUGHNUT_EXPLODED: "donut",
+}
 
 
 @dataclass
@@ -123,6 +141,8 @@ def _bold(shape) -> bool:
 def _kind(shape) -> str:
     if shape.is_placeholder and shape.placeholder_format.type in TITLE_PLACEHOLDERS:
         return "title"
+    if shape.is_placeholder and shape.placeholder_format.type in CHROME_PLACEHOLDERS:
+        return "chrome"
     shape_type = shape.shape_type
     if shape_type == MSO_SHAPE_TYPE.PICTURE or (shape.is_placeholder and shape.placeholder_format.type == PP_PLACEHOLDER.PICTURE):
         return "picture"
@@ -402,12 +422,100 @@ def _category(index: int, title: Leaf | None, leaves: list[Leaf], layout_name: s
     return "content"
 
 
+def shape_type(shape):
+    """Тип фигуры или None: на экзотических фигурах python-pptx бросает NotImplementedError."""
+    try:
+        return shape.shape_type
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _walk(shapes):
+    """Все фигуры слайда, включая вложенные в группы."""
+    for shape in shapes:
+        yield shape
+        if shape_type(shape) == MSO_SHAPE_TYPE.GROUP:
+            yield from _walk(shape.shapes)
+
+
+def chart_meta(shape) -> dict[str, Any]:
+    """Что за диаграмма в слайде-примере: тип, число рядов и категорий, легенда, заголовок."""
+    chart = shape.chart
+    try:
+        chart_type = chart.chart_type
+    except Exception:  # noqa: BLE001 — экзотические типы python-pptx не распознаёт
+        chart_type = None
+    plots = list(chart.plots)
+    series = sum(len(list(plot.series)) for plot in plots)
+    categories = len(list(plots[0].categories)) if plots else 0
+    return {
+        "kind": CHART_KINDS.get(chart_type, "other"),
+        "plots": len(plots),
+        "series": series,
+        "categories": categories,
+        "has_legend": bool(chart.has_legend),
+        "has_title": bool(chart.has_title),
+    }
+
+
 def is_usable(pattern: dict[str, Any]) -> bool:
+    if pattern["type"] == "chart":
+        chart = pattern["frames"].get("chart") or {}
+        # Диаграмму подменяем данными только в «чистом» примере: одна диаграмма одного типа и без карточек.
+        simple = (
+            chart.get("kind", "other") != "other"
+            and chart.get("plots") == 1
+            and pattern.get("charts_count") == 1
+        )
+        if not simple or pattern.get("items_count"):
+            return False
     return (
         pattern["type"] in USABLE_TYPES
         and pattern.get("title") is not None
         and pattern.get("category", "content") == "content"
     )
+
+
+def is_service(pattern: dict[str, Any]) -> bool:
+    """Обложка, разделитель или финал, которые можно клонировать для слайдов этих типов."""
+    return (
+        pattern.get("category") in SERVICE_CATEGORIES
+        and pattern.get("title") is not None
+        and (pattern["title"].get("chars") or 0) >= 16
+        and not pattern.get("items")
+        and not pattern.get("frames")
+        and not any(slot["role"] == "image_hint" for slot in pattern.get("slots") or [])
+        and pattern.get("type") in {"title_only", "text"}
+    )
+
+
+def _min_items(count: int) -> int:
+    """Сколько элементов минимум нужно паттерну: лишних не больше половины (как в подборе паттерна)."""
+    return next((n for n in range(1, count + 1) if count - n <= max(1, n // 2)), count)
+
+
+def pattern_schema(pattern: dict[str, Any]) -> dict[str, Any]:
+    """Схема слотов для генерации текста: что писать и сколько знаков помещается. Её получит LLM,
+    чтобы сразу писать текст под выбранный паттерн, а не подгонять его потом."""
+    schema: dict[str, Any] = {"type": pattern["type"]}
+    if pattern.get("title"):
+        schema["title"] = pattern["title"]["chars"]
+    for slot in pattern.get("slots") or []:
+        if slot["role"] in {"body", "subtitle", "value", "value_label"} and slot["role"] not in schema:
+            schema[slot["role"]] = {"chars": slot["chars"], "paragraphs": max(1, slot.get("paragraphs") or 1)}
+    items = pattern.get("items") or []
+    if items:
+        fields: dict[str, int] = {}
+        for slot in items[0]["slots"]:
+            role = "text" if slot["role"] == "lines" else slot["role"]
+            fields[role] = fields.get(role, 0) + slot["chars"]
+        schema["items"] = {"min": _min_items(len(items)), "max": len(items), "fields": fields}
+    chart = pattern.get("frames", {}).get("chart")
+    if chart:
+        schema["chart"] = {"kind": chart.get("kind"), "series": chart.get("series"), "categories": chart.get("categories")}
+    if pattern.get("frames", {}).get("table"):
+        schema["table"] = True
+    return schema
 
 
 def analyze_slide(
@@ -449,9 +557,17 @@ def analyze_slide(
         pattern["title"] = _slot(title, "title", width, height)
     pattern["category"] = _category(index, title, leaves, layout_name)
 
+    shapes_by_id = {shape.shape_id: shape for shape in _walk(slide.shapes)}
     for leaf in leaves:
         if leaf.kind in {"table", "chart"}:
-            pattern["frames"][leaf.kind] = {"id": leaf.id, "bbox": [round(v, 4) for v in leaf.bbox]}
+            frame: dict[str, Any] = {"id": leaf.id, "bbox": [round(v, 4) for v in leaf.bbox]}
+            if leaf.kind == "chart" and leaf.id in shapes_by_id:
+                try:
+                    frame.update(chart_meta(shapes_by_id[leaf.id]))
+                except Exception:  # noqa: BLE001 — повреждённая диаграмма не должна ронять разбор
+                    frame["kind"] = "other"
+            pattern["frames"][leaf.kind] = frame
+    pattern["charts_count"] = sum(1 for leaf in leaves if leaf.kind == "chart")
     if len(texts) > MAX_TEXT_SHAPES or any(leaf.kind == "media" for leaf in leaves):
         return pattern
 
@@ -604,6 +720,8 @@ def analyze_slide(
     pattern["shapes"] = shapes
     pattern["type"] = _classify(pattern, leaves, items, used, title)
     pattern["usable"] = is_usable(pattern)
+    pattern["service"] = is_service(pattern)
+    pattern["schema"] = pattern_schema(pattern)
     return pattern
 
 
@@ -620,6 +738,8 @@ def _classify(
 ) -> str:
     roles = {slot["role"] for item in items for slot in item["slots"]}
     single_roles = {slot["role"] for slot in pattern["slots"]}
+    if pattern.get("charts_count", 0) > 1:
+        return "complex"
     if "table" in pattern["frames"]:
         return "table"
     if "chart" in pattern["frames"]:
@@ -664,10 +784,37 @@ def extract_patterns(
 ) -> list[dict[str, Any]]:
     width, height = int(prs.slide_width), int(prs.slide_height)
     names = layout_names or {}
-    return [
-        analyze_slide(slide, index, key, width, height, names.get(key or ""), theme_colors=theme_colors)
-        for index, (slide, key) in enumerate(zip(prs.slides, slide_layout_keys))
-    ]
+    patterns = []
+    for index, (slide, key) in enumerate(zip(prs.slides, slide_layout_keys)):
+        try:
+            patterns.append(
+                analyze_slide(slide, index, key, width, height, names.get(key or ""), theme_colors=theme_colors)
+            )
+        except Exception as exc:  # noqa: BLE001 — один странный слайд не должен ронять разбор чужого шаблона
+            patterns.append(broken_pattern(index, key, exc))
+    return patterns
+
+
+def broken_pattern(index: int, layout_key: str | None, exc: Exception) -> dict[str, Any]:
+    return {
+        "id": f"s{index + 1}",
+        "slide_index": index,
+        "layout_key": layout_key,
+        "type": "complex",
+        "category": "content",
+        "usable": False,
+        "service": False,
+        "items_count": 0,
+        "title": None,
+        "slots": [],
+        "items": [],
+        "shapes": [],
+        "frames": {},
+        "images": [],
+        "source": "rules",
+        "schema": {"type": "complex"},
+        "error": f"{type(exc).__name__}: {exc}"[:200],
+    }
 
 
 def pattern_summary(patterns: list[dict[str, Any]]) -> dict[str, int]:

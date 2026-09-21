@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import type { Slide, SlideKind, SlidePattern, SlideTheme } from '../api/types'
-import { PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
+import { PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS, patternLabel } from '../lib/labels'
 import { Button } from './ui'
 
 interface Message {
@@ -289,7 +289,7 @@ export function SlideAssistantPanel({
                         <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                           <div className="row row--xs" style={{ alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                             <span style={{ fontWeight: 600, fontSize: 12 }}>
-                              №{p.slide_index + 1} · {label}
+                              {patternLabel(p)} · {label}
                             </span>
                             {isCurrent && (
                               <span className="badge badge-success" style={{ fontSize: 9, padding: '1px 4px' }}>

@@ -6,6 +6,7 @@ import type {
   Purpose,
   Severity,
   SlideKind,
+  SlidePattern,
 } from '../api/types'
 
 export const PURPOSE_LABELS: Record<Purpose, string> = {
@@ -89,6 +90,12 @@ export const PATTERN_TYPE_LABELS: Record<string, string> = {
   diagram: 'Схема',
   chart: 'Диаграмма',
   complex: 'Сложный',
+}
+
+/** Подпись паттерна: номер слайда-примера или имя макета (для паттернов из макетов). */
+export function patternLabel(pattern: Pick<SlidePattern, 'origin' | 'slide_index' | 'layout_key'> & { layout_name?: string | null }): string {
+  if (pattern.origin === 'layout') return `макет «${pattern.layout_name ?? pattern.layout_key ?? '—'}»`
+  return `№${pattern.slide_index + 1}`
 }
 
 export const PATTERN_CATEGORY_LABELS: Record<PatternCategory, string> = {

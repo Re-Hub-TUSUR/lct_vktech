@@ -15,6 +15,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.db import SessionLocal, engine
 from app.models import Template
+from app.pipeline.parsing.formats import TEMPLATE_EXTENSIONS, TemplateFormatError, normalize_template
 from app.pipeline.parsing.template_parser import PARSER_VERSION
 
 logger = logging.getLogger("seed")
@@ -35,7 +36,17 @@ async def seed_builtin_templates() -> None:
 
     to_parse = []
     async with SessionLocal() as db:
-        for path in sorted(directory.glob("*.pptx")):
+        for source in sorted(p for p in directory.iterdir() if p.suffix.lower() in TEMPLATE_EXTENSIONS):
+            path = source
+            if source.suffix.lower() != ".pptx":
+                # .potx, .ppt и т. п. — нормализованная копия в хранилище (каталог встроенных только для чтения).
+                path = settings.storage_dir / "templates" / "builtin" / f"{source.stem}.pptx"
+                if not path.exists() or path.stat().st_mtime < source.stat().st_mtime:
+                    try:
+                        await asyncio.to_thread(normalize_template, source, path)
+                    except TemplateFormatError as exc:
+                        logger.warning("Встроенный шаблон %s пропущен: %s", source.name, exc)
+                        continue
             template = await db.scalar(
                 select(Template).where(Template.is_builtin.is_(True), Template.file_path == str(path))
             )

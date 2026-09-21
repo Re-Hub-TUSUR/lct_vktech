@@ -1,8 +1,10 @@
-"""Декомпозиция .pptx-шаблона: тема, палитра, шрифты, кегли, макеты и их роли.
+"""Декомпозиция .pptx-шаблона: тема, палитра, шрифты, кегли, макеты и их роли,
+паттерны слайдов-примеров и макетов, токены дизайн-системы.
 
 Парсер не знает о конкретных шаблонах. Роли макетов определяются по тому, как
 макеты используются в слайдах шаблона, по плейсхолдерам, их геометрии и
 ключевым словам в названиях (паттерны — в skills/template_parser.yaml).
+Шаблоны .potx, .pptm, .ppt, .odp и т. п. приводятся к .pptx до разбора (parsing/formats.py).
 """
 
 import re
@@ -17,10 +19,12 @@ from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
 from app.pipeline.geometry import content_frame, to_fractions
+from app.pipeline.parsing import design_tokens
+from app.pipeline.parsing.layout_patterns import extract_layout_patterns
 from app.pipeline.parsing.patterns import extract_patterns, pattern_summary
 from app.pipeline.skills import get_skill
 
-PARSER_VERSION = "0.4.1"
+PARSER_VERSION = "0.5.0"
 
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -45,8 +49,12 @@ class ParsedTemplate:
     tokens: dict[str, Any]
     layouts: list[dict[str, Any]]
     roles: dict[str, str | None]
-    # Паттерны слайдов-примеров (см. parsing/patterns.py).
+    # Паттерны слайдов-примеров и макетов (см. parsing/patterns.py, parsing/layout_patterns.py).
     patterns: list[dict[str, Any]]
+
+    @property
+    def layouts_count(self) -> int:
+        return len(self.layouts)
 
 
 def parse_template(path: str | Path) -> ParsedTemplate:
@@ -66,6 +74,11 @@ def parse_template(path: str | Path) -> ParsedTemplate:
     patterns = extract_patterns(
         prs, slide_layout_keys, {layout["key"]: layout["name"] for layout in layouts}, theme_colors=theme.get("colors") or {}
     )
+    # Паттерны из макетов: шаблон почти без слайдов-примеров (.potx) тоже даёт колонки, карточки, текст с картинкой.
+    patterns += design_tokens.safe("layout_patterns", extract_layout_patterns, prs, layouts, roles) or []
+    font_names = [font["name"] for font in usage["fonts"]] + [
+        name for name in (theme.get("fonts") or {}).values() if name
+    ]
     tokens = {
         "slide_size": {
             "width_emu": width,
@@ -84,12 +97,22 @@ def parse_template(path: str | Path) -> ParsedTemplate:
         "palette": usage["palette"],
         "fonts": usage["fonts"],
         "type_scale": usage["type_scale"],
+        # Токены дизайн-системы сверх палитры и шрифтов (parsing/design_tokens.py).
+        "typography": design_tokens.safe("typography", design_tokens.typography, prs, theme, usage["type_scale"]),
+        "grid": design_tokens.safe("grid", design_tokens.grid, prs, layouts, roles),
+        "chrome": design_tokens.safe("chrome", design_tokens.chrome, prs),
+        "table_style": design_tokens.safe("table_style", design_tokens.table_style, prs, theme),
+        "chart_style": design_tokens.safe("chart_style", design_tokens.chart_style, prs, theme),
+        "fonts_check": design_tokens.safe("fonts_check", design_tokens.fonts_check, font_names),
         "stats": {
             **usage["stats"],
             "slides": len(prs.slides),
             "layouts": len(layouts),
             "masters": len(prs.slide_masters),
             "patterns": sum(1 for pattern in patterns if pattern["usable"]),
+            "layout_patterns": sum(1 for pattern in patterns if pattern.get("origin") == "layout"),
+            "service_patterns": sum(1 for pattern in patterns if pattern.get("service")),
+            "broken_slides": sum(1 for pattern in patterns if pattern.get("error")),
         },
         "patterns": pattern_summary(patterns),
     }
@@ -211,29 +234,41 @@ def _layouts(prs, theme: dict[str, Any], params: dict[str, Any]) -> tuple[list[d
             partname_to_key[partname] = key
             placeholders = []
             for ph in layout.placeholders:
-                fmt = ph.placeholder_format
-                placeholders.append(
-                    {
-                        "type": fmt.type.name if fmt.type is not None else "OBJECT",
-                        "idx": fmt.idx,
-                        "name": ph.name,
-                        "left": _length(ph.left),
-                        "top": _length(ph.top),
-                        "width": _length(ph.width),
-                        "height": _length(ph.height),
-                    }
-                )
+                try:
+                    fmt = ph.placeholder_format
+                    placeholders.append(
+                        {
+                            "type": fmt.type.name if fmt.type is not None else "OBJECT",
+                            "idx": fmt.idx,
+                            "name": ph.name,
+                            "left": _length(ph.left),
+                            "top": _length(ph.top),
+                            "width": _length(ph.width),
+                            "height": _length(ph.height),
+                        }
+                    )
+                except Exception:  # noqa: BLE001 — нестандартный плейсхолдер пропускаем, а не роняем разбор
+                    continue
+            name = layout.name or f"Макет {li + 1}"
+            try:
+                background = layout_background(layout, theme["colors"])
+            except Exception:  # noqa: BLE001
+                background = None
+            try:
+                title_style = _title_style(layout, theme["colors"])
+            except Exception:  # noqa: BLE001
+                title_style = {"size_pt": None, "color": None, "anchor": None, "align": None, "bold": None}
             layouts.append(
                 {
                     "key": key,
                     "master": mi,
                     "index": li,
-                    "name": layout.name,
+                    "name": name,
                     "used_by": usage.get(partname, 0),
-                    "role": _classify(layout.name, placeholders, params),
-                    "background": layout_background(layout, theme["colors"]),
+                    "role": _classify(name, placeholders, params),
+                    "background": background,
                     "frames": _frames(placeholders, int(prs.slide_width), int(prs.slide_height)),
-                    "title_style": _title_style(layout, theme["colors"]),
+                    "title_style": title_style,
                     "placeholders": placeholders,
                 }
             )

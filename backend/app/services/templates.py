@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.models import Template
 from app.pipeline.ai.vlm import enrich_patterns, vlm_enabled
 from app.pipeline.export.render import libreoffice_available
+from app.pipeline.parsing import design_tokens
 from app.pipeline.parsing.renders import TemplateRenders, layout_image_name, render_template, slide_image_name
 from app.pipeline.parsing.template_parser import PARSER_VERSION, ParsedTemplate, parse_template
 from app.pipeline.theme import slide_theme
@@ -26,6 +27,16 @@ def slide_images_dir(template_id: uuid.UUID) -> Path:
     return template_dir(template_id) / "slides"
 
 
+def icons_dir(template_id: uuid.UUID) -> Path:
+    return template_dir(template_id) / "icons"
+
+
+def _icons(file_path: str, directory: Path, patterns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from pptx import Presentation
+
+    return design_tokens.extract_icons(Presentation(file_path), directory, patterns)
+
+
 def analyze_template(template_id: uuid.UUID, file_path: str) -> ParsedTemplate:
     """Декомпозиция шаблона, рендеры слайдов и макетов, разметка паттернов VLM (вызывать в потоке)."""
     parsed = parse_template(file_path)
@@ -42,7 +53,15 @@ def analyze_template(template_id: uuid.UUID, file_path: str) -> ParsedTemplate:
     for layout in parsed.layouts:
         layout["image"] = renders.layouts.get(layout["key"])
     for pattern in parsed.patterns:
-        pattern["render"] = renders.slides.get(pattern["slide_index"])
+        if pattern.get("origin") == "layout":
+            # Паттерн из макета: превью — рендер самого макета.
+            pattern["render"] = None
+            pattern["render_layout"] = renders.layouts.get(pattern["layout_key"])
+        else:
+            pattern["render"] = renders.slides.get(pattern["slide_index"])
+    # Библиотека пиктограмм шаблона — для будущих слайдов с иконками.
+    icons = design_tokens.safe("icons", _icons, file_path, icons_dir(template_id), parsed.patterns)
+    parsed.tokens["icons"] = icons or []
 
     if vlm_enabled() and renders.slides:
         parsed.tokens["vlm"] = enrich_patterns(parsed.patterns, slide_images_dir(template_id))
@@ -67,6 +86,20 @@ def apply_parsed(template: Template, parsed: ParsedTemplate) -> None:
     template.error = None
 
 
+DESIGN_TOKENS = ("typography", "grid", "chrome", "table_style", "chart_style")
+
+
+def pattern_render_url(template: Template, pattern: dict[str, Any], version: int | None = None) -> str | None:
+    """Картинка паттерна: рендер слайда-примера или (для паттерна из макета) рендер макета."""
+    if version is None:
+        version = int(template.updated_at.timestamp()) if template.updated_at else 0
+    if pattern.get("origin") == "layout":
+        name = pattern.get("render_layout") or layout_image_name(pattern.get("layout_key") or "0:0")
+        return f"/api/templates/{template.id}/layouts/{name}?v={version}"
+    render_file = pattern.get("render") or slide_image_name(max(pattern.get("slide_index", 0), 0))
+    return f"/api/templates/{template.id}/slides/{render_file}?v={version}"
+
+
 def template_theme(template: Template | None) -> dict[str, Any]:
     if template is None:
         return slide_theme(None)
@@ -84,12 +117,15 @@ def template_theme(template: Template | None) -> dict[str, Any]:
     patterns = []
     for p in template.patterns or []:
         p_copy = dict(p)
-        render_file = p.get("render") or slide_image_name(p.get("slide_index", 0))
-        p_copy["render"] = render_file
-        p_copy["render_url"] = f"/api/templates/{template.id}/slides/{render_file}?v={version}"
+        if p.get("origin") != "layout":
+            p_copy["render"] = p.get("render") or slide_image_name(max(p.get("slide_index", 0), 0))
+        p_copy["render_url"] = pattern_render_url(template, p, version)
         patterns.append(p_copy)
     theme["patterns"] = patterns
     theme["template_id"] = str(template.id)
+    # Токены дизайн-системы для сборки .pptx: стиль таблиц, цвета диаграмм, типографика, обвязка.
+    tokens = template.tokens or {}
+    theme["design"] = {key: tokens.get(key) for key in DESIGN_TOKENS}
     return theme
 
 

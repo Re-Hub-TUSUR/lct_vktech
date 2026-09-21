@@ -25,7 +25,20 @@ KIND_TYPES: dict[str, tuple[str, ...]] = {
     "timeline": ("timeline", "cards"),
     "table": ("table",),
     "image_text": ("image_text", "text"),
+    "chart": ("chart",),
 }
+# Обложка, разделитель и финал — клоны служебных слайдов-примеров своей категории.
+SERVICE_KINDS = {"title": "cover", "section": "section", "closing": "closing"}
+# Какую диаграмму шаблона можно наполнить данными слайда (тип графика из ChartData).
+CHART_COMPATIBLE = {
+    "bar": {"bar"},
+    "horizontal_bar": {"horizontal_bar"},
+    "line": {"line"},
+    "pie": {"pie", "donut"},
+    "donut": {"donut", "pie"},
+}
+# Паттерн из макета проще слайда-примера: при равенстве выигрывает пример с дизайном.
+LAYOUT_ORIGIN_PENALTY = 0.75
 # Во сколько раз текст может превышать оценку ёмкости слота: остальное ужмёт автоподбор кегля.
 MAX_OVERFLOW = 1.6
 # Кандидаты, отстающие от лучшего не больше чем на столько, считаются равноценными.
@@ -85,8 +98,20 @@ def _item_penalty(content: ItemContent, unit: dict[str, Any]) -> float | None:
     return penalty
 
 
+def _service_score(slide: Slide, pattern: dict[str, Any]) -> float | None:
+    if not pattern.get("service") or pattern.get("category") != SERVICE_KINDS[slide.kind]:
+        return None
+    title = pattern.get("title")
+    if title is None or len(slide.title) > title["chars"] * MAX_OVERFLOW:
+        return None
+    # Пример на макете своей роли (обложка на макете обложки) — самый надёжный.
+    return 3.0 + (0.5 if pattern.get("layout_key") and pattern["layout_key"] == slide.layout_key else 0.0)
+
+
 def pattern_score(slide: Slide, pattern: dict[str, Any]) -> float | None:
     """Насколько паттерн подходит слайду (больше — лучше); None — не подходит."""
+    if slide.kind in SERVICE_KINDS:
+        return _service_score(slide, pattern)
     types = KIND_TYPES.get(slide.kind)
     if not types or not pattern.get("usable") or pattern["type"] not in types:
         return None
@@ -94,7 +119,16 @@ def pattern_score(slide: Slide, pattern: dict[str, Any]) -> float | None:
     if title is None or len(slide.title) > title["chars"] * MAX_OVERFLOW:
         return None
     score = 3.0 - 1.5 * types.index(pattern["type"])
+    if pattern.get("origin") == "layout":
+        score -= LAYOUT_ORIGIN_PENALTY
     content = content_for(slide)
+
+    if pattern["type"] == "chart":
+        chart = pattern["frames"].get("chart") or {}
+        if not slide.chart or chart.get("kind") not in CHART_COMPATIBLE.get(slide.chart.type, set()):
+            return None
+        # Меньше лишних и недостающих рядов — меньше перестройки диаграммы.
+        return score - 0.2 * abs((chart.get("series") or 1) - len(slide.chart.series))
     if pattern["type"] not in {"text", "image_text"} and any(slot["role"] == "body" for slot in pattern["slots"]):
         score -= UNUSED_BODY_PENALTY
 
@@ -163,7 +197,7 @@ def assign_patterns(
 ) -> None:
     """Назначает слайдам паттерны. keep=True — оставить уже назначенный, если содержимое в него ещё помещается;
     seed — рерол: случайный выбор из более широкого круга равноценных кандидатов."""
-    usable = [pattern for pattern in patterns or [] if pattern.get("usable")]
+    usable = [pattern for pattern in patterns or [] if pattern.get("usable") or pattern.get("service")]
     rng = random.Random(seed) if seed is not None else None
     window = NEAR_BEST * 2 if rng else NEAR_BEST
     by_id = {pattern["id"]: pattern for pattern in usable}
