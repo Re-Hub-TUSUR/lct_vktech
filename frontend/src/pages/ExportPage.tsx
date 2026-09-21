@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Download, FileCode, FileText, Presentation as PresentationIcon } from 'lucide-react'
+import { ArrowLeft, CircleAlert, CircleCheck, Download, FileCode, FileText, Presentation as PresentationIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
@@ -73,7 +73,7 @@ export function ExportPage() {
             В варианте {deck.letter} осталось {countLabel(open, ['замечание', 'замечания', 'замечаний'])} аудита
             {errors > 0 && `, из них ошибок: ${errors}`}. Экспорт возможен, но лучше сначала их разобрать.
           </span>
-          <Button variant="secondary" size="sm" onClick={() => navigate(`/presentations/${id}/audit`)}>
+          <Button variant="secondary" size="sm" icon={<ArrowLeft size={14} />} onClick={() => navigate(`/presentations/${id}/audit`)}>
             К аудиту
           </Button>
         </div>

@@ -195,6 +195,36 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
   const [showDesignModal, setShowDesignModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const layoutRef = useRef<HTMLDivElement>(null)
+
+  // Рабочая область аудита (миниатюры, слайд, панель замечаний) занимает ровно оставшуюся часть экрана,
+  // поэтому страница не прокручивается целиком, а каждая колонка прокручивается сама.
+  // Высоту считаем от положения области в документе (а не окна), чтобы она не менялась при прокрутке.
+  useEffect(() => {
+    const layout = layoutRef.current
+    if (!layout) return
+    let frame = 0
+    const update = () => {
+      frame = 0
+      const top = layout.getBoundingClientRect().top + window.scrollY
+      const page = layout.closest('.page')
+      const bottomGap = page ? parseFloat(getComputedStyle(page).paddingBottom) || 0 : 0
+      const available = window.innerHeight - top - bottomGap
+      layout.style.setProperty('--audit-h', `${Math.max(Math.round(available), 480)}px`)
+    }
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update)
+    }
+    update()
+    window.addEventListener('resize', schedule)
+    const observer = new ResizeObserver(schedule) // блоки над областью меняют высоту (сводка, режим правки)
+    observer.observe(document.body)
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      window.removeEventListener('resize', schedule)
+      observer.disconnect()
+    }
+  }, [])
 
   // Вычисляем активный слайд синхронно: правки накладываются на текущий слайд!
   // Это исключает рассинхронизацию или показ чужого слайда при переключении.
@@ -728,7 +758,7 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
         </div>
       )}
 
-      <div className="audit-layout">
+      <div className="audit-layout" ref={layoutRef}>
         <nav className="audit-slides" aria-label="Слайды">
           {slides.map((slide, index) => {
             const issues = bySlide.get(slide.id) ?? []

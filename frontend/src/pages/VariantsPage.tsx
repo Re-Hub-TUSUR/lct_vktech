@@ -198,10 +198,9 @@ export function VariantsPage() {
     <div className="stack">
       {header}
       <div className="axis-banner">
-        <strong>Ось различий: {axis.title}</strong>
+        <strong>Выберите вариант, с которым продолжите работу: он пойдёт на аудит и экспорт.</strong>
         <span>
-          {axis.description} Слайды собраны из паттернов шаблона — его слайдов-примеров с карточками, KPI и
-          таймлайнами, — поэтому превью совпадает с экспортом в .pptx. Кубик пересобирает вариант с другими паттернами.
+          {axis.description} Кубик на превью пересобирает вариант заново.
         </span>
       </div>
       <div className="variants-grid">

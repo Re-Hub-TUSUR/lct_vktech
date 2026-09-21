@@ -58,7 +58,6 @@ def apply_parsed(template: Template, parsed: ParsedTemplate) -> None:
     template.slide_width = parsed.slide_width
     template.slide_height = parsed.slide_height
     template.slides_count = parsed.slides_count
-    template.layouts_count = parsed.layouts_count
     template.tokens = parsed.tokens
     template.layouts = parsed.layouts
     template.layout_roles = parsed.roles

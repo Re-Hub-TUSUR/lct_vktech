@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Sparkles } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 import { useAuth } from '../../auth/AuthProvider'
@@ -65,12 +66,8 @@ export function LoginPage() {
         <Button type="submit" size="lg" loading={pending} disabled={demoPending}>
           Войти
         </Button>
-        <div className="auth__or" aria-hidden="true">
-          <span />
-          или
-          <span />
-        </div>
         <Button type="button" size="lg" variant="secondary" loading={demoPending} disabled={pending} onClick={loginAsDemo}>
+          <Sparkles size={18} aria-hidden="true" />
           Войти как тестовый эксперт
         </Button>
       </form>

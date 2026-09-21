@@ -28,6 +28,17 @@ h4 {
   font-weight: 650;
 }
 
+/* Заголовки интерфейса — VK Sans Display. Слайды в превью (.slide) не трогаем: у них шрифты из шаблона. */
+h1:not(.slide *),
+h2:not(.slide *),
+h3:not(.slide *),
+h4:not(.slide *),
+.template-card__title strong,
+.stage__title strong {
+  font-family: var(--font-display);
+  font-weight: var(--font-display-weight);
+}
+
 h1 {
   font-size: 28px;
 }
@@ -325,14 +336,18 @@ input[type='checkbox'] {
   border-radius: 10px;
 }
 .logo__text {
+  font-family: var(--font-display);
   font-size: 16px;
+  /* Название «VK Tech» жирнее остальных заголовков: настоящий Bold 700. Подпись под ним (small) задаёт свой вес. */
   font-weight: 700;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 .logo__text small {
   margin-top: 2px;
   font-size: 12px;
-  font-weight: 500;
+  /* Regular, а не Medium: в VK Sans Display Medium подпись выглядит темнее прежней серой. */
+  font-weight: 400;
   letter-spacing: 0;
 }
 
@@ -455,11 +470,8 @@ input[type='checkbox'] {
 .btn:hover {
   text-decoration: none;
 }
-/* Оптическое выравнивание: кириллица в нижнем регистре визуально ниже геометрического центра. */
-.btn__label {
-  position: relative;
-  top: -1px;
-}
+/* Оптическое выравнивание подписи по центру кнопки делается на уровне шрифта (ascent/descent-override в fonts.css),
+   а не сдвигом в пикселях: так подпись одинаково стоит во всех браузерах. Сдвигать .btn__label вручную не нужно. */
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -520,6 +532,12 @@ input[type='checkbox'] {
 .icon-btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+/* Единая рамка фокуса: без неё каждый браузер рисует свою (в Opera GX — чёрную). */
+.btn:focus-visible,
+.icon-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 /* ===== Выпадающий список ===== */
@@ -1330,6 +1348,13 @@ input[type='checkbox'] {
   color: var(--color-text-muted);
   max-width: 560px;
 }
+/* Отступы в колонке: общий 16px. Описание ближе к заголовку (16 → 8px), кнопка чуть дальше от описания (16 → 24px). */
+.hero h1 + p {
+  margin-top: -8px;
+}
+.hero p + .btn {
+  margin-top: 8px;
+}
 .hero__eyebrow {
   font-weight: 600;
   color: var(--color-primary) !important;
@@ -1354,6 +1379,11 @@ input[type='checkbox'] {
 .hero__pipeline li div {
   display: flex;
   flex-direction: column;
+}
+.hero__pipeline strong {
+  font-family: var(--font-display);
+  /* Жирнее Medium: настоящий DemiBold (см. fonts.css). */
+  font-weight: 600;
 }
 .hero__pipeline small {
   color: var(--color-text-muted);
@@ -1420,6 +1450,11 @@ a:hover > .template-card,
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+/* Название презентации на карточке — шрифт заголовков (VK Sans Display). */
+.presentation-card__body > strong {
+  font-family: var(--font-display);
+  font-weight: var(--font-display-weight);
 }
 
 .template-card.is-selectable {
@@ -1582,7 +1617,11 @@ a:hover > .template-card,
 }
 .presentation-header__actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-2);
+  margin-left: auto;
 }
 .stepper {
   list-style: none;
@@ -1795,6 +1834,7 @@ a:hover > .template-card,
   color: #0a4ea8;
   font-size: 14px;
 }
+
 .variants-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1822,6 +1862,7 @@ a:hover > .template-card,
 }
 .variant-card__header {
   display: flex;
+  align-items: center;
   gap: var(--space-3);
 }
 .variant-card__header p {
@@ -2453,6 +2494,11 @@ a:hover > .template-card,
   gap: 6px;
   font-size: 14px;
 }
+/* Иконка серьёзности и чекбокс — фиксированного размера: во flex-строке они иначе сжимаются, когда заголовок переносится. */
+.issue__title svg,
+.issue > input[type='checkbox'] {
+  flex-shrink: 0;
+}
 .issue__meta {
   display: flex;
   flex-wrap: wrap;
@@ -2818,4 +2864,33 @@ a:hover > .template-card,
 }
 .slide__chart-box.is-editable-chart:hover .slide__chart-hint {
   opacity: 1;
+}
+
+/* На широком экране область аудита фиксированной высоты (--audit-h задаёт AuditPage): колонки прокручиваются каждая сама. */
+@media (min-width: 1201px) {
+  .audit-layout {
+    height: var(--audit-h, auto);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .audit-slides,
+  .audit-stage {
+    position: static;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .audit-stage {
+    padding: 4px;
+  }
+  .audit-panel {
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .audit-panel .issues,
+  .audit-panel .checks {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
 }

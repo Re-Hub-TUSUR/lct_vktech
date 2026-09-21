@@ -67,12 +67,14 @@ export function PresentationHeader({
           </div>
           <h1>{presentation.title}</h1>
         </div>
-        {actions && <div className="presentation-header__actions">{actions}</div>}
-        {presentation.access_role === 'owner' && (
+        {(actions || presentation.access_role === 'owner') && (
           <div className="presentation-header__actions">
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShareOpen(true)}>
-              <Share2 size={16} /><span className="btn__label">Поделиться</span>
-            </button>
+            {actions}
+            {presentation.access_role === 'owner' && (
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShareOpen(true)}>
+                <Share2 size={16} /><span className="btn__label">Поделиться</span>
+              </button>
+            )}
           </div>
         )}
       </div>
