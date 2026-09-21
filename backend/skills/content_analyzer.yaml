@@ -1,0 +1,21 @@
+name: content_analyzer
+title: Анализ контент-пакета
+version: 0.1.0
+kind: skill
+runtime: code
+stage: content
+model: null
+description: >
+  Извлекает текст из файлов контент-пакета (txt, md, csv, pdf, docx, pptx) и делит бриф
+  на тезисы. Извлечение таблиц из xlsx и смысловая разметка фактов — следующий шаг (LLM).
+prompt:
+  system: |
+    Ты — аналитик. Из материалов пользователя выдели факты, цифры, продуктовые тезисы
+    и ограничения. Ничего не придумывай: каждый факт должен ссылаться на источник.
+  user: |
+    Бриф: {brief}
+    Материалы: {sources}
+    Верни JSON: {"facts": [{"text": "...", "source": "..."}], "numbers": [...], "theses": [...]}
+params:
+  extensions: [".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx", ".json"]
+  brief_theses_limit: 12

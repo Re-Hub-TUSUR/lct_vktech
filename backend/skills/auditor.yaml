@@ -1,0 +1,315 @@
+name: auditor
+title: Аудит слайдов
+version: 0.1.0
+kind: agent
+runtime: code
+stage: audit
+model: VLM ≤ 35B (не подключена)
+description: >
+  Ищет артефакты и неточности в сгенерированных слайдах. Детерминированные проверки
+  опираются на данные слайда и шаблона и всегда дают одинаковый результат. Контекстуальные
+  оценивают смысл: в продукте их выполняет VLM по картинке слайда, в макете часть из них
+  заменена эвристиками, остальные — заглушки.
+prompt:
+  system: |
+    Ты — редактор презентаций. Посмотри на слайд и ответь «да» или «нет» на вопрос.
+    Если ответ «нет», коротко объясни, что не так и как исправить.
+  user: |
+    Вопрос: {question}
+    Исходные материалы: {sources}
+params:
+  limits:
+    max_bullets: 6
+    max_bullet_words: 15
+    max_table_rows: 7
+    max_table_cols: 5
+    max_chart_series: 5
+    max_title_chars: 100
+    min_contrast: 4.5
+    min_contrast_large: 3.0
+
+  categories:
+    layout: Вёрстка
+    template: Шаблон
+    density: Плотность
+    integrity: Целостность
+    content: Содержание
+
+  # status:
+  #   implemented — работает;
+  #   heuristic   — контекстуальная проверка заменена правилом до подключения VLM;
+  #   stub        — нужна LLM/VLM, сейчас не выполняется;
+  #   planned     — нужна геометрия отрендеренного слайда, сейчас не выполняется;
+  #   export      — выполняется при экспорте в .pptx.
+  checks:
+    # --- Вёрстка ---
+    - id: layout.out_of_bounds
+      title: Элемент вышел за границы слайда
+      category: layout
+      kind: deterministic
+      severity: error
+      status: planned
+      description: Координаты фигур в .pptx сравниваются с размером слайда.
+    - id: layout.overlap
+      title: Два блока наложились друг на друга
+      category: layout
+      kind: deterministic
+      severity: error
+      status: planned
+      description: Пересечение прямоугольников текстовых и графических фигур.
+    - id: layout.text_overflow
+      title: Текст не поместился в свою рамку
+      category: layout
+      kind: deterministic
+      severity: warning
+      status: heuristic
+      description: Объём текста сравнивается с ёмкостью рамки макета. После подключения рендера — по реальным метрикам шрифта.
+      fixable: true
+      fix: Сократить тезисы до ёмкости рамки
+    - id: layout.text_clipped
+      title: Текст обрезан краем слайда
+      category: layout
+      kind: deterministic
+      severity: error
+      status: planned
+      description: Рамка текста выходит за край слайда после автоподбора размера.
+    - id: layout.alignment
+      title: Блоки не выровнены по направляющим макета
+      category: layout
+      kind: deterministic
+      severity: info
+      status: planned
+      description: Сравнение левых и верхних краёв блоков с сеткой макета.
+    - id: layout.margins
+      title: Контент заходит в поля у краёв
+      category: layout
+      kind: deterministic
+      severity: warning
+      status: planned
+      description: Поля берутся из плейсхолдеров макета шаблона.
+    - id: layout.image_aspect
+      title: Картинка растянута, пропорции нарушены
+      category: layout
+      kind: deterministic
+      severity: warning
+      status: planned
+      description: Соотношение сторон рамки сравнивается с исходным изображением.
+
+    # --- Шаблон ---
+    - id: template.fonts
+      title: Шрифт не из шаблона или гарнитур больше двух
+      category: template
+      kind: deterministic
+      severity: warning
+      status: planned
+      description: Гарнитуры в .pptx сравниваются со шрифтами дизайн-токенов шаблона.
+    - id: template.font_sizes
+      title: Кегль не из типографической шкалы шаблона
+      category: template
+      kind: deterministic
+      severity: info
+      status: planned
+      description: Размеры шрифтов сравниваются с типографической шкалой шаблона.
+    - id: template.palette
+      title: Цвет не из палитры шаблона
+      category: template
+      kind: deterministic
+      severity: warning
+      status: planned
+      description: Цвета заливок и текста сравниваются с палитрой шаблона.
+    - id: template.layout_from_template
+      title: Слайд собран не на макете из шаблона
+      category: template
+      kind: deterministic
+      severity: error
+      status: implemented
+      description: У каждого слайда должен быть макет, найденный при декомпозиции шаблона.
+      fixable: true
+      fix: Назначить основной контентный макет шаблона
+    - id: template.logo_position
+      title: Логотип или колонтитул сдвинуты с места
+      category: template
+      kind: deterministic
+      severity: warning
+      status: planned
+      description: Положение логотипа и колонтитулов сравнивается с мастер-слайдом.
+    - id: template.contrast
+      title: Контраст текста к фону ниже 4.5:1
+      category: template
+      kind: deterministic
+      severity: error
+      status: implemented
+      description: Контраст по WCAG 2.1 для пар «текст — фон» из цветов темы; для крупного текста порог 3:1.
+
+    # --- Плотность ---
+    - id: density.max_bullets
+      title: Больше 6 буллетов на слайде
+      category: density
+      kind: deterministic
+      severity: warning
+      status: implemented
+      description: Считаются тезисы списка и колонок.
+      fixable: true
+      fix: Разбить слайд на два
+    - id: density.bullet_words
+      title: Буллет длиннее 15 слов
+      category: density
+      kind: deterministic
+      severity: warning
+      status: implemented
+      description: Считаются слова в каждом тезисе.
+      fixable: true
+      fix: Сократить формулировку
+    - id: density.table_size
+      title: Таблица больше 7 строк или 5 колонок
+      category: density
+      kind: deterministic
+      severity: warning
+      status: implemented
+      description: Размер таблицы без строки заголовка.
+      fixable: true
+      fix: Оставить первые 7 строк и 5 колонок
+    - id: density.chart_series
+      title: Больше 5 серий на диаграмме
+      category: density
+      kind: deterministic
+      severity: warning
+      status: implemented
+      description: Число рядов данных на одной диаграмме.
+      fixable: true
+      fix: Оставить 5 серий
+    - id: density.fill_ratio
+      title: Слайд заполнен меньше чем на ¼ или больше чем на ¾
+      category: density
+      kind: deterministic
+      severity: info
+      status: planned
+      description: Доля площади слайда, занятая контентом, по отрендеренному изображению.
+
+    # --- Целостность ---
+    - id: integrity.file_opens
+      title: Файл не открывается
+      category: integrity
+      kind: deterministic
+      severity: error
+      status: export
+      description: Собранный .pptx повторно открывается перед отдачей пользователю.
+    - id: integrity.placeholder_text
+      title: Остался текст-заглушка
+      category: integrity
+      kind: deterministic
+      severity: error
+      status: implemented
+      description: lorem ipsum, XXX, TODO, «вставьте текст» и подобное.
+      fixable: true
+      fix: Удалить текст-заглушку
+    - id: integrity.empty_slide
+      title: Пустой слайд или слайд с одним заголовком
+      category: integrity
+      kind: deterministic
+      severity: error
+      status: implemented
+      description: У контентного слайда нет ни тезисов, ни визуализации.
+      fixable: true
+      fix: Удалить слайд
+    - id: integrity.raster_slide
+      title: Слайд оказался картинкой
+      category: integrity
+      kind: deterministic
+      severity: error
+      status: export
+      description: В каждом слайде .pptx должны быть редактируемые объекты, а не одна картинка.
+    - id: integrity.chart_labels
+      title: У диаграммы нет подписей, единиц или легенды
+      category: integrity
+      kind: deterministic
+      severity: warning
+      status: implemented
+      description: Проверяются единицы измерения, подписи категорий и названия серий.
+      fixable: true
+      fix: Добавить единицы и названия серий
+    - id: integrity.duplicates
+      title: Два слайда дублируют друг друга
+      category: integrity
+      kind: deterministic
+      severity: warning
+      status: implemented
+      description: Совпадение заголовка и содержания после нормализации.
+      fixable: true
+      fix: Удалить дубликат
+
+    # --- Содержание (вопросы с ответом «да/нет», на вход — картинка слайда) ---
+    - id: content.title_is_insight
+      title: Заголовок называет тему, а не вывод
+      category: content
+      kind: contextual
+      severity: warning
+      status: heuristic
+      description: "Вопрос 1. Эвристика: заголовок из 1–3 слов считается темой."
+      fixable: true
+      fix: Переписать заголовок как вывод
+    - id: content.matches_title
+      title: Содержимое не соответствует заголовку
+      category: content
+      kind: contextual
+      severity: warning
+      status: stub
+      description: Вопрос 2. Требует LLM.
+    - id: content.one_sentence
+      title: Слайд не пересказывается одним предложением
+      category: content
+      kind: contextual
+      severity: info
+      status: stub
+      description: Вопрос 3. Требует LLM.
+    - id: content.facts_grounded
+      title: Цифры и факты не найдены в исходных материалах
+      category: content
+      kind: contextual
+      severity: warning
+      status: heuristic
+      description: "Вопрос 4. Эвристика: числа со слайда ищутся в брифе и тексте контент-пакета."
+    - id: content.images_relevant
+      title: Картинки и иконки не относятся к теме слайда
+      category: content
+      kind: contextual
+      severity: warning
+      status: stub
+      description: Вопрос 6. Требует VLM.
+    - id: content.service_text
+      title: Служебный мусор — реплики спикера, куски промпта
+      category: content
+      kind: contextual
+      severity: error
+      status: heuristic
+      description: "Вопрос 7. Эвристика: поиск служебных маркеров в тексте."
+      fixable: true
+      fix: Удалить служебный текст
+    - id: content.typos
+      title: В тексте есть опечатки
+      category: content
+      kind: contextual
+      severity: info
+      status: stub
+      description: Вопрос 8. Требует орфографической модели или LLM.
+    - id: content.single_language
+      title: Колода не на одном языке
+      category: content
+      kind: contextual
+      severity: info
+      status: heuristic
+      description: "Вопрос 9. Эвристика: доля слов на латинице или кириллице."
+    - id: content.table_relevance
+      title: Строки таблицы или легенда не работают на мысль слайда
+      category: content
+      kind: contextual
+      severity: info
+      status: stub
+      description: Вопрос 10. Требует LLM.
+    - id: content.logical_flow
+      title: Соседние слайды не связаны по логике
+      category: content
+      kind: contextual
+      severity: info
+      status: stub
+      description: Вопрос 11. Требует LLM по всей колоде.

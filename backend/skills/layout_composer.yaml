@@ -1,0 +1,105 @@
+name: layout_composer
+title: Композитор вариантов вёрстки
+version: 0.2.0
+kind: skill
+runtime: code
+stage: layout
+model: null
+description: >
+  Собирает из плана три варианта вёрстки выбранного шаблона. Каждый слайд получает паттерн —
+  слайд-пример шаблона с подходящими слотами (карточки, KPI, таймлайн, таблица, текст), который
+  при экспорте клонируется и заполняется; без подходящего паттерна слайд верстается на макете.
+  Варианты различаются по одной оси, которую выбирает пользователь, и разными паттернами.
+params:
+  default_axis: density
+
+  # Профиль варианта:
+  #   max_bullets  — сколько тезисов оставить на слайде;
+  #   titles       — topic (заголовок-тема) | insight (заголовок-вывод);
+  #   data_view    — как показывать данные: chart | kpi | table;
+  #   layout_style — как верстать гибкие тезисы: bullets | cards | columns | image;
+  #   order        — linear | summary_first (итоги сразу после обложки) | sections (с разделителями).
+  #
+  # demo_defects — ТОЛЬКО ДЛЯ МАКЕТА: намеренные дефекты, чтобы аудиту было что найти.
+  # Удалите их, когда тексты начнёт писать LLM. Доступные значения: too_many_bullets,
+  # long_bullet, placeholder_todo, speaker_note, big_table, chart_no_unit, duplicate, empty_slide.
+  axes:
+    density:
+      title: Плотность контента
+      description: Одна структура, но разный объём текста и доля визуализаций на слайде.
+      variants:
+        - letter: A
+          name: Лаконичный
+          description: Короткие карточки вместо списков, выводы в заголовках, цифры — крупными KPI.
+          profile: {max_bullets: 3, titles: insight, data_view: kpi, layout_style: cards, order: linear}
+          demo_defects: [speaker_note]
+        - letter: B
+          name: Сбалансированный
+          description: До пяти тезисов, диаграммы для данных, сравнения в две колонки.
+          profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: columns, order: linear}
+          demo_defects: [chart_no_unit, placeholder_todo]
+        - letter: C
+          name: Подробный
+          description: Развёрнутые тезисы и таблицы — версия для рассылки и чтения без спикера.
+          profile: {max_bullets: 8, titles: topic, data_view: table, layout_style: bullets, order: sections}
+          demo_defects: [too_many_bullets, long_bullet, big_table]
+
+    visualization:
+      title: Способ визуализации данных
+      description: Одинаковый текст, но цифры показаны по-разному.
+      variants:
+        - letter: A
+          name: Диаграммы
+          description: Данные — столбчатыми и линейными диаграммами.
+          profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: bullets, order: linear}
+          demo_defects: [chart_no_unit]
+        - letter: B
+          name: KPI-инфографика
+          description: Ключевые числа крупно, без осей и легенд.
+          profile: {max_bullets: 5, titles: insight, data_view: kpi, layout_style: bullets, order: linear}
+          demo_defects: [speaker_note]
+        - letter: C
+          name: Таблицы
+          description: Точные значения в таблицах — удобно для отчётов.
+          profile: {max_bullets: 5, titles: insight, data_view: table, layout_style: bullets, order: linear}
+          demo_defects: [big_table, long_bullet]
+
+    structure:
+      title: Порядок и группировка слайдов
+      description: Один и тот же набор слайдов в разной последовательности.
+      variants:
+        - letter: A
+          name: Линейный рассказ
+          description: От проблемы к решению, результатам и плану.
+          profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: bullets, order: linear}
+          demo_defects: [long_bullet]
+        - letter: B
+          name: Сначала вывод
+          description: Итоги сразу после обложки, затем аргументы.
+          profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: bullets, order: summary_first}
+          demo_defects: [placeholder_todo]
+        - letter: C
+          name: По разделам
+          description: Смысловые блоки отделены слайдами-разделителями.
+          profile: {max_bullets: 5, titles: topic, data_view: chart, layout_style: bullets, order: sections}
+          demo_defects: [too_many_bullets, duplicate]
+
+    layouts:
+      title: Выбор макетов
+      description: Одинаковый текст, свёрстанный на разных макетах шаблона.
+      variants:
+        - letter: A
+          name: Текстовые макеты
+          description: Тезисы списком на основном контентном макете.
+          profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: bullets, order: linear}
+          demo_defects: [speaker_note]
+        - letter: B
+          name: Карточки и колонки
+          description: Тезисы разложены по карточкам и колонкам из слайдов-примеров шаблона.
+          profile: {max_bullets: 6, titles: insight, data_view: chart, layout_style: cards, order: linear}
+          demo_defects: [long_bullet]
+        - letter: C
+          name: Текст и изображение
+          description: Тезисы рядом с иллюстрацией, данные — KPI.
+          profile: {max_bullets: 4, titles: insight, data_view: kpi, layout_style: image, order: linear}
+          demo_defects: [empty_slide]
