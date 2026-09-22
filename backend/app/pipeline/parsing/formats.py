@@ -15,7 +15,7 @@ import zipfile
 from pathlib import Path
 
 from app.core.config import settings
-from app.pipeline.export.render import RenderError, soffice_binary
+from app.pipeline.export.render import RenderError, run_soffice, soffice_binary
 
 PPTX_MAIN = "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"
 # Основная часть пакета у «родственников» .pptx: шаблон, демонстрация и их версии с макросами.
@@ -86,7 +86,7 @@ def _convert_legacy(source: Path, dest: Path) -> None:
             str(copy),
         ]
         try:
-            subprocess.run(command, capture_output=True, timeout=settings.render_timeout_seconds, check=False)
+            run_soffice(command, settings.render_timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             raise TemplateFormatError("LibreOffice не успел сконвертировать шаблон") from exc
         result = workdir / "template.pptx"

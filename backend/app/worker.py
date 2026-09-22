@@ -19,5 +19,6 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_shutdown = shutdown
     max_jobs = 4
-    job_timeout = 600
+    # Разбор большого шаблона: рендер LibreOffice (до RENDER_TIMEOUT_SECONDS) + разметка VLM.
+    job_timeout = 1500
     keep_result = 3600

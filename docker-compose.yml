@@ -5,19 +5,23 @@ x-backend-env: &backend-env
   REDIS_URL: redis://redis:6379/0
   STORAGE_DIR: /data
   BUILTIN_TEMPLATES_DIR: /builtin_templates
+  TEMPLATE_CACHE_DIR: ${TEMPLATE_CACHE_DIR:-/cache}
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
   SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
   MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
   MOCK_SPEED: ${MOCK_SPEED:-1}
-  RENDER_TIMEOUT_SECONDS: ${RENDER_TIMEOUT_SECONDS:-180}
-  RENDER_CONCURRENCY: ${RENDER_CONCURRENCY:-2}
+  RENDER_TIMEOUT_SECONDS: ${RENDER_TIMEOUT_SECONDS:-420}
+  RENDER_CONCURRENCY: ${RENDER_CONCURRENCY:-1}
   # VLM для разметки паттернов слайдов (необязательно): OpenAI-совместимый API.
   VLM_BASE_URL: ${VLM_BASE_URL:-}
   VLM_API_KEY: ${VLM_API_KEY:-}
   VLM_MODEL: ${VLM_MODEL:-}
   VLM_TIMEOUT_SECONDS: ${VLM_TIMEOUT_SECONDS:-90}
-  VLM_MAX_PATTERNS: ${VLM_MAX_PATTERNS:-40}
-  VLM_CONCURRENCY: ${VLM_CONCURRENCY:-4}
+  VLM_MAX_PATTERNS: ${VLM_MAX_PATTERNS:-60}
+  VLM_CONCURRENCY: ${VLM_CONCURRENCY:-6}
+  VLM_MAX_TOKENS: ${VLM_MAX_TOKENS:-900}
+  VLM_DISABLE_REASONING: ${VLM_DISABLE_REASONING:-true}
+  VLM_EXTRA_BODY: ${VLM_EXTRA_BODY:-}
 
 services:
   db:
@@ -51,12 +55,16 @@ services:
     build: ./backend
     restart: unless-stopped
     stop_grace_period: 20s
+    # tini в роли PID 1 подбирает завершившиеся процессы LibreOffice, иначе копятся зомби.
+    init: true
     environment: *backend-env
     # Миграции → регистрация встроенных шаблонов → API.
     command: sh -c "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     volumes:
       - storage:/data
       - ./shablon:/builtin_templates:ro
+      # Готовый разбор шаблонов контент-пакета: первый запуск без LibreOffice и без VLM.
+      - ./cache:/cache:ro
     depends_on:
       db:
         condition: service_healthy
@@ -73,11 +81,15 @@ services:
     build: ./backend
     restart: unless-stopped
     stop_grace_period: 20s
+    # tini в роли PID 1 подбирает завершившиеся процессы LibreOffice, иначе копятся зомби.
+    init: true
     environment: *backend-env
     command: ["arq", "app.worker.WorkerSettings"]
     volumes:
       - storage:/data
       - ./shablon:/builtin_templates:ro
+      # Воркер разбирает шаблоны и пополняет кэш, поэтому каталог доступен на запись.
+      - ./cache:/cache
     depends_on:
       backend:
         condition: service_healthy

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
 
     storage_dir: Path = Path("/data")
     builtin_templates_dir: Path = Path("/builtin_templates")
+    # Кэш разбора шаблонов контент-пакета (каталог cache/ репозитория): готовые паттерны и рендеры,
+    # чтобы первый запуск не ждал LibreOffice и не тратил запросы к VLM. Нет каталога — нет кэша.
+    template_cache_dir: Path | None = Path("/cache")
     skills_dir: Path = BACKEND_DIR / "skills"
     max_upload_mb: int = 100
 
@@ -29,7 +32,7 @@ class Settings(BaseSettings):
 
     # Рендер .pptx → PDF через LibreOffice headless. Пусто — ищем soffice в PATH.
     soffice_path: str | None = None
-    render_timeout_seconds: int = 180
+    render_timeout_seconds: int = 420
     # Параллельных процессов LibreOffice на один процесс приложения (каждый — сотни МБ памяти).
     render_concurrency: int = 2
 
@@ -39,8 +42,13 @@ class Settings(BaseSettings):
     vlm_api_key: str | None = None
     vlm_model: str | None = None
     vlm_timeout_seconds: float = 90
-    vlm_max_patterns: int = 40
-    vlm_concurrency: int = 4
+    vlm_max_patterns: int = 60
+    vlm_concurrency: int = 6
+    vlm_max_tokens: int = 900
+    # У гибридных моделей (Qwen3.x) рассуждения включены по умолчанию и съедают лимит ответа — выключаем.
+    vlm_disable_reasoning: bool = True
+    # Доп. поля запроса JSON-строкой, например для vLLM: {"chat_template_kwargs": {"enable_thinking": false}}.
+    vlm_extra_body: str | None = None
 
 
 settings = Settings()

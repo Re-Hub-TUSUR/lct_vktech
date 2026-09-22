@@ -178,7 +178,10 @@ async def _run_stages(
         if template is None:
             raise PipelineError("Для презентации не выбран шаблон")
         if needs_analysis(template):
-            apply_parsed(template, await asyncio.to_thread(analyze_template, template.id, template.file_path))
+            parsed = await asyncio.to_thread(
+                analyze_template, template.id, template.file_path, template.is_builtin
+            )
+            apply_parsed(template, parsed)
         fonts = ", ".join(font["name"] for font in (template.tokens.get("fonts") or [])[:2]) or "—"
         usable = sum(1 for pattern in template.patterns or [] if pattern.get("usable"))
         stage.detail = (

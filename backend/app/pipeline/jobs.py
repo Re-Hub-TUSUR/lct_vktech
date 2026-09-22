@@ -19,7 +19,10 @@ async def parse_template_job(ctx: dict, template_id: str) -> str:
         if template is None:
             return "missing"
         try:
-            parsed = await asyncio.to_thread(analyze_template, template.id, template.file_path)
+            # Встроенные шаблоны берутся из кэша репозитория и пополняют его; загруженные — разбор с нуля.
+            parsed = await asyncio.to_thread(
+                analyze_template, template.id, template.file_path, template.is_builtin
+            )
         except Exception as exc:
             logger.exception("Не удалось разобрать шаблон %s", template_id)
             template.status = "failed"

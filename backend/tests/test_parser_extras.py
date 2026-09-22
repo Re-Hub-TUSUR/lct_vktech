@@ -1,11 +1,14 @@
 """Парсер 0.5: форматы шаблонов, паттерны из макетов, служебные паттерны, диаграммы, токены дизайн-системы."""
 
 import io
+import json
 import zipfile
+from dataclasses import asdict
 
 import pytest
 from pptx import Presentation
 
+from app.core.config import settings
 from app.pipeline.export.pptx_export import build_deck
 from app.pipeline.layout.matcher import pattern_score
 from app.pipeline.parsing import patterns as patterns_module
@@ -14,6 +17,7 @@ from app.pipeline.parsing.layout_patterns import PH_BASE
 from app.pipeline.parsing.template_parser import parse_template
 from app.pipeline.theme import slide_theme
 from app.schemas.slide import ChartData, ChartSeries, Slide
+from app.services import template_cache
 
 POTX_MAIN = "application/vnd.openxmlformats-officedocument.presentationml.template.main+xml"
 
@@ -112,3 +116,32 @@ def test_broken_slide_does_not_break_parse(parsed, monkeypatch):
     assert result.patterns[1]["error"].startswith("RuntimeError")
     assert not result.patterns[1]["usable"]
     assert result.tokens["stats"]["broken_slides"] == 1
+
+
+def test_template_cache_round_trip(parsed, tmp_path, monkeypatch):
+    """Кэш разбора: паттерны и рендеры возвращаются как есть, чужой кэш не подходит."""
+    source, result = parsed
+    storage, restored = tmp_path / "storage", tmp_path / "restored"
+    (storage / "slides").mkdir(parents=True)
+    (storage / "slides" / "1.jpg").write_bytes(b"jpeg")
+    monkeypatch.setattr(settings, "template_cache_dir", tmp_path / "cache")
+
+    # Каталога кэша нет — сохранять некуда, читать нечего: разбор идёт обычным путём.
+    template_cache.save(source, storage, result)
+    assert template_cache.load(source, restored) is None
+
+    (tmp_path / "cache").mkdir()
+    template_cache.save(source, storage, result)
+    cached = template_cache.load(source, restored)
+    assert cached is not None
+    assert (restored / "slides" / "1.jpg").read_bytes() == b"jpeg"
+    assert asdict(cached) == json.loads(json.dumps(asdict(result), ensure_ascii=False))
+
+    # Разметка другой моделью и другая версия парсера — кэш непригоден.
+    monkeypatch.setattr(settings, "vlm_base_url", "http://vlm.test/v1")
+    monkeypatch.setattr(settings, "vlm_model", "other-model")
+    assert template_cache.load(source, restored) is None
+    monkeypatch.setattr(settings, "vlm_base_url", None)
+    entry = template_cache.entry_dir(source) / template_cache.ENTRY_FILE
+    entry.write_text(json.dumps({**json.loads(entry.read_text("utf-8")), "parser_version": "0.0.1"}), "utf-8")
+    assert template_cache.load(source, restored) is None

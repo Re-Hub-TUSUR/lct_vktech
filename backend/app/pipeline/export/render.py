@@ -5,7 +5,9 @@ PDF и HTML получаются из того же файла, что и экс
 сохраняются. Раньше PDF рисовался с нуля по данным слайдов и терял оформление.
 """
 
+import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -29,6 +31,32 @@ def soffice_binary() -> str | None:
 
 def libreoffice_available() -> bool:
     return soffice_binary() is not None
+
+
+def run_soffice(command: list[str], timeout: float) -> subprocess.CompletedProcess:
+    """Запуск LibreOffice с гарантированной остановкой по таймауту.
+
+    soffice — обёртка, настоящая работа идёт в дочернем soffice.bin. subprocess.run при
+    таймауте убивает только обёртку, а soffice.bin продолжает конвертировать ещё минуты и
+    отнимает процессор и память у следующих рендеров. Поэтому процесс запускается в своей
+    группе, и по таймауту убивается вся группа."""
+    posix = os.name == "posix"
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=posix
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if posix:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def pptx_to_pdf(pptx: bytes) -> bytes:
@@ -56,7 +84,7 @@ def pptx_to_pdf(pptx: bytes) -> bytes:
             str(source),
         ]
         try:
-            result = subprocess.run(command, capture_output=True, timeout=settings.render_timeout_seconds, check=False)
+            result = run_soffice(command, settings.render_timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             raise RenderError(f"LibreOffice не уложился в {settings.render_timeout_seconds} с") from exc
 

@@ -9,8 +9,10 @@ from app.pipeline.ai.vlm import enrich_patterns, vlm_enabled
 from app.pipeline.export.render import libreoffice_available
 from app.pipeline.parsing import design_tokens
 from app.pipeline.parsing.renders import TemplateRenders, layout_image_name, render_template, slide_image_name
+from app.pipeline.parsing.patterns import pattern_summary
 from app.pipeline.parsing.template_parser import PARSER_VERSION, ParsedTemplate, parse_template
 from app.pipeline.theme import slide_theme
+from app.services import template_cache
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +39,15 @@ def _icons(file_path: str, directory: Path, patterns: list[dict[str, Any]]) -> l
     return design_tokens.extract_icons(Presentation(file_path), directory, patterns)
 
 
-def analyze_template(template_id: uuid.UUID, file_path: str) -> ParsedTemplate:
-    """Декомпозиция шаблона, рендеры слайдов и макетов, разметка паттернов VLM (вызывать в потоке)."""
+def analyze_template(template_id: uuid.UUID, file_path: str, builtin: bool = False) -> ParsedTemplate:
+    """Декомпозиция шаблона, рендеры слайдов и макетов, разметка паттернов VLM (вызывать в потоке).
+
+    builtin=True — шаблон контент-пакета: его готовый разбор лежит в кэше репозитория, тогда
+    ни LibreOffice, ни VLM не нужны, а свежий разбор пополняет кэш. Всё, что загрузил
+    пользователь, разбирается по-настоящему — кэш на загруженные шаблоны не распространяется."""
+    if builtin and (cached := template_cache.load(file_path, template_dir(template_id))) is not None:
+        return cached
+
     parsed = parse_template(file_path)
     renders = TemplateRenders()
     if libreoffice_available():
@@ -65,12 +74,30 @@ def analyze_template(template_id: uuid.UUID, file_path: str) -> ParsedTemplate:
 
     if vlm_enabled() and renders.slides:
         parsed.tokens["vlm"] = enrich_patterns(parsed.patterns, slide_images_dir(template_id))
+        # Модель могла поменять типы и назначения — пересчитываем сводку паттернов.
         parsed.tokens["stats"]["patterns"] = sum(1 for pattern in parsed.patterns if pattern["usable"])
+        parsed.tokens["stats"]["service_patterns"] = sum(1 for pattern in parsed.patterns if pattern.get("service"))
+        parsed.tokens["patterns"] = pattern_summary(parsed.patterns)
+
+    if builtin:
+        template_cache.save(file_path, template_dir(template_id), parsed)
     return parsed
 
 
+def vlm_outdated(template: Template) -> bool:
+    """VLM включили или сменили модель, а паттерны шаблона размечены без неё (или другой моделью)."""
+    if not vlm_enabled():
+        return False
+    return ((template.tokens or {}).get("vlm") or {}).get("model") != settings.vlm_model
+
+
 def needs_analysis(template: Template) -> bool:
-    return template.status != "ready" or not template.layouts or template.parser_version != PARSER_VERSION
+    return (
+        template.status != "ready"
+        or not template.layouts
+        or template.parser_version != PARSER_VERSION
+        or vlm_outdated(template)
+    )
 
 
 def apply_parsed(template: Template, parsed: ParsedTemplate) -> None:

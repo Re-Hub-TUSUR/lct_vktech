@@ -1,7 +1,7 @@
 """Регистрирует встроенные шаблоны из BUILTIN_TEMPLATES_DIR и ставит их разбор в очередь.
 
-Идемпотентно: уже разобранные шаблоны пропускаются, а после смены версии парсера
-разбираются заново. Запуск: python -m app.seed
+Идемпотентно: уже разобранные шаблоны пропускаются, а после смены версии парсера или VLM
+разбираются заново — и встроенные, и загруженные пользователями. Запуск: python -m app.seed
 """
 
 import asyncio
@@ -16,7 +16,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal, engine
 from app.models import Template
 from app.pipeline.parsing.formats import TEMPLATE_EXTENSIONS, TemplateFormatError, normalize_template
-from app.pipeline.parsing.template_parser import PARSER_VERSION
+from app.services.templates import needs_analysis
 
 logger = logging.getLogger("seed")
 
@@ -62,9 +62,15 @@ async def seed_builtin_templates() -> None:
                 db.add(template)
                 await db.flush()
                 logger.info("Новый встроенный шаблон: %s", path.name)
-            elif template.status == "ready" and template.parser_version == PARSER_VERSION:
-                continue
+            elif not needs_analysis(template):
+                continue  # уже разобран этой версией парсера (и этой VLM, если она включена)
             to_parse.append(str(template.id))
+        # Загруженные пользователями шаблоны тоже переразбираем после обновления парсера или смены VLM,
+        # иначе их паттерны останутся от старой версии до первой генерации.
+        uploaded = await db.scalars(
+            select(Template).where(Template.is_builtin.is_(False), Template.status != "processing")
+        )
+        to_parse += [str(template.id) for template in uploaded if needs_analysis(template)]
         await db.commit()
 
     if to_parse:

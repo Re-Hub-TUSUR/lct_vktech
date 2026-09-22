@@ -1,0 +1,7469 @@
+{
+ "source": "VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx",
+ "parser_version": "0.5.0",
+ "vlm_model": "qwen/qwen3.8-27b",
+ "parsed": {
+  "slide_width": 12192000,
+  "slide_height": 6858000,
+  "slides_count": 29,
+  "tokens": {
+   "vlm": {
+    "model": "qwen/qwen3.8-27b",
+    "failed": 0,
+    "labeled": 29,
+    "requested": 29,
+    "changed_type": 4,
+    "changed_roles": 12,
+    "changed_category": 0
+   },
+   "grid": {
+    "rows": [
+     0.062,
+     0.232,
+     0.235,
+     0.508
+    ],
+    "guides": {
+     "vertical": [
+      0.0335,
+      0.1397,
+      0.3228,
+      0.3316,
+      0.5,
+      0.6772,
+      0.8573,
+      0.9665
+     ],
+     "horizontal": [
+      0.059,
+      0.1481,
+      0.1799,
+      0.2322,
+      0.5,
+      0.941
+     ]
+    },
+    "columns": [
+     0.035,
+     0.429,
+     0.677
+    ],
+    "margins": {
+     "top": 0.06,
+     "left": 0.035,
+     "right": 0.325,
+     "bottom": 0.77
+    },
+    "safe_area": [
+     0.035,
+     0.06,
+     0.64,
+     0.17
+    ]
+   },
+   "fonts": [
+    {
+     "name": "Play",
+     "count": 381
+    },
+    {
+     "name": "Arial",
+     "count": 104
+    }
+   ],
+   "icons": [
+    {
+     "id": "d7c48c6d19ad4fa6",
+     "file": "d7c48c6d19ad4fa6.png",
+     "uses": 2,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 2,
+     "from_library": false
+    },
+    {
+     "id": "501265ea213fada9",
+     "file": "501265ea213fada9.png",
+     "uses": 1,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 2,
+     "from_library": false
+    },
+    {
+     "id": "a359cddc4ceadfed",
+     "file": "a359cddc4ceadfed.png",
+     "uses": 13,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 3,
+     "from_library": false
+    },
+    {
+     "id": "5c981120f71a1f10",
+     "file": "5c981120f71a1f10.png",
+     "uses": 8,
+     "size_px": [
+      120,
+      120
+     ],
+     "slide_index": 8,
+     "from_library": false
+    },
+    {
+     "id": "a87cf5093f7e5e89",
+     "file": "a87cf5093f7e5e89.png",
+     "uses": 8,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 8,
+     "from_library": false
+    },
+    {
+     "id": "c49f9087ab913175",
+     "file": "c49f9087ab913175.png",
+     "uses": 12,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 10,
+     "from_library": false
+    },
+    {
+     "id": "f92539ba982c534a",
+     "file": "f92539ba982c534a.png",
+     "uses": 9,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 11,
+     "from_library": false
+    },
+    {
+     "id": "a5a48ae91c768349",
+     "file": "a5a48ae91c768349.png",
+     "uses": 3,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 12,
+     "from_library": false
+    },
+    {
+     "id": "4ca996d45a78f321",
+     "file": "4ca996d45a78f321.png",
+     "uses": 4,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 21,
+     "from_library": false
+    },
+    {
+     "id": "93f421249db49768",
+     "file": "93f421249db49768.png",
+     "uses": 6,
+     "size_px": [
+      56,
+      56
+     ],
+     "slide_index": 22,
+     "from_library": false
+    }
+   ],
+   "stats": {
+    "media": 32,
+    "charts": 0,
+    "groups": 28,
+    "slides": 29,
+    "tables": 1,
+    "layouts": 15,
+    "masters": 1,
+    "patterns": 19,
+    "pictures": 77,
+    "smartart": 0,
+    "broken_slides": 0,
+    "layout_patterns": 0,
+    "service_patterns": 1
+   },
+   "theme": {
+    "name": "Контентные",
+    "fonts": {
+     "major": "Arial",
+     "minor": "Arial"
+    },
+    "colors": {
+     "dk1": "#000000",
+     "dk2": "#0077FF",
+     "lt1": "#FFFFFF",
+     "lt2": "#FFFFFF",
+     "hlink": "#0077FF",
+     "accent1": "#0077FF",
+     "accent2": "#00E9FF",
+     "accent3": "#AAFBFF",
+     "accent4": "#EDF3FC",
+     "accent5": "#7C8A9A",
+     "accent6": "#202020",
+     "folHlink": "#00E9FF"
+    }
+   },
+   "chrome": {
+    "logos": [
+     {
+      "bbox": [
+       0.0344,
+       0.8984,
+       0.0764,
+       0.042
+      ],
+      "image": "f85437110e0d",
+      "layout": "",
+      "source": "master"
+     },
+     {
+      "bbox": [
+       0.0327,
+       0.88,
+       0.2177,
+       0.061
+      ],
+      "image": "b310db145d5a",
+      "layout": "7_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.8906,
+       0.8983,
+       0.0767,
+       0.0426
+      ],
+      "image": "d04e5e8d446e",
+      "layout": "7_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.0,
+       0.0,
+       0.4727,
+       0.0472
+      ],
+      "image": "d565df1ae9bd",
+      "layout": "9_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.0327,
+       0.8983,
+       0.1524,
+       0.0427
+      ],
+      "image": "b310db145d5a",
+      "layout": "9_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.9099,
+       0.9096,
+       0.0566,
+       0.0315
+      ],
+      "image": "d04e5e8d446e",
+      "layout": "9_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.0,
+       0.9381,
+       0.4795,
+       0.0619
+      ],
+      "image": "d565df1ae9bd",
+      "layout": "18_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.7234,
+       0.0,
+       0.2766,
+       0.1327
+      ],
+      "image": "43d5e235b0d9",
+      "layout": "18_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.0,
+       0.9323,
+       0.3818,
+       0.0677
+      ],
+      "image": "7e108d53804c",
+      "layout": "15_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.7654,
+       0.9172,
+       0.2346,
+       0.0828
+      ],
+      "image": "aa4e66ee1b4d",
+      "layout": "15_Титульный слайд",
+      "source": "layout"
+     },
+     {
+      "bbox": [
+       0.0327,
+       0.8597,
+       0.2901,
+       0.0813
+      ],
+      "image": "b310db145d5a",
+      "layout": "12_Титульный слайд",
+      "source": "layout"
+     }
+    ],
+    "usage": {
+     "date": 0.0,
+     "footer": 0.0,
+     "slide_number": 0.0
+    },
+    "footer_text": null,
+    "placeholders": {
+     "footer": [
+      0.0551,
+      0.0245,
+      0.8919,
+      0.0352
+     ]
+    },
+    "slide_number": false
+   },
+   "palette": [
+    {
+     "hex": "#FFFFFF",
+     "count": 295,
+     "sources": [
+      "lt1",
+      "lt2",
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#000000",
+     "count": 284,
+     "sources": [
+      "dk1",
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#808080",
+     "count": 209,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#0077FF",
+     "count": 158,
+     "sources": [
+      "accent1",
+      "dk2",
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#E4E7EA",
+     "count": 53,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#212121",
+     "count": 49,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#00AEE8",
+     "count": 45,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#7F7F7F",
+     "count": 38,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#6DBCFF",
+     "count": 24,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#5A6775",
+     "count": 23,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#70C3FF",
+     "count": 23,
+     "sources": [
+      "srgb"
+     ]
+    },
+    {
+     "hex": "#EE5959",
+     "count": 16,
+     "sources": [
+      "srgb"
+     ]
+    }
+   ],
+   "patterns": {
+    "kpi": 1,
+    "cards": 12,
+    "table": 1,
+    "agenda": 1,
+    "timeline": 3,
+    "two_columns": 1
+   },
+   "slide_size": {
+    "aspect": "16:9",
+    "width_in": 13.333,
+    "height_in": 7.5,
+    "width_emu": 12192000,
+    "height_emu": 6858000
+   },
+   "type_scale": [
+    {
+     "count": 11,
+     "size_pt": 66.0
+    },
+    {
+     "count": 5,
+     "size_pt": 54.0
+    },
+    {
+     "count": 5,
+     "size_pt": 40.0
+    },
+    {
+     "count": 13,
+     "size_pt": 36.0
+    },
+    {
+     "count": 8,
+     "size_pt": 24.0
+    },
+    {
+     "count": 54,
+     "size_pt": 20.0
+    },
+    {
+     "count": 116,
+     "size_pt": 18.0
+    },
+    {
+     "count": 77,
+     "size_pt": 16.0
+    },
+    {
+     "count": 85,
+     "size_pt": 14.0
+    },
+    {
+     "count": 12,
+     "size_pt": 13.0
+    },
+    {
+     "count": 45,
+     "size_pt": 12.0
+    },
+    {
+     "count": 41,
+     "size_pt": 11.0
+    },
+    {
+     "count": 9,
+     "size_pt": 10.0
+    },
+    {
+     "count": 6,
+     "size_pt": 9.0
+    }
+   ],
+   "typography": {
+    "body": {
+     "bold": false,
+     "font": "Arial",
+     "color": "#000000",
+     "size_pt": 14.0,
+     "line_spacing": 1.0
+    },
+    "title": {
+     "bold": false,
+     "font": "Arial",
+     "color": "#000000",
+     "size_pt": 14.0,
+     "line_spacing": 1.0
+    },
+    "body_2": {
+     "bold": false,
+     "font": "Arial",
+     "color": "#000000",
+     "size_pt": 14.0,
+     "line_spacing": 1.0
+    },
+    "body_3": {
+     "bold": false,
+     "font": "Arial",
+     "color": "#000000",
+     "size_pt": 14.0,
+     "line_spacing": 1.0
+    },
+    "caption": {
+     "bold": false,
+     "font": "Arial",
+     "color": "#000000",
+     "size_pt": 9.0,
+     "line_spacing": 1.0
+    },
+    "subtitle": {
+     "bold": false,
+     "font": "Arial",
+     "color": "#000000",
+     "size_pt": 14.0,
+     "line_spacing": 1.0
+    }
+   },
+   "backgrounds": {
+    "title": "#000000",
+    "closing": "#000000",
+    "content": "#000000"
+   },
+   "chart_style": null,
+   "fonts_check": [
+    {
+     "name": "Play",
+     "available": false,
+     "substitute": "DejaVu Sans"
+    },
+    {
+     "name": "Arial",
+     "available": false,
+     "substitute": "Liberation Sans"
+    }
+   ],
+   "table_style": {
+    "band_row": false,
+    "style_id": "{5AC9AF0A-6FEA-4B71-B213-FBF42B605303}",
+    "band_fill": "#212121",
+    "first_row": false,
+    "header_fill": null,
+    "header_text": "#FFFFFF",
+    "font_size_pt": 11.0
+   }
+  },
+  "layouts": [
+   {
+    "key": "0:0",
+    "name": "7_Титульный слайд",
+    "role": "title",
+    "image": "0-0.jpg",
+    "index": 0,
+    "frames": {
+     "body": [
+      0.0352,
+      0.26,
+      0.9296,
+      0.64
+     ],
+     "title": [
+      0.0352,
+      0.3713,
+      0.642,
+      0.2737
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 1,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "ctr",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 2546255,
+      "left": 429253,
+      "name": "Google Shape;75;p2",
+      "type": "TITLE",
+      "width": 7827335,
+      "height": 1876890
+     }
+    ],
+    "assigned_roles": [
+     "title"
+    ]
+   },
+   {
+    "key": "0:1",
+    "name": "9_Титульный слайд",
+    "role": "title",
+    "image": "0-1.jpg",
+    "index": 1,
+    "frames": {
+     "body": [
+      0.0352,
+      0.26,
+      0.9296,
+      0.64
+     ],
+     "title": [
+      0.0352,
+      0.2346,
+      0.394,
+      0.2737
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 1,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "ctr",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 1609196,
+      "left": 429254,
+      "name": "Google Shape;108;p3",
+      "type": "TITLE",
+      "width": 4803146,
+      "height": 1876890
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:2",
+    "name": "19_Заголовок",
+    "role": "content",
+    "image": "0-2.jpg",
+    "index": 2,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 3,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;115;p4",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:3",
+    "name": "18_Титульный слайд",
+    "role": "title",
+    "image": "0-3.jpg",
+    "index": 3,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 1,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;140;p5",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:4",
+    "name": "15_Титульный слайд",
+    "role": "title",
+    "image": "0-4.jpg",
+    "index": 4,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 3,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;171;p6",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:5",
+    "name": "13_Титульный слайд",
+    "role": "title",
+    "image": "0-5.jpg",
+    "index": 5,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 4,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;195;p7",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:6",
+    "name": "8_Заголовок",
+    "role": "content",
+    "image": "0-6.jpg",
+    "index": 6,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 4,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;205;p8",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": [
+     "content"
+    ]
+   },
+   {
+    "key": "0:7",
+    "name": "17_Титульный слайд",
+    "role": "title",
+    "image": "0-7.jpg",
+    "index": 7,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 2,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;229;p9",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:8",
+    "name": "14_Титульный слайд",
+    "role": "title",
+    "image": "0-8.jpg",
+    "index": 8,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 2,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;256;p10",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:9",
+    "name": "11_Заголовок",
+    "role": "content",
+    "image": "0-9.jpg",
+    "index": 9,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2338,
+      0.9296,
+      0.6662
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.9313,
+      0.1119
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 3,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;262;p11",
+      "type": "TITLE",
+      "width": 11354760,
+      "height": 767295
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:10",
+    "name": "17_Заголовок",
+    "role": "content",
+    "image": "0-10.jpg",
+    "index": 10,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 2,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;268;p12",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:11",
+    "name": "11_Титульный слайд",
+    "role": "title",
+    "image": "0-11.jpg",
+    "index": 11,
+    "frames": {
+     "body": [
+      0.0352,
+      0.26,
+      0.9296,
+      0.64
+     ],
+     "title": [
+      0.0352,
+      0.2346,
+      0.394,
+      0.2737
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 1,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "ctr",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 1609196,
+      "left": 429254,
+      "name": "Google Shape;292;p13",
+      "type": "TITLE",
+      "width": 4803146,
+      "height": 1876890
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:12",
+    "name": "16_Титульный слайд",
+    "role": "title",
+    "image": "0-12.jpg",
+    "index": 12,
+    "frames": {
+     "body": [
+      0.0352,
+      0.26,
+      0.9296,
+      0.64
+     ],
+     "title": [
+      0.0352,
+      0.3341,
+      0.642,
+      0.2737
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 1,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "ctr",
+     "size_pt": 54.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 2291422,
+      "left": 429253,
+      "name": "Google Shape;318;p14",
+      "type": "TITLE",
+      "width": 7827335,
+      "height": 1876890
+     }
+    ],
+    "assigned_roles": []
+   },
+   {
+    "key": "0:13",
+    "name": "12_Титульный слайд",
+    "role": "title",
+    "image": "0-13.jpg",
+    "index": 13,
+    "frames": {
+     "body": [
+      0.0352,
+      0.26,
+      0.9296,
+      0.64
+     ],
+     "title": [
+      0.0352,
+      0.3341,
+      0.642,
+      0.2737
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 1,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "ctr",
+     "size_pt": 54.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 2291422,
+      "left": 429253,
+      "name": "Google Shape;350;p15",
+      "type": "TITLE",
+      "width": 7827335,
+      "height": 1876890
+     }
+    ],
+    "assigned_roles": [
+     "closing"
+    ]
+   },
+   {
+    "key": "0:14",
+    "name": "10_Титульный слайд",
+    "role": "title",
+    "image": "0-14.jpg",
+    "index": 14,
+    "frames": {
+     "body": [
+      0.0352,
+      0.2922,
+      0.9296,
+      0.6078
+     ],
+     "title": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "subtitle": null
+    },
+    "master": 0,
+    "used_by": 0,
+    "background": "#000000",
+    "title_style": {
+     "bold": false,
+     "align": "l",
+     "color": "#FFFFFF",
+     "anchor": "t",
+     "size_pt": 36.0
+    },
+    "placeholders": [
+     {
+      "idx": 0,
+      "top": 424691,
+      "left": 429253,
+      "name": "Google Shape;374;p16",
+      "type": "TITLE",
+      "width": 7827311,
+      "height": 1167572
+     }
+    ],
+    "assigned_roles": []
+   }
+  ],
+  "roles": {
+   "image": null,
+   "title": "0:0",
+   "agenda": null,
+   "closing": "0:13",
+   "content": "0:6",
+   "section": null,
+   "two_columns": null
+  },
+  "patterns": [
+   {
+    "id": "s1",
+    "type": "title_only",
+    "items": [],
+    "slots": [
+     {
+      "id": 383,
+      "bbox": [
+       0.1239,
+       0.6827,
+       0.1816,
+       0.1217
+      ],
+      "role": "subtitle",
+      "size": 16.0,
+      "chars": 65,
+      "sample": "Имя Спикера, должность",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 381,
+     "bbox": [
+      0.0352,
+      0.3632,
+      0.642,
+      0.2737
+     ],
+     "role": "title",
+     "size": 48.0,
+     "chars": 57,
+     "sample": "Название презентации",
+     "paragraphs": 1
+    },
+    "usage": "Название проекта или доклада, имя и должность автора.",
+    "frames": {},
+    "images": [],
+    "render": "1.jpg",
+    "schema": {
+     "type": "title_only",
+     "title": 57,
+     "subtitle": {
+      "chars": 65,
+      "paragraphs": 1
+     }
+    },
+    "shapes": [
+     {
+      "x": 0.0352,
+      "y": 0.6827,
+      "id": "tpl-382",
+      "kind": "circle",
+      "text": null,
+      "color": "#5A6775",
+      "width": 0.0684,
+      "border": false,
+      "height": 0.1217,
+      "template_shape_id": 382
+     }
+    ],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Титульный слайд презентации с названием и указанием спикера.",
+    "service": true,
+    "category": "cover",
+    "confidence": 0.95,
+    "layout_key": "0:0",
+    "items_count": 0,
+    "slide_index": 0,
+    "charts_count": 0
+   },
+   {
+    "id": "s2",
+    "type": "agenda",
+    "items": [
+     {
+      "bbox": [
+       0.4027,
+       0.1481,
+       0.5621,
+       0.1018
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 394,
+        "bbox": [
+         0.5572,
+         0.1481,
+         0.4076,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 66,
+        "sample": "Название раздела",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 389,
+        "bbox": [
+         0.4027,
+         0.1481,
+         0.1308,
+         0.1018
+        ],
+        "role": "number",
+        "size": 40.0,
+        "chars": 8,
+        "sample": "01",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       389,
+       394
+      ]
+     },
+     {
+      "bbox": [
+       0.4027,
+       0.3024,
+       0.5621,
+       0.1018
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 395,
+        "bbox": [
+         0.5572,
+         0.3091,
+         0.4076,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 66,
+        "sample": "Название раздела",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 390,
+        "bbox": [
+         0.4027,
+         0.3024,
+         0.1308,
+         0.1018
+        ],
+        "role": "number",
+        "size": 40.0,
+        "chars": 8,
+        "sample": "02",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       390,
+       395
+      ]
+     },
+     {
+      "bbox": [
+       0.4027,
+       0.4568,
+       0.5621,
+       0.1018
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 396,
+        "bbox": [
+         0.5572,
+         0.4631,
+         0.4076,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 66,
+        "sample": "Название раздела",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 391,
+        "bbox": [
+         0.4027,
+         0.4568,
+         0.1308,
+         0.1018
+        ],
+        "role": "number",
+        "size": 40.0,
+        "chars": 8,
+        "sample": "04",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       391,
+       396
+      ]
+     },
+     {
+      "bbox": [
+       0.4027,
+       0.6111,
+       0.5621,
+       0.1018
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 397,
+        "bbox": [
+         0.5572,
+         0.6194,
+         0.4076,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 66,
+        "sample": "Название раздела",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 392,
+        "bbox": [
+         0.4027,
+         0.6111,
+         0.1308,
+         0.1018
+        ],
+        "role": "number",
+        "size": 40.0,
+        "chars": 8,
+        "sample": "05",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       392,
+       397
+      ]
+     },
+     {
+      "bbox": [
+       0.4027,
+       0.7654,
+       0.5621,
+       0.1018
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 398,
+        "bbox": [
+         0.5572,
+         0.7734,
+         0.4076,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 66,
+        "sample": "Название раздела",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 393,
+        "bbox": [
+         0.4027,
+         0.7654,
+         0.1308,
+         0.1018
+        ],
+        "role": "number",
+        "size": 40.0,
+        "chars": 8,
+        "sample": "06",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       393,
+       398
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 388,
+     "bbox": [
+      0.0352,
+      0.2346,
+      0.394,
+      0.2737
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 250,
+     "sample": "Оглавление",
+     "paragraphs": 1
+    },
+    "usage": "Список из 5-6 пунктов с краткими названиями тем, которые будут раскрыты в презентации.",
+    "frames": {},
+    "images": [],
+    "render": "2.jpg",
+    "schema": {
+     "type": "agenda",
+     "items": {
+      "max": 5,
+      "min": 4,
+      "fields": {
+       "text": 66,
+       "number": 8
+      }
+     },
+     "title": 250
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд-оглавление для перечисления тем или разделов презентации.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:1",
+    "items_count": 5,
+    "slide_index": 1,
+    "charts_count": 0
+   },
+   {
+    "id": "s3",
+    "type": "two_columns",
+    "items": [
+     {
+      "bbox": [
+       0.4635,
+       0.2417,
+       0.4579,
+       0.0949
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 405,
+        "bbox": [
+         0.5324,
+         0.2417,
+         0.389,
+         0.0931
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 106,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       405,
+       408
+      ]
+     },
+     {
+      "bbox": [
+       0.4635,
+       0.4673,
+       0.4579,
+       0.0949
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 406,
+        "bbox": [
+         0.5324,
+         0.4673,
+         0.389,
+         0.0931
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 106,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       406,
+       411
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 414,
+      "bbox": [
+       0.4765,
+       0.7203,
+       0.4462,
+       0.1956
+      ],
+      "role": "body",
+      "size": 14.0,
+      "chars": 335,
+      "sample": "Заметка",
+      "companions": [
+       416,
+       413,
+       415
+      ],
+      "paragraphs": 1
+     },
+     {
+      "id": 417,
+      "bbox": [
+       0.0352,
+       0.0619,
+       0.1389,
+       0.0809
+      ],
+      "role": "extra",
+      "size": 18.0,
+      "chars": 26,
+      "sample": "Кейс",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 404,
+     "bbox": [
+      0.0352,
+      0.2129,
+      0.317,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 125,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Кейсы, этапы решения задачи, список преимуществ или пунктов плана с пояснением.",
+    "frames": {},
+    "images": [],
+    "render": "3.jpg",
+    "schema": {
+     "body": {
+      "chars": 335,
+      "paragraphs": 1
+     },
+     "type": "two_columns",
+     "items": {
+      "max": 2,
+      "min": 1,
+      "fields": {
+       "text": 106
+      }
+     },
+     "title": 125
+    },
+    "shapes": [
+     {
+      "x": 0.4635,
+      "y": 0.2435,
+      "id": "tpl-408",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0524,
+      "border": true,
+      "height": 0.0931,
+      "template_shape_id": 408
+     },
+     {
+      "x": 0.4635,
+      "y": 0.4692,
+      "id": "tpl-411",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0524,
+      "border": false,
+      "height": 0.0931,
+      "template_shape_id": 411
+     },
+     {
+      "x": 0.4635,
+      "y": 0.7052,
+      "id": "tpl-413",
+      "kind": "badge",
+      "text": null,
+      "color": "#0077FF",
+      "width": 0.4775,
+      "border": true,
+      "height": 0.2332,
+      "template_shape_id": 413
+     },
+     {
+      "x": 0.9029,
+      "y": 0.872,
+      "id": "tpl-415",
+      "kind": "circle",
+      "text": null,
+      "color": "#0077FF",
+      "width": 0.0286,
+      "border": false,
+      "height": 0.0508,
+      "template_shape_id": 415
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для демонстрации кейса с описанием шагов или ключевых моментов и итоговой заметкой.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.9,
+    "layout_key": "0:2",
+    "items_count": 2,
+    "slide_index": 2,
+    "charts_count": 0
+   },
+   {
+    "id": "s4",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.4853,
+       0.3086,
+       0.4589,
+       0.0989
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 424,
+        "bbox": [
+         0.5603,
+         0.3086,
+         0.3839,
+         0.0989
+        ],
+        "role": "title",
+        "size": 18.0,
+        "chars": 88,
+        "sample": "Текст",
+        "companions": [
+         426
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       424,
+       425,
+       426
+      ]
+     },
+     {
+      "bbox": [
+       0.4853,
+       0.4485,
+       0.4589,
+       0.0989
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 427,
+        "bbox": [
+         0.5603,
+         0.4485,
+         0.3839,
+         0.0989
+        ],
+        "role": "title",
+        "size": 18.0,
+        "chars": 88,
+        "sample": "Текст",
+        "companions": [
+         429
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       427,
+       428,
+       429
+      ]
+     },
+     {
+      "bbox": [
+       0.4853,
+       0.5902,
+       0.4589,
+       0.0989
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 430,
+        "bbox": [
+         0.5603,
+         0.5902,
+         0.3839,
+         0.0989
+        ],
+        "role": "title",
+        "size": 18.0,
+        "chars": 88,
+        "sample": "Текст",
+        "companions": [
+         432
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       430,
+       431,
+       432
+      ]
+     },
+     {
+      "bbox": [
+       0.4853,
+       0.7339,
+       0.4589,
+       0.0989
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 433,
+        "bbox": [
+         0.5603,
+         0.7339,
+         0.3839,
+         0.0989
+        ],
+        "role": "title",
+        "size": 18.0,
+        "chars": 88,
+        "sample": "Текст",
+        "companions": [
+         435
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       433,
+       434,
+       435
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 436,
+      "bbox": [
+       0.4853,
+       0.2103,
+       0.4743,
+       0.0725
+      ],
+      "role": "extra",
+      "size": 24.0,
+      "chars": 44,
+      "sample": "Заголовок",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 423,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Кейс",
+     "paragraphs": 1
+    },
+    "usage": "Кейсы, проекты, портфолио с описанием в виде списка преимуществ или этапов.",
+    "frames": {},
+    "images": [],
+    "render": "4.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 4,
+      "min": 3,
+      "fields": {
+       "title": 88
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.4853,
+      "y": 0.3086,
+      "id": "tpl-425",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0556,
+      "border": true,
+      "height": 0.0989,
+      "template_shape_id": 425
+     },
+     {
+      "x": 0.4853,
+      "y": 0.4485,
+      "id": "tpl-428",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0556,
+      "border": true,
+      "height": 0.0989,
+      "template_shape_id": 428
+     },
+     {
+      "x": 0.4853,
+      "y": 0.5902,
+      "id": "tpl-431",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0556,
+      "border": true,
+      "height": 0.0989,
+      "template_shape_id": 431
+     },
+     {
+      "x": 0.4853,
+      "y": 0.7339,
+      "id": "tpl-434",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0556,
+      "border": true,
+      "height": 0.0989,
+      "template_shape_id": 434
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для демонстрации кейса с крупным изображением и списком ключевых пунктов.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.9,
+    "layout_key": "0:3",
+    "items_count": 4,
+    "slide_index": 3,
+    "charts_count": 0
+   },
+   {
+    "id": "s5",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.4416,
+       0.1254,
+       0.4854,
+       0.2487
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 442,
+        "bbox": [
+         0.4416,
+         0.1254,
+         0.4854,
+         0.2487
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 280,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       442,
+       444,
+       445
+      ]
+     },
+     {
+      "bbox": [
+       0.4416,
+       0.3953,
+       0.4854,
+       0.2487
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 446,
+        "bbox": [
+         0.4416,
+         0.3953,
+         0.4854,
+         0.2487
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 280,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       446,
+       448,
+       449
+      ]
+     },
+     {
+      "bbox": [
+       0.4416,
+       0.6651,
+       0.4854,
+       0.2487
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 450,
+        "bbox": [
+         0.4416,
+         0.6651,
+         0.4854,
+         0.2487
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 280,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       450,
+       452,
+       453
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 441,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.0914
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 136,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для списков из 3-4 элементов, где каждый элемент имеет название и короткое пояснение (например, 'Наши услуги', 'Этапы работы', 'Ключевые преимущества').",
+    "frames": {},
+    "images": [],
+    "render": "5.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 3,
+      "min": 2,
+      "fields": {
+       "title_text": 280
+      }
+     },
+     "title": 136
+    },
+    "shapes": [
+     {
+      "x": 0.4531,
+      "y": 0.1453,
+      "id": "tpl-444",
+      "kind": "badge",
+      "text": null,
+      "color": "#212121",
+      "width": 0.0423,
+      "border": false,
+      "height": 0.0752,
+      "template_shape_id": 444
+     },
+     {
+      "x": 0.4531,
+      "y": 0.4152,
+      "id": "tpl-448",
+      "kind": "badge",
+      "text": null,
+      "color": "#212121",
+      "width": 0.0423,
+      "border": false,
+      "height": 0.0752,
+      "template_shape_id": 448
+     },
+     {
+      "x": 0.4531,
+      "y": 0.685,
+      "id": "tpl-452",
+      "kind": "badge",
+      "text": null,
+      "color": "#212121",
+      "width": 0.0423,
+      "border": false,
+      "height": 0.0752,
+      "template_shape_id": 452
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для перечисления трех ключевых пунктов, преимуществ или этапов с кратким описанием каждого.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:2",
+    "items_count": 3,
+    "slide_index": 4,
+    "charts_count": 0
+   },
+   {
+    "id": "s6",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0341,
+       0.243,
+       0.2805,
+       0.514
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 462,
+        "bbox": [
+         0.0341,
+         0.243,
+         0.2805,
+         0.514
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 271,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 463,
+        "bbox": [
+         0.0489,
+         0.4752,
+         0.2507,
+         0.0367
+        ],
+        "role": "text",
+        "size": 14.0,
+        "chars": 35,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       462,
+       463,
+       464
+      ]
+     },
+     {
+      "bbox": [
+       0.3328,
+       0.243,
+       0.2805,
+       0.514
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 461,
+        "bbox": [
+         0.3328,
+         0.243,
+         0.2805,
+         0.514
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 271,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 465,
+        "bbox": [
+         0.3478,
+         0.4752,
+         0.2507,
+         0.0367
+        ],
+        "role": "text",
+        "size": 14.0,
+        "chars": 35,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       461,
+       465,
+       466
+      ]
+     },
+     {
+      "bbox": [
+       0.634,
+       0.243,
+       0.2805,
+       0.514
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 460,
+        "bbox": [
+         0.634,
+         0.243,
+         0.2805,
+         0.514
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 271,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 467,
+        "bbox": [
+         0.6489,
+         0.4752,
+         0.2507,
+         0.0367
+        ],
+        "role": "text",
+        "size": 14.0,
+        "chars": 35,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       460,
+       467,
+       468
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 459,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для перечисления 3-4 основных идей, этапов, продуктов или преимуществ, где каждый пункт сопровождается кратким описанием.",
+    "frames": {},
+    "images": [],
+    "render": "6.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 3,
+      "min": 2,
+      "fields": {
+       "text": 35,
+       "title": 271
+      }
+     },
+     "title": 254
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления трех ключевых пунктов, преимуществ или направлений работы в виде карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:4",
+    "items_count": 3,
+    "slide_index": 5,
+    "charts_count": 0
+   },
+   {
+    "id": "s7",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.2427,
+       0.2982,
+       0.2625
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 475,
+        "bbox": [
+         0.0351,
+         0.2427,
+         0.2982,
+         0.2625
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 182,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       475
+      ]
+     },
+     {
+      "bbox": [
+       0.3459,
+       0.2427,
+       0.2982,
+       0.2625
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 476,
+        "bbox": [
+         0.3459,
+         0.2427,
+         0.2982,
+         0.2625
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 182,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       476
+      ]
+     },
+     {
+      "bbox": [
+       0.6568,
+       0.2427,
+       0.2982,
+       0.2625
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 477,
+        "bbox": [
+         0.6568,
+         0.2427,
+         0.2982,
+         0.2625
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 182,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       477
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.5275,
+       0.2982,
+       0.2625
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 478,
+        "bbox": [
+         0.0351,
+         0.5275,
+         0.2982,
+         0.2625
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 182,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       478
+      ]
+     },
+     {
+      "bbox": [
+       0.3459,
+       0.5275,
+       0.2982,
+       0.2625
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 479,
+        "bbox": [
+         0.3459,
+         0.5275,
+         0.2982,
+         0.2625
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 182,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       479
+      ]
+     },
+     {
+      "bbox": [
+       0.6566,
+       0.5275,
+       0.2982,
+       0.2625
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 480,
+        "bbox": [
+         0.6566,
+         0.5275,
+         0.2982,
+         0.2625
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 182,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       480
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 474,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для перечисления ключевых функций, этапов проекта, преимуществ продукта или команд, где каждый пункт имеет краткое название и описание.",
+    "frames": {},
+    "images": [],
+    "render": "7.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 6,
+      "min": 4,
+      "fields": {
+       "title_text": 182
+      }
+     },
+     "title": 254
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления шести связанных тем или преимуществ в виде сетки карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:5",
+    "items_count": 6,
+    "slide_index": 6,
+    "charts_count": 0
+   },
+   {
+    "id": "s8",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0358,
+       0.2322,
+       0.2819,
+       0.3053
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 487,
+        "bbox": [
+         0.0359,
+         0.3621,
+         0.2819,
+         0.0738
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 39,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 488,
+        "bbox": [
+         0.0358,
+         0.2322,
+         0.0555,
+         0.0986
+        ],
+        "role": "number",
+        "size": 16.0,
+        "chars": 16,
+        "sample": "01",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 489,
+        "bbox": [
+         0.0359,
+         0.4205,
+         0.2819,
+         0.1169
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 97,
+        "sample": "Основной текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       487,
+       488,
+       489
+      ]
+     },
+     {
+      "bbox": [
+       0.3584,
+       0.2322,
+       0.2819,
+       0.3053
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 490,
+        "bbox": [
+         0.3584,
+         0.3621,
+         0.2819,
+         0.0738
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 39,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 491,
+        "bbox": [
+         0.3584,
+         0.2322,
+         0.0555,
+         0.0986
+        ],
+        "role": "number",
+        "size": 16.0,
+        "chars": 16,
+        "sample": "02",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 492,
+        "bbox": [
+         0.3584,
+         0.4205,
+         0.2819,
+         0.1169
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 97,
+        "sample": "Основной текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       490,
+       491,
+       492
+      ]
+     },
+     {
+      "bbox": [
+       0.681,
+       0.2322,
+       0.2819,
+       0.3053
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 499,
+        "bbox": [
+         0.681,
+         0.3621,
+         0.2819,
+         0.0738
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 39,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 500,
+        "bbox": [
+         0.681,
+         0.2322,
+         0.0555,
+         0.0986
+        ],
+        "role": "number",
+        "size": 16.0,
+        "chars": 16,
+        "sample": "03",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 501,
+        "bbox": [
+         0.681,
+         0.4205,
+         0.2819,
+         0.1169
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 97,
+        "sample": "Основной текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       499,
+       500,
+       501
+      ]
+     },
+     {
+      "bbox": [
+       0.0358,
+       0.5366,
+       0.2819,
+       0.3053
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 493,
+        "bbox": [
+         0.0359,
+         0.6666,
+         0.2819,
+         0.0738
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 39,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 494,
+        "bbox": [
+         0.0358,
+         0.5366,
+         0.0555,
+         0.0986
+        ],
+        "role": "number",
+        "size": 16.0,
+        "chars": 16,
+        "sample": "04",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 495,
+        "bbox": [
+         0.0359,
+         0.725,
+         0.2819,
+         0.1169
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 97,
+        "sample": "Основной текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       493,
+       494,
+       495
+      ]
+     },
+     {
+      "bbox": [
+       0.3584,
+       0.5366,
+       0.2819,
+       0.3053
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 496,
+        "bbox": [
+         0.3584,
+         0.6666,
+         0.2819,
+         0.0738
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 39,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 497,
+        "bbox": [
+         0.3584,
+         0.5366,
+         0.0555,
+         0.0986
+        ],
+        "role": "number",
+        "size": 16.0,
+        "chars": 16,
+        "sample": "05",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 498,
+        "bbox": [
+         0.3584,
+         0.725,
+         0.2819,
+         0.1169
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 97,
+        "sample": "Основной текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       496,
+       497,
+       498
+      ]
+     },
+     {
+      "bbox": [
+       0.681,
+       0.5366,
+       0.2819,
+       0.3053
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 502,
+        "bbox": [
+         0.681,
+         0.6666,
+         0.2819,
+         0.0738
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 39,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 503,
+        "bbox": [
+         0.681,
+         0.5366,
+         0.0555,
+         0.0986
+        ],
+        "role": "number",
+        "size": 16.0,
+        "chars": 16,
+        "sample": "06",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 504,
+        "bbox": [
+         0.681,
+         0.725,
+         0.2819,
+         0.1169
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 97,
+        "sample": "Основной текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       502,
+       503,
+       504
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 486,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для перечисления преимуществ, этапов, продуктов или ключевых идей, где каждый пункт имеет короткий заголовок и пояснение.",
+    "frames": {},
+    "images": [],
+    "render": "8.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 6,
+      "min": 4,
+      "fields": {
+       "text": 97,
+       "title": 39,
+       "number": 16
+      }
+     },
+     "title": 254
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления шести связанных пунктов или функций в виде сетки карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.9,
+    "layout_key": "0:5",
+    "items_count": 6,
+    "slide_index": 7,
+    "charts_count": 0
+   },
+   {
+    "id": "s9",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.2176,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 511,
+        "bbox": [
+         0.0351,
+         0.2176,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       511,
+       520,
+       521
+      ]
+     },
+     {
+      "bbox": [
+       0.2706,
+       0.2176,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 513,
+        "bbox": [
+         0.2706,
+         0.2176,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       513,
+       523,
+       524
+      ]
+     },
+     {
+      "bbox": [
+       0.5066,
+       0.2176,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 515,
+        "bbox": [
+         0.5066,
+         0.2176,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       515,
+       526,
+       527
+      ]
+     },
+     {
+      "bbox": [
+       0.7426,
+       0.2176,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 517,
+        "bbox": [
+         0.7426,
+         0.2176,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       517,
+       529,
+       530
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.5207,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 512,
+        "bbox": [
+         0.0351,
+         0.5207,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       512,
+       532,
+       533
+      ]
+     },
+     {
+      "bbox": [
+       0.2706,
+       0.5207,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 514,
+        "bbox": [
+         0.2706,
+         0.5207,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       514,
+       535,
+       536
+      ]
+     },
+     {
+      "bbox": [
+       0.5066,
+       0.5207,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 516,
+        "bbox": [
+         0.5066,
+         0.5207,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       516,
+       538,
+       539
+      ]
+     },
+     {
+      "bbox": [
+       0.7426,
+       0.5207,
+       0.2225,
+       0.2824
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 518,
+        "bbox": [
+         0.7426,
+         0.5207,
+         0.2225,
+         0.2824
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 185,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       518,
+       541,
+       542
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 510,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Список из 4-8 коротких тезисов, где каждый пункт имеет название и краткое пояснение.",
+    "frames": {},
+    "images": [],
+    "render": "9.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 8,
+      "min": 6,
+      "fields": {
+       "title_text": 185
+      }
+     },
+     "title": 254
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления восьми ключевых пунктов, функций или преимуществ в виде сетки карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:5",
+    "items_count": 8,
+    "slide_index": 8,
+    "charts_count": 0
+   },
+   {
+    "id": "s10",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.4416,
+       0.1254,
+       0.4854,
+       0.2487
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 548,
+        "bbox": [
+         0.4416,
+         0.1254,
+         0.4854,
+         0.2487
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 280,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       548,
+       550,
+       551
+      ]
+     },
+     {
+      "bbox": [
+       0.4416,
+       0.3953,
+       0.4854,
+       0.2487
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 552,
+        "bbox": [
+         0.4416,
+         0.3953,
+         0.4854,
+         0.2487
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 280,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       552,
+       554,
+       555
+      ]
+     },
+     {
+      "bbox": [
+       0.4416,
+       0.6651,
+       0.4854,
+       0.2487
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 556,
+        "bbox": [
+         0.4416,
+         0.6651,
+         0.4854,
+         0.2487
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 280,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       556,
+       558,
+       559
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 547,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.0914
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 136,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для списков из 3-4 элементов, где каждый элемент имеет название и короткое пояснение (например, 'Наши услуги', 'Этапы работы', 'Ключевые преимущества').",
+    "frames": {},
+    "images": [],
+    "render": "10.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 3,
+      "min": 2,
+      "fields": {
+       "title_text": 280
+      }
+     },
+     "title": 136
+    },
+    "shapes": [
+     {
+      "x": 0.4531,
+      "y": 0.1453,
+      "id": "tpl-550",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0423,
+      "border": false,
+      "height": 0.0752,
+      "template_shape_id": 550
+     },
+     {
+      "x": 0.4531,
+      "y": 0.4152,
+      "id": "tpl-554",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0423,
+      "border": false,
+      "height": 0.0752,
+      "template_shape_id": 554
+     },
+     {
+      "x": 0.4531,
+      "y": 0.685,
+      "id": "tpl-558",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0423,
+      "border": false,
+      "height": 0.0752,
+      "template_shape_id": 558
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для перечисления трех ключевых пунктов, преимуществ или этапов с кратким описанием каждого.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:2",
+    "items_count": 3,
+    "slide_index": 9,
+    "charts_count": 0
+   },
+   {
+    "id": "s11",
+    "type": "timeline",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.2322,
+       0.2769,
+       0.5247
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 568,
+        "bbox": [
+         0.0351,
+         0.2322,
+         0.252,
+         0.0582
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 27,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 566,
+        "bbox": [
+         0.0351,
+         0.3232,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 570,
+        "bbox": [
+         0.0351,
+         0.4345,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 573,
+        "bbox": [
+         0.0351,
+         0.5458,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 576,
+        "bbox": [
+         0.0351,
+         0.6571,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 579,
+        "bbox": [
+         0.233,
+         0.2407,
+         0.079,
+         0.0566
+        ],
+        "role": "date",
+        "size": 14.0,
+        "chars": 17,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       566,
+       567,
+       568,
+       569,
+       570,
+       571,
+       572,
+       573,
+       574,
+       575,
+       576,
+       577,
+       578,
+       579
+      ]
+     },
+     {
+      "bbox": [
+       0.3579,
+       0.2322,
+       0.2769,
+       0.5247
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 582,
+        "bbox": [
+         0.3579,
+         0.2322,
+         0.252,
+         0.0582
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 27,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 580,
+        "bbox": [
+         0.3579,
+         0.3232,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 584,
+        "bbox": [
+         0.3579,
+         0.4345,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 587,
+        "bbox": [
+         0.3579,
+         0.5458,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 590,
+        "bbox": [
+         0.3579,
+         0.6571,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 593,
+        "bbox": [
+         0.5558,
+         0.2407,
+         0.079,
+         0.0566
+        ],
+        "role": "date",
+        "size": 14.0,
+        "chars": 17,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       580,
+       581,
+       582,
+       583,
+       584,
+       585,
+       586,
+       587,
+       588,
+       589,
+       590,
+       591,
+       592,
+       593
+      ]
+     },
+     {
+      "bbox": [
+       0.6806,
+       0.2322,
+       0.2769,
+       0.5247
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 596,
+        "bbox": [
+         0.6806,
+         0.2322,
+         0.252,
+         0.0582
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 27,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 594,
+        "bbox": [
+         0.6806,
+         0.3232,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 598,
+        "bbox": [
+         0.6806,
+         0.4345,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 601,
+        "bbox": [
+         0.6806,
+         0.5458,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 604,
+        "bbox": [
+         0.6806,
+         0.6571,
+         0.2769,
+         0.0997
+        ],
+        "role": "lines",
+        "size": 13.0,
+        "chars": 123,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 607,
+        "bbox": [
+         0.8785,
+         0.2407,
+         0.079,
+         0.0566
+        ],
+        "role": "date",
+        "size": 14.0,
+        "chars": 17,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       594,
+       595,
+       596,
+       597,
+       598,
+       599,
+       600,
+       601,
+       602,
+       603,
+       604,
+       605,
+       606,
+       607
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 565,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Хронология проекта, этапы развития, план мероприятий или история компании.",
+    "frames": {},
+    "images": [],
+    "render": "11.jpg",
+    "schema": {
+     "type": "timeline",
+     "items": {
+      "max": 3,
+      "min": 2,
+      "fields": {
+       "date": 17,
+       "text": 492,
+       "title": 27
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.044,
+      "y": 0.3406,
+      "id": "tpl-567",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 567
+     },
+     {
+      "x": 0.044,
+      "y": 0.4519,
+      "id": "tpl-571",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 571
+     },
+     {
+      "x": 0.044,
+      "y": 0.5632,
+      "id": "tpl-574",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 574
+     },
+     {
+      "x": 0.044,
+      "y": 0.6745,
+      "id": "tpl-577",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 577
+     },
+     {
+      "x": 0.3667,
+      "y": 0.3406,
+      "id": "tpl-581",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 581
+     },
+     {
+      "x": 0.3667,
+      "y": 0.4519,
+      "id": "tpl-585",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 585
+     },
+     {
+      "x": 0.3667,
+      "y": 0.5632,
+      "id": "tpl-588",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 588
+     },
+     {
+      "x": 0.3667,
+      "y": 0.6745,
+      "id": "tpl-591",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 591
+     },
+     {
+      "x": 0.6895,
+      "y": 0.3406,
+      "id": "tpl-595",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 595
+     },
+     {
+      "x": 0.6895,
+      "y": 0.4519,
+      "id": "tpl-599",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 599
+     },
+     {
+      "x": 0.6895,
+      "y": 0.5632,
+      "id": "tpl-602",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 602
+     },
+     {
+      "x": 0.6895,
+      "y": 0.6745,
+      "id": "tpl-605",
+      "kind": "badge",
+      "text": null,
+      "color": "#6DBCFF",
+      "width": 0.0365,
+      "border": false,
+      "height": 0.0649,
+      "template_shape_id": 605
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для отображения последовательности событий или этапов с указанием дат и списков задач.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:4",
+    "items_count": 3,
+    "slide_index": 10,
+    "charts_count": 0
+   },
+   {
+    "id": "s12",
+    "type": "complex",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.2193,
+       0.9399,
+       0.5697
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 614,
+        "bbox": [
+         0.0351,
+         0.2193,
+         0.3821,
+         0.0592
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 42,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 616,
+        "bbox": [
+         0.085,
+         0.2899,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 57,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 623,
+        "bbox": [
+         0.5498,
+         0.2899,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 57,
+        "sample": "Текст",
+        "companions": [
+         638,
+         637
+        ],
+        "paragraphs": 1
+       },
+       {
+        "id": 625,
+        "bbox": [
+         0.0351,
+         0.5,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 627,
+        "bbox": [
+         0.508,
+         0.5,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 628,
+        "bbox": [
+         0.7445,
+         0.5,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 629,
+        "bbox": [
+         0.0351,
+         0.6495,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       614,
+       616,
+       623,
+       625,
+       627,
+       628,
+       629,
+       634,
+       635,
+       637,
+       638
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.2899,
+       0.9399,
+       0.4991
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 615,
+        "bbox": [
+         0.0351,
+         0.4316,
+         0.3821,
+         0.0592
+        ],
+        "role": "title",
+        "size": 20.0,
+        "chars": 42,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 622,
+        "bbox": [
+         0.3225,
+         0.2899,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 57,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 624,
+        "bbox": [
+         0.7873,
+         0.2899,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 57,
+        "sample": "Текст",
+        "companions": [
+         641,
+         640
+        ],
+        "paragraphs": 1
+       },
+       {
+        "id": 626,
+        "bbox": [
+         0.2715,
+         0.5,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 630,
+        "bbox": [
+         0.2715,
+         0.6495,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 631,
+        "bbox": [
+         0.508,
+         0.6495,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 632,
+        "bbox": [
+         0.7445,
+         0.6495,
+         0.2305,
+         0.1395
+        ],
+        "role": "text",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       615,
+       618,
+       619,
+       622,
+       624,
+       626,
+       630,
+       631,
+       632,
+       640,
+       641
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 613,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Слайд подходит для структурирования информации, где верхняя часть содержит краткие пункты с иконками, а нижняя — подробные карточки или список элементов.",
+    "frames": {},
+    "images": [],
+    "render": "12.jpg",
+    "schema": {
+     "type": "complex",
+     "items": {
+      "max": 2,
+      "min": 1,
+      "fields": {
+       "text": 786,
+       "title": 42
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.0351,
+      "y": 0.2899,
+      "id": "tpl-618",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 618
+     },
+     {
+      "x": 0.2726,
+      "y": 0.2899,
+      "id": "tpl-634",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 634
+     },
+     {
+      "x": 0.4999,
+      "y": 0.2899,
+      "id": "tpl-637",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 637
+     },
+     {
+      "x": 0.7374,
+      "y": 0.2899,
+      "id": "tpl-640",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 640
+     }
+    ],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Слайд для демонстрации двух группировок контента: верхняя секция с иконками и нижняя сетка карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.9,
+    "layout_key": "0:5",
+    "items_count": 2,
+    "slide_index": 11,
+    "charts_count": 0
+   },
+   {
+    "id": "s13",
+    "type": "complex",
+    "items": [
+     {
+      "bbox": [
+       0.0343,
+       0.2356,
+       0.658,
+       0.5197
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 650,
+        "bbox": [
+         0.0352,
+         0.2356,
+         0.3151,
+         0.061
+        ],
+        "role": "title",
+        "size": 18.0,
+        "chars": 44,
+        "sample": "Цели:",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 648,
+        "bbox": [
+         0.0343,
+         0.5691,
+         0.2103,
+         0.1863
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 205,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 656,
+        "bbox": [
+         0.482,
+         0.5691,
+         0.2103,
+         0.1863
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 205,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       648,
+       650,
+       656
+      ]
+     },
+     {
+      "bbox": [
+       0.0352,
+       0.5022,
+       0.8809,
+       0.2531
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 654,
+        "bbox": [
+         0.0352,
+         0.5022,
+         0.3151,
+         0.061
+        ],
+        "role": "title",
+        "size": 18.0,
+        "chars": 44,
+        "sample": "Решения:",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 655,
+        "bbox": [
+         0.2582,
+         0.5691,
+         0.2103,
+         0.1863
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 205,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 657,
+        "bbox": [
+         0.7059,
+         0.5691,
+         0.2103,
+         0.1863
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 205,
+        "sample": "Текст",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       654,
+       655,
+       657
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 649,
+      "bbox": [
+       0.0951,
+       0.3186,
+       0.1495,
+       0.0845
+      ],
+      "role": "extra",
+      "size": 14.0,
+      "chars": 48,
+      "sample": "Текст",
+      "companions": [
+       653
+      ],
+      "paragraphs": 1
+     },
+     {
+      "id": 658,
+      "bbox": [
+       0.319,
+       0.3186,
+       0.1495,
+       0.0845
+      ],
+      "role": "extra",
+      "size": 14.0,
+      "chars": 48,
+      "sample": "Текст",
+      "companions": [
+       661
+      ],
+      "paragraphs": 1
+     },
+     {
+      "id": 662,
+      "bbox": [
+       0.544,
+       0.3186,
+       0.1495,
+       0.0845
+      ],
+      "role": "extra",
+      "size": 14.0,
+      "chars": 48,
+      "sample": "Текст",
+      "companions": [
+       665
+      ],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 647,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.0981
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 146,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для демонстрации двух связанных блоков информации (например, проблемы и их решения) с визуальным разделением на пункты.",
+    "frames": {},
+    "images": [
+     {
+      "id": 666,
+      "bbox": [
+       0.6459,
+       0.0,
+       0.3541,
+       0.5212
+      ]
+     }
+    ],
+    "render": "13.jpg",
+    "schema": {
+     "type": "complex",
+     "items": {
+      "max": 2,
+      "min": 1,
+      "fields": {
+       "text": 410,
+       "title": 44
+      }
+     },
+     "title": 146
+    },
+    "shapes": [
+     {
+      "x": 0.0343,
+      "y": 0.3186,
+      "id": "tpl-652",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0475,
+      "border": true,
+      "height": 0.0845,
+      "template_shape_id": 652
+     },
+     {
+      "x": 0.2582,
+      "y": 0.3186,
+      "id": "tpl-660",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0475,
+      "border": true,
+      "height": 0.0845,
+      "template_shape_id": 660
+     },
+     {
+      "x": 0.4832,
+      "y": 0.3186,
+      "id": "tpl-664",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0475,
+      "border": true,
+      "height": 0.0845,
+      "template_shape_id": 664
+     }
+    ],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Слайд для структурированного представления целей и решений с иконками и карточками.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:6",
+    "items_count": 2,
+    "slide_index": 12,
+    "charts_count": 0
+   },
+   {
+    "id": "s14",
+    "type": "table",
+    "items": [],
+    "slots": [],
+    "title": {
+     "id": 672,
+     "bbox": [
+      0.0351,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Сравнение показателей, списки параметров, финансовые данные или любые сведения, требующие представления в строках и столбцах.",
+    "frames": {
+     "table": {
+      "id": 673,
+      "bbox": [
+       0.0,
+       0.2048,
+       1.0,
+       0.7894
+      ]
+     }
+    },
+    "images": [],
+    "render": "14.jpg",
+    "schema": {
+     "type": "table",
+     "table": true,
+     "title": 254
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления структурированных данных в виде таблицы с двумя колонками.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:7",
+    "items_count": 0,
+    "slide_index": 13,
+    "charts_count": 0
+   },
+   {
+    "id": "s15",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.2679,
+       0.2982,
+       0.2948
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 681,
+        "bbox": [
+         0.0351,
+         0.2679,
+         0.2982,
+         0.2948
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 204,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       681
+      ]
+     },
+     {
+      "bbox": [
+       0.3459,
+       0.2679,
+       0.2982,
+       0.2948
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 682,
+        "bbox": [
+         0.3459,
+         0.2679,
+         0.2982,
+         0.2948
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 204,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       682
+      ]
+     },
+     {
+      "bbox": [
+       0.6568,
+       0.2679,
+       0.2982,
+       0.2948
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 683,
+        "bbox": [
+         0.6568,
+         0.2679,
+         0.2982,
+         0.2948
+        ],
+        "role": "title_text",
+        "size": 18.0,
+        "chars": 204,
+        "sample": "Заголовок | Текст",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       683
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 684,
+      "bbox": [
+       0.0347,
+       0.8069,
+       0.5385,
+       0.0577
+      ],
+      "role": "extra",
+      "size": 14.0,
+      "chars": 119,
+      "sample": "Текст",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 685,
+      "bbox": [
+       0.0351,
+       0.7193,
+       0.1465,
+       0.0577
+      ],
+      "role": "extra",
+      "size": 14.0,
+      "chars": 32,
+      "sample": "Примечание",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 680,
+     "bbox": [
+      0.0351,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для сравнения трех вариантов, описания преимуществ продукта или перечисления шагов процесса.",
+    "frames": {},
+    "images": [],
+    "render": "15.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 3,
+      "min": 2,
+      "fields": {
+       "title_text": 204
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.0,
+      "y": 0.6924,
+      "id": "tpl-679",
+      "kind": "rect",
+      "text": null,
+      "color": null,
+      "width": 1.0,
+      "border": false,
+      "height": 0.3076,
+      "template_shape_id": 679
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления трех ключевых пунктов, преимуществ или этапов в виде карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:7",
+    "items_count": 3,
+    "slide_index": 14,
+    "charts_count": 0
+   },
+   {
+    "id": "s16",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.2874,
+       0.2818,
+       0.5022
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 693,
+        "bbox": [
+         0.0484,
+         0.3182,
+         0.2567,
+         0.0449
+        ],
+        "role": "title_text",
+        "size": 20.0,
+        "chars": 21,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 694,
+        "bbox": [
+         0.0484,
+         0.4144,
+         0.2567,
+         0.1257
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст | Текст | Текст",
+        "companions": [],
+        "paragraphs": 3
+       }
+      ],
+      "shapes": [
+       691,
+       693,
+       694
+      ]
+     },
+     {
+      "bbox": [
+       0.3385,
+       0.2874,
+       0.2818,
+       0.5022
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 697,
+        "bbox": [
+         0.3519,
+         0.3182,
+         0.2567,
+         0.0449
+        ],
+        "role": "title_text",
+        "size": 20.0,
+        "chars": 21,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 698,
+        "bbox": [
+         0.3519,
+         0.4144,
+         0.2567,
+         0.1257
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст | Текст | Текст",
+        "companions": [],
+        "paragraphs": 3
+       }
+      ],
+      "shapes": [
+       695,
+       697,
+       698
+      ]
+     },
+     {
+      "bbox": [
+       0.642,
+       0.2874,
+       0.2951,
+       0.5022
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 700,
+        "bbox": [
+         0.6553,
+         0.3203,
+         0.2818,
+         0.0449
+        ],
+        "role": "title_text",
+        "size": 20.0,
+        "chars": 23,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 701,
+        "bbox": [
+         0.6553,
+         0.4144,
+         0.2567,
+         0.1257
+        ],
+        "role": "lines",
+        "size": 12.0,
+        "chars": 168,
+        "sample": "Текст | Текст | Текст",
+        "companions": [],
+        "paragraphs": 3
+       }
+      ],
+      "shapes": [
+       699,
+       700,
+       701
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 702,
+      "bbox": [
+       0.0354,
+       0.1813,
+       0.7956,
+       0.0939
+      ],
+      "role": "subtitle",
+      "size": 16.0,
+      "chars": 220,
+      "sample": "Текст описания",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 703,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для сравнения трёх вариантов, описания ключевых функций, этапов или направлений с кратким списком в каждой карточке.",
+    "frames": {},
+    "images": [],
+    "render": "16.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 3,
+      "min": 2,
+      "fields": {
+       "text": 168,
+       "title_text": 21
+      }
+     },
+     "title": 254,
+     "subtitle": {
+      "chars": 220,
+      "paragraphs": 1
+     }
+    },
+    "shapes": [
+     {
+      "x": 0.0351,
+      "y": 0.2874,
+      "id": "tpl-691",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.2818,
+      "border": true,
+      "height": 0.5022,
+      "template_shape_id": 691
+     },
+     {
+      "x": 0.0351,
+      "y": 0.2874,
+      "id": "tpl-692",
+      "kind": "rect",
+      "text": null,
+      "color": null,
+      "width": 0.2818,
+      "border": false,
+      "height": 0.1068,
+      "template_shape_id": 692
+     },
+     {
+      "x": 0.3385,
+      "y": 0.2874,
+      "id": "tpl-695",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.2818,
+      "border": true,
+      "height": 0.5022,
+      "template_shape_id": 695
+     },
+     {
+      "x": 0.3385,
+      "y": 0.2874,
+      "id": "tpl-696",
+      "kind": "rect",
+      "text": null,
+      "color": null,
+      "width": 0.2818,
+      "border": false,
+      "height": 0.1068,
+      "template_shape_id": 696
+     },
+     {
+      "x": 0.642,
+      "y": 0.2874,
+      "id": "tpl-699",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.2951,
+      "border": true,
+      "height": 0.5022,
+      "template_shape_id": 699
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для представления трёх связанных тем, преимуществ или направлений в виде карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:4",
+    "items_count": 3,
+    "slide_index": 15,
+    "charts_count": 0
+   },
+   {
+    "id": "s17",
+    "type": "title_only",
+    "items": [],
+    "slots": [
+     {
+      "id": 710,
+      "bbox": [
+       0.5181,
+       0.1813,
+       0.3887,
+       0.2789
+      ],
+      "role": "extra",
+      "size": 80.0,
+      "chars": 12,
+      "sample": "ххх% данные показателя",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 711,
+      "bbox": [
+       0.5181,
+       0.5247,
+       0.3887,
+       0.3776
+      ],
+      "role": "extra",
+      "size": 80.0,
+      "chars": 17,
+      "sample": "ххх% данные показателя",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 712,
+      "bbox": [
+       0.0354,
+       0.1813,
+       0.2977,
+       0.0939
+      ],
+      "role": "body",
+      "size": 16.0,
+      "chars": 82,
+      "sample": "Текст описания",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 709,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Два крупных числовых значения (процента, суммы) с подписями, дополненные заголовком и пояснительным текстом.",
+    "frames": {},
+    "images": [],
+    "render": "17.jpg",
+    "schema": {
+     "body": {
+      "chars": 82,
+      "paragraphs": 1
+     },
+     "type": "title_only",
+     "title": 254
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Слайд для демонстрации двух ключевых показателей (KPI) с кратким описанием.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:8",
+    "items_count": 0,
+    "slide_index": 16,
+    "charts_count": 0
+   },
+   {
+    "id": "s18",
+    "type": "title_only",
+    "items": [],
+    "slots": [
+     {
+      "id": 720,
+      "bbox": [
+       0.0352,
+       0.2586,
+       0.3182,
+       0.4617
+      ],
+      "role": "subtitle",
+      "size": 54.0,
+      "chars": 37,
+      "sample": "x%  данные показателя | текст",
+      "companions": [],
+      "paragraphs": 2
+     },
+     {
+      "id": 719,
+      "bbox": [
+       0.3885,
+       0.2586,
+       0.4899,
+       0.5515
+      ],
+      "role": "image_hint",
+      "size": 18.0,
+      "chars": 628,
+      "sample": "Иллюстрация",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 718,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Один крупный показатель (KPI) с подписью и пояснительным текстом, дополненный иллюстрацией.",
+    "frames": {},
+    "images": [],
+    "render": "18.jpg",
+    "schema": {
+     "type": "title_only",
+     "title": 254,
+     "subtitle": {
+      "chars": 37,
+      "paragraphs": 2
+     }
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Слайд для демонстрации одного ключевого показателя с пояснением и иллюстрацией.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:8",
+    "items_count": 0,
+    "slide_index": 17,
+    "charts_count": 0
+   },
+   {
+    "id": "s19",
+    "type": "kpi",
+    "items": [
+     {
+      "bbox": [
+       0.0352,
+       0.252,
+       0.2346,
+       0.1856
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 735,
+        "bbox": [
+         0.0352,
+         0.252,
+         0.1517,
+         0.074
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 33,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 734,
+        "bbox": [
+         0.036,
+         0.3671,
+         0.2338,
+         0.0705
+        ],
+        "role": "value",
+        "size": 54.0,
+        "chars": 8,
+        "sample": "ХХ",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       734,
+       735
+      ]
+     },
+     {
+      "bbox": [
+       0.0352,
+       0.5732,
+       0.2346,
+       0.1856
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 733,
+        "bbox": [
+         0.0352,
+         0.5732,
+         0.1517,
+         0.074
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 33,
+        "sample": "Заголовок",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 732,
+        "bbox": [
+         0.036,
+         0.6883,
+         0.2338,
+         0.0705
+        ],
+        "role": "value",
+        "size": 54.0,
+        "chars": 8,
+        "sample": "ХХ",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       732,
+       733
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 729,
+      "bbox": [
+       0.5691,
+       0.4089,
+       0.2338,
+       0.0705
+      ],
+      "role": "value",
+      "size": 60.0,
+      "chars": 8,
+      "sample": "ХХ",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 728,
+      "bbox": [
+       0.6116,
+       0.5251,
+       0.1643,
+       0.0798
+      ],
+      "role": "extra",
+      "size": 20.0,
+      "chars": 24,
+      "sample": "Заголовок",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 730,
+      "bbox": [
+       0.4528,
+       0.4631,
+       0.1104,
+       0.0705
+      ],
+      "role": "extra",
+      "size": 32.0,
+      "chars": 8,
+      "sample": "ХХ%",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 731,
+      "bbox": [
+       0.6535,
+       0.7877,
+       0.1104,
+       0.0705
+      ],
+      "role": "extra",
+      "size": 28.0,
+      "chars": 8,
+      "sample": "ХХ%",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 726,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.9313,
+      0.1119
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 242,
+     "sample": "Графики",
+     "paragraphs": 1
+    },
+    "usage": "Данные для диаграммы (проценты, значения) и краткие подписи к ним.",
+    "frames": {},
+    "images": [
+     {
+      "id": 727,
+      "bbox": [
+       0.1282,
+       0.0041,
+       0.9627,
+       1.0328
+      ]
+     }
+    ],
+    "render": "19.jpg",
+    "schema": {
+     "type": "kpi",
+     "items": {
+      "max": 2,
+      "min": 1,
+      "fields": {
+       "text": 33,
+       "value": 8
+      }
+     },
+     "title": 242,
+     "value": {
+      "chars": 8,
+      "paragraphs": 1
+     }
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для демонстрации данных с использованием кольцевой диаграммы и ключевых показателей.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.9,
+    "layout_key": "0:9",
+    "items_count": 2,
+    "slide_index": 18,
+    "charts_count": 0
+   },
+   {
+    "id": "s20",
+    "type": "title_only",
+    "items": [],
+    "slots": [],
+    "title": {
+     "id": 741,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.9313,
+      0.1119
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 242,
+     "sample": "Графики",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для вставки данных в кольцевые диаграммы (donut charts) для наглядного представления долей или распределения.",
+    "frames": {},
+    "images": [
+     {
+      "id": 742,
+      "bbox": [
+       0.0,
+       0.1259,
+       0.4491,
+       0.7483
+      ]
+     },
+     {
+      "id": 743,
+      "bbox": [
+       0.4674,
+       0.1259,
+       0.4491,
+       0.7483
+      ]
+     }
+    ],
+    "render": "20.jpg",
+    "schema": {
+     "type": "title_only",
+     "title": 242
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Слайд для демонстрации кольцевых диаграмм в корпоративном стиле.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:9",
+    "items_count": 0,
+    "slide_index": 19,
+    "charts_count": 0
+   },
+   {
+    "id": "s21",
+    "type": "title_only",
+    "items": [],
+    "slots": [],
+    "title": {
+     "id": 749,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.9313,
+      0.1119
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 242,
+     "sample": "Графики",
+     "paragraphs": 1
+    },
+    "usage": "Сравнение показателей по категориям, динамика изменений, статистические данные.",
+    "frames": {},
+    "images": [
+     {
+      "id": 750,
+      "bbox": [
+       0.0,
+       0.2087,
+       1.0,
+       0.6661
+      ]
+     }
+    ],
+    "render": "21.jpg",
+    "schema": {
+     "type": "title_only",
+     "title": 242
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Слайд для демонстрации данных в виде столбчатой диаграммы.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:9",
+    "items_count": 0,
+    "slide_index": 20,
+    "charts_count": 0
+   },
+   {
+    "id": "s22",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.4724,
+       0.1424,
+       0.4268,
+       0.1373
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 756,
+        "bbox": [
+         0.538,
+         0.1424,
+         0.3612,
+         0.1373
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 146,
+        "sample": "Заголовок | Описание",
+        "companions": [
+         764
+        ],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       756,
+       757,
+       764
+      ]
+     },
+     {
+      "bbox": [
+       0.4724,
+       0.3394,
+       0.4268,
+       0.1373
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 758,
+        "bbox": [
+         0.538,
+         0.3394,
+         0.3612,
+         0.1373
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 146,
+        "sample": "Заголовок | Описание",
+        "companions": [
+         765
+        ],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       758,
+       759,
+       765
+      ]
+     },
+     {
+      "bbox": [
+       0.4724,
+       0.5398,
+       0.4268,
+       0.1373
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 760,
+        "bbox": [
+         0.538,
+         0.5399,
+         0.3612,
+         0.1373
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 146,
+        "sample": "Заголовок | Описание",
+        "companions": [
+         766
+        ],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       760,
+       761,
+       766
+      ]
+     },
+     {
+      "bbox": [
+       0.4724,
+       0.7462,
+       0.4268,
+       0.1373
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 762,
+        "bbox": [
+         0.538,
+         0.7462,
+         0.3612,
+         0.1373
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 146,
+        "sample": "Заголовок | Описание",
+        "companions": [
+         767
+        ],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       762,
+       763,
+       767
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 769,
+      "bbox": [
+       0.0354,
+       0.5146,
+       0.3689,
+       0.0939
+      ],
+      "role": "extra",
+      "size": 16.0,
+      "chars": 102,
+      "sample": "Текст описания",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 768,
+     "bbox": [
+      0.0352,
+      0.3394,
+      0.369,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 146,
+     "sample": "Проблемы / Вызовы",
+     "paragraphs": 1
+    },
+    "usage": "Список из 3-5 пунктов, где каждый пункт имеет название и короткое пояснение.",
+    "frames": {},
+    "images": [],
+    "render": "22.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 4,
+      "min": 3,
+      "fields": {
+       "title_text": 146
+      }
+     },
+     "title": 146
+    },
+    "shapes": [
+     {
+      "x": 0.4724,
+      "y": 0.1424,
+      "id": "tpl-757",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0514,
+      "border": true,
+      "height": 0.0914,
+      "template_shape_id": 757
+     },
+     {
+      "x": 0.4724,
+      "y": 0.3394,
+      "id": "tpl-759",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0514,
+      "border": true,
+      "height": 0.0914,
+      "template_shape_id": 759
+     },
+     {
+      "x": 0.4724,
+      "y": 0.5398,
+      "id": "tpl-761",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0514,
+      "border": true,
+      "height": 0.0914,
+      "template_shape_id": 761
+     },
+     {
+      "x": 0.4724,
+      "y": 0.7462,
+      "id": "tpl-763",
+      "kind": "badge",
+      "text": null,
+      "color": "#000000",
+      "width": 0.0514,
+      "border": true,
+      "height": 0.0914,
+      "template_shape_id": 763
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для перечисления ключевых проблем или вызовов с кратким описанием каждого пункта.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:10",
+    "items_count": 4,
+    "slide_index": 21,
+    "charts_count": 0
+   },
+   {
+    "id": "s23",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.3209,
+       0.2972,
+       0.1791
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 776,
+        "bbox": [
+         0.0351,
+         0.3209,
+         0.2972,
+         0.1791
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 156,
+        "sample": "Заголовок | Описание",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       776,
+       782,
+       788
+      ]
+     },
+     {
+      "bbox": [
+       0.3508,
+       0.3209,
+       0.2972,
+       0.1791
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 777,
+        "bbox": [
+         0.3508,
+         0.3209,
+         0.2972,
+         0.1791
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 156,
+        "sample": "Заголовок | Описание",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       777,
+       783,
+       791
+      ]
+     },
+     {
+      "bbox": [
+       0.6666,
+       0.3209,
+       0.2972,
+       0.1791
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 778,
+        "bbox": [
+         0.6666,
+         0.3209,
+         0.2972,
+         0.1791
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 156,
+        "sample": "Заголовок | Описание",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       778,
+       784,
+       792
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.5223,
+       0.2972,
+       0.1791
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 779,
+        "bbox": [
+         0.0351,
+         0.5223,
+         0.2972,
+         0.1791
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 156,
+        "sample": "Заголовок | Описание",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       779,
+       785,
+       789
+      ]
+     },
+     {
+      "bbox": [
+       0.3508,
+       0.5223,
+       0.2972,
+       0.1791
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 780,
+        "bbox": [
+         0.3508,
+         0.5223,
+         0.2972,
+         0.1791
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 156,
+        "sample": "Заголовок | Описание",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       780,
+       786,
+       790
+      ]
+     },
+     {
+      "bbox": [
+       0.6666,
+       0.5223,
+       0.2972,
+       0.1791
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 781,
+        "bbox": [
+         0.6666,
+         0.5223,
+         0.2972,
+         0.1791
+        ],
+        "role": "title_text",
+        "size": 16.0,
+        "chars": 156,
+        "sample": "Заголовок | Описание",
+        "companions": [],
+        "paragraphs": 2
+       }
+      ],
+      "shapes": [
+       781,
+       787,
+       793
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 775,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Проблемы / Вызовы",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для структурированного списка из 4-6 пунктов, где каждый пункт имеет краткое название и пояснение.",
+    "frames": {},
+    "images": [],
+    "render": "23.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 6,
+      "min": 4,
+      "fields": {
+       "title_text": 156
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.0536,
+      "y": 0.3734,
+      "id": "tpl-782",
+      "kind": "badge",
+      "text": null,
+      "color": "#EE5959",
+      "width": 0.0417,
+      "border": false,
+      "height": 0.0741,
+      "template_shape_id": 782
+     },
+     {
+      "x": 0.3694,
+      "y": 0.3734,
+      "id": "tpl-783",
+      "kind": "badge",
+      "text": null,
+      "color": "#EE5959",
+      "width": 0.0417,
+      "border": false,
+      "height": 0.0741,
+      "template_shape_id": 783
+     },
+     {
+      "x": 0.6851,
+      "y": 0.3734,
+      "id": "tpl-784",
+      "kind": "badge",
+      "text": null,
+      "color": "#EE5959",
+      "width": 0.0417,
+      "border": false,
+      "height": 0.0741,
+      "template_shape_id": 784
+     },
+     {
+      "x": 0.0536,
+      "y": 0.5748,
+      "id": "tpl-785",
+      "kind": "badge",
+      "text": null,
+      "color": "#EE5959",
+      "width": 0.0417,
+      "border": false,
+      "height": 0.0741,
+      "template_shape_id": 785
+     },
+     {
+      "x": 0.3694,
+      "y": 0.5748,
+      "id": "tpl-786",
+      "kind": "badge",
+      "text": null,
+      "color": "#EE5959",
+      "width": 0.0417,
+      "border": false,
+      "height": 0.0741,
+      "template_shape_id": 786
+     },
+     {
+      "x": 0.6851,
+      "y": 0.5748,
+      "id": "tpl-787",
+      "kind": "badge",
+      "text": null,
+      "color": "#EE5959",
+      "width": 0.0417,
+      "border": false,
+      "height": 0.0741,
+      "template_shape_id": 787
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для перечисления ключевых проблем или вызовов в виде сетки карточек.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:10",
+    "items_count": 6,
+    "slide_index": 22,
+    "charts_count": 0
+   },
+   {
+    "id": "s24",
+    "type": "title_only",
+    "items": [],
+    "slots": [
+     {
+      "id": 804,
+      "bbox": [
+       0.0352,
+       0.5742,
+       0.217,
+       0.1095
+      ],
+      "role": "subtitle",
+      "size": 16.0,
+      "chars": 69,
+      "sample": "Ссылка",
+      "companions": [],
+      "paragraphs": 1
+     },
+     {
+      "id": 803,
+      "bbox": [
+       0.6375,
+       0.2185,
+       0.2859,
+       0.5082
+      ],
+      "role": "image_hint",
+      "size": 24.0,
+      "chars": 190,
+      "sample": "QR-code",
+      "companions": [
+       806
+      ],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 802,
+     "bbox": [
+      0.0352,
+      0.2346,
+      0.394,
+      0.2737
+     ],
+     "role": "title",
+     "size": 66.0,
+     "chars": 18,
+     "sample": "Call to action",
+     "paragraphs": 1
+    },
+    "usage": "Слайд для завершения презентации, содержащий заголовок, ссылку и QR-код для быстрого доступа к ресурсам.",
+    "frames": {},
+    "images": [
+     {
+      "id": 799,
+      "bbox": [
+       0.0001,
+       0.7937,
+       0.4998,
+       0.2063
+      ]
+     },
+     {
+      "id": 806,
+      "bbox": [
+       0.5141,
+       0.3894,
+       0.3374,
+       0.5743
+      ]
+     }
+    ],
+    "render": "24.jpg",
+    "schema": {
+     "type": "title_only",
+     "title": 18,
+     "subtitle": {
+      "chars": 69,
+      "paragraphs": 1
+     }
+    },
+    "shapes": [
+     {
+      "x": 0.0,
+      "y": 0.8595,
+      "id": "tpl-800",
+      "kind": "rect",
+      "text": null,
+      "color": "#000000",
+      "width": 0.3681,
+      "border": false,
+      "height": 0.1405,
+      "template_shape_id": 800
+     },
+     {
+      "x": 0.3681,
+      "y": 0.7654,
+      "id": "tpl-801",
+      "kind": "rect",
+      "text": null,
+      "color": "#000000",
+      "width": 0.1319,
+      "border": false,
+      "height": 0.162,
+      "template_shape_id": 801
+     }
+    ],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Финальный слайд с призывом к действию и QR-кодом для перехода по ссылке.",
+    "service": false,
+    "category": "closing",
+    "confidence": 0.95,
+    "layout_key": "0:11",
+    "items_count": 0,
+    "slide_index": 23,
+    "charts_count": 0
+   },
+   {
+    "id": "s25",
+    "type": "cards",
+    "items": [
+     {
+      "bbox": [
+       0.0351,
+       0.1976,
+       0.2092,
+       0.0692
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 813,
+        "bbox": [
+         0.085,
+         0.1976,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 32,
+        "sample": "Текст",
+        "companions": [
+         816,
+         815
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       813,
+       815,
+       816
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.3014,
+       0.2092,
+       0.0692
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 817,
+        "bbox": [
+         0.085,
+         0.3014,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 32,
+        "sample": "Текст",
+        "companions": [
+         820,
+         819
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       817,
+       819,
+       820
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.4071,
+       0.2092,
+       0.0692
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 821,
+        "bbox": [
+         0.085,
+         0.4071,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 32,
+        "sample": "Текст",
+        "companions": [
+         824,
+         823
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       821,
+       823,
+       824
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.5127,
+       0.2092,
+       0.0692
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 825,
+        "bbox": [
+         0.085,
+         0.5127,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 32,
+        "sample": "Текст",
+        "companions": [
+         828,
+         827
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       825,
+       827,
+       828
+      ]
+     },
+     {
+      "bbox": [
+       0.0351,
+       0.6183,
+       0.2092,
+       0.0692
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 829,
+        "bbox": [
+         0.085,
+         0.6183,
+         0.1593,
+         0.0692
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 32,
+        "sample": "Текст",
+        "companions": [
+         832,
+         831
+        ],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       829,
+       831,
+       832
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 812,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Заголовок",
+     "paragraphs": 1
+    },
+    "usage": "Список ключевых тезисов, преимуществ или этапов, сопровождаемый крупной иллюстрацией или 3D-объектом.",
+    "frames": {},
+    "images": [
+     {
+      "id": 833,
+      "bbox": [
+       0.4399,
+       0.0473,
+       0.5625,
+       1.0
+      ]
+     }
+    ],
+    "render": "25.jpg",
+    "schema": {
+     "type": "cards",
+     "items": {
+      "max": 5,
+      "min": 4,
+      "fields": {
+       "text": 32
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.0351,
+      "y": 0.1976,
+      "id": "tpl-815",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 815
+     },
+     {
+      "x": 0.0351,
+      "y": 0.3014,
+      "id": "tpl-819",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 819
+     },
+     {
+      "x": 0.0351,
+      "y": 0.4071,
+      "id": "tpl-823",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 823
+     },
+     {
+      "x": 0.0351,
+      "y": 0.5127,
+      "id": "tpl-827",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 827
+     },
+     {
+      "x": 0.0351,
+      "y": 0.6183,
+      "id": "tpl-831",
+      "kind": "badge",
+      "text": null,
+      "color": null,
+      "width": 0.0391,
+      "border": false,
+      "height": 0.0692,
+      "template_shape_id": 831
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для демонстрации списка из пяти пунктов с акцентом на визуальное оформление справа.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:6",
+    "items_count": 5,
+    "slide_index": 24,
+    "charts_count": 0
+   },
+   {
+    "id": "s26",
+    "type": "timeline",
+    "items": [
+     {
+      "bbox": [
+       0.0352,
+       0.3792,
+       0.217,
+       0.2395
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 840,
+        "bbox": [
+         0.0352,
+         0.5322,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 849,
+        "bbox": [
+         0.0768,
+         0.3792,
+         0.146,
+         0.0801
+        ],
+        "role": "date",
+        "size": 18.0,
+        "chars": 27,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       840,
+       845,
+       849
+      ]
+     },
+     {
+      "bbox": [
+       0.2723,
+       0.3792,
+       0.217,
+       0.2395
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 841,
+        "bbox": [
+         0.2723,
+         0.5322,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 850,
+        "bbox": [
+         0.3077,
+         0.3792,
+         0.146,
+         0.0801
+        ],
+        "role": "date",
+        "size": 18.0,
+        "chars": 27,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       841,
+       846,
+       850
+      ]
+     },
+     {
+      "bbox": [
+       0.5093,
+       0.3792,
+       0.217,
+       0.2395
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 842,
+        "bbox": [
+         0.5093,
+         0.5322,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 851,
+        "bbox": [
+         0.5448,
+         0.3792,
+         0.146,
+         0.0801
+        ],
+        "role": "date",
+        "size": 18.0,
+        "chars": 27,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       842,
+       847,
+       851
+      ]
+     },
+     {
+      "bbox": [
+       0.7464,
+       0.3792,
+       0.217,
+       0.2395
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 843,
+        "bbox": [
+         0.7464,
+         0.5322,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 852,
+        "bbox": [
+         0.7773,
+         0.3792,
+         0.146,
+         0.0801
+        ],
+        "role": "date",
+        "size": 18.0,
+        "chars": 27,
+        "sample": "Дата",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       843,
+       848,
+       852
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 839,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Таймлайн",
+     "paragraphs": 1
+    },
+    "usage": "Хронология проекта, этапы развития компании, план запуска продукта или история изменений.",
+    "frames": {},
+    "images": [],
+    "render": "26.jpg",
+    "schema": {
+     "type": "timeline",
+     "items": {
+      "max": 4,
+      "min": 3,
+      "fields": {
+       "date": 27,
+       "text": 35
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.0,
+      "y": 0.496,
+      "id": "tpl-844",
+      "kind": "line",
+      "text": null,
+      "color": null,
+      "width": 1.0,
+      "border": true,
+      "height": 0.0,
+      "template_shape_id": 844
+     },
+     {
+      "x": 0.1376,
+      "y": 0.487,
+      "id": "tpl-845",
+      "kind": "circle",
+      "text": null,
+      "color": "#0077FF",
+      "width": 0.0121,
+      "border": true,
+      "height": 0.0215,
+      "template_shape_id": 845
+     },
+     {
+      "x": 0.3746,
+      "y": 0.487,
+      "id": "tpl-846",
+      "kind": "circle",
+      "text": null,
+      "color": "#0077FF",
+      "width": 0.0121,
+      "border": true,
+      "height": 0.0215,
+      "template_shape_id": 846
+     },
+     {
+      "x": 0.6122,
+      "y": 0.487,
+      "id": "tpl-847",
+      "kind": "circle",
+      "text": null,
+      "color": "#0077FF",
+      "width": 0.0121,
+      "border": true,
+      "height": 0.0215,
+      "template_shape_id": 847
+     },
+     {
+      "x": 0.8505,
+      "y": 0.487,
+      "id": "tpl-848",
+      "kind": "circle",
+      "text": null,
+      "color": "#0077FF",
+      "width": 0.0121,
+      "border": true,
+      "height": 0.0215,
+      "template_shape_id": 848
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для отображения последовательности событий, этапов или вех с указанием дат и кратких описаний.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:6",
+    "items_count": 4,
+    "slide_index": 25,
+    "charts_count": 0
+   },
+   {
+    "id": "s27",
+    "type": "timeline",
+    "items": [
+     {
+      "bbox": [
+       0.0352,
+       0.4075,
+       0.217,
+       0.2476
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 859,
+        "bbox": [
+         0.0352,
+         0.5686,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 863,
+        "bbox": [
+         0.0352,
+         0.4075,
+         0.145,
+         0.1307
+        ],
+        "role": "number",
+        "size": 66.0,
+        "chars": 8,
+        "sample": "01",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       859,
+       863
+      ]
+     },
+     {
+      "bbox": [
+       0.2719,
+       0.4075,
+       0.2173,
+       0.2476
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 860,
+        "bbox": [
+         0.2723,
+         0.5686,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 864,
+        "bbox": [
+         0.2719,
+         0.4075,
+         0.145,
+         0.1307
+        ],
+        "role": "number",
+        "size": 66.0,
+        "chars": 8,
+        "sample": "02",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       860,
+       864
+      ]
+     },
+     {
+      "bbox": [
+       0.5086,
+       0.4075,
+       0.2177,
+       0.2476
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 861,
+        "bbox": [
+         0.5093,
+         0.5686,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 865,
+        "bbox": [
+         0.5086,
+         0.4075,
+         0.145,
+         0.1307
+        ],
+        "role": "number",
+        "size": 66.0,
+        "chars": 8,
+        "sample": "03",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       861,
+       865
+      ]
+     },
+     {
+      "bbox": [
+       0.7462,
+       0.4075,
+       0.2171,
+       0.2476
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 862,
+        "bbox": [
+         0.7464,
+         0.5686,
+         0.217,
+         0.0865
+        ],
+        "role": "text",
+        "size": 20.0,
+        "chars": 35,
+        "sample": "Описание",
+        "companions": [],
+        "paragraphs": 1
+       },
+       {
+        "id": 866,
+        "bbox": [
+         0.7462,
+         0.4075,
+         0.145,
+         0.1307
+        ],
+        "role": "number",
+        "size": 66.0,
+        "chars": 8,
+        "sample": "04",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       862,
+       866
+      ]
+     }
+    ],
+    "slots": [],
+    "title": {
+     "id": 858,
+     "bbox": [
+      0.0352,
+      0.0619,
+      0.642,
+      0.1702
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 254,
+     "sample": "Таймлайн",
+     "paragraphs": 1
+    },
+    "usage": "Подходит для описания процесса, плана действий, истории развития или этапов проекта с кратким описанием каждого шага.",
+    "frames": {},
+    "images": [],
+    "render": "27.jpg",
+    "schema": {
+     "type": "timeline",
+     "items": {
+      "max": 4,
+      "min": 3,
+      "fields": {
+       "text": 35,
+       "number": 8
+      }
+     },
+     "title": 254
+    },
+    "shapes": [
+     {
+      "x": 0.1802,
+      "y": 0.4729,
+      "id": "tpl-867",
+      "kind": "line",
+      "text": null,
+      "color": null,
+      "width": 0.072,
+      "border": true,
+      "height": 0.0,
+      "template_shape_id": 867
+     },
+     {
+      "x": 0.4169,
+      "y": 0.4729,
+      "id": "tpl-868",
+      "kind": "line",
+      "text": null,
+      "color": null,
+      "width": 0.072,
+      "border": true,
+      "height": 0.0,
+      "template_shape_id": 868
+     },
+     {
+      "x": 0.6555,
+      "y": 0.4729,
+      "id": "tpl-869",
+      "kind": "line",
+      "text": null,
+      "color": null,
+      "width": 0.072,
+      "border": true,
+      "height": 0.0,
+      "template_shape_id": 869
+     }
+    ],
+    "source": "vlm",
+    "usable": true,
+    "purpose": "Слайд для отображения последовательности шагов, этапов или событий в хронологическом порядке.",
+    "service": false,
+    "category": "content",
+    "confidence": 0.95,
+    "layout_key": "0:6",
+    "items_count": 4,
+    "slide_index": 26,
+    "charts_count": 0
+   },
+   {
+    "id": "s28",
+    "type": "title_only",
+    "items": [],
+    "slots": [],
+    "title": {
+     "id": 874,
+     "bbox": [
+      0.0352,
+      0.3341,
+      0.642,
+      0.2737
+     ],
+     "role": "title",
+     "size": 144.0,
+     "chars": 8,
+     "sample": "Q&A",
+     "paragraphs": 1
+    },
+    "usage": "Используется в конце презентации для обозначения начала обсуждения.",
+    "frames": {},
+    "images": [],
+    "render": "28.jpg",
+    "schema": {
+     "type": "title_only",
+     "title": 8
+    },
+    "shapes": [],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Финальный слайд для перехода к сессии вопросов и ответов.",
+    "service": false,
+    "category": "closing",
+    "confidence": 0.98,
+    "layout_key": "0:12",
+    "items_count": 0,
+    "slide_index": 27,
+    "charts_count": 0
+   },
+   {
+    "id": "s29",
+    "type": "people",
+    "items": [
+     {
+      "bbox": [
+       0.1239,
+       0.6661,
+       0.2315,
+       0.1217
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 882,
+        "bbox": [
+         0.1239,
+         0.6661,
+         0.1816,
+         0.1217
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 65,
+        "sample": "Имя Спикера, должность",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       882,
+       883
+      ]
+     },
+     {
+      "bbox": [
+       0.0352,
+       0.6661,
+       0.522,
+       0.1217
+      ],
+      "group": null,
+      "image": null,
+      "slots": [
+       {
+        "id": 884,
+        "bbox": [
+         0.3757,
+         0.6661,
+         0.1816,
+         0.1217
+        ],
+        "role": "text",
+        "size": 16.0,
+        "chars": 65,
+        "sample": "Имя Спикера, должность",
+        "companions": [],
+        "paragraphs": 1
+       }
+      ],
+      "shapes": [
+       881,
+       884
+      ]
+     }
+    ],
+    "slots": [
+     {
+      "id": 885,
+      "bbox": [
+       0.7613,
+       0.0924,
+       0.2052,
+       0.3648
+      ],
+      "role": "image_hint",
+      "size": 24.0,
+      "chars": 97,
+      "sample": "QR-code",
+      "companions": [],
+      "paragraphs": 1
+     }
+    ],
+    "title": {
+     "id": 880,
+     "bbox": [
+      0.0352,
+      0.3341,
+      0.642,
+      0.2737
+     ],
+     "role": "title",
+     "size": null,
+     "chars": 408,
+     "sample": "Спасибо  за внимание",
+     "paragraphs": 1
+    },
+    "usage": "Слайд для завершения выступления, размещения QR-кода для связи и указания имен спикеров.",
+    "frames": {},
+    "images": [],
+    "render": "29.jpg",
+    "schema": {
+     "type": "people",
+     "items": {
+      "max": 2,
+      "min": 1,
+      "fields": {
+       "text": 65
+      }
+     },
+     "title": 408
+    },
+    "shapes": [
+     {
+      "x": 0.0352,
+      "y": 0.6661,
+      "id": "tpl-881",
+      "kind": "circle",
+      "text": null,
+      "color": "#5A6775",
+      "width": 0.0684,
+      "border": false,
+      "height": 0.1217,
+      "template_shape_id": 881
+     },
+     {
+      "x": 0.287,
+      "y": 0.6661,
+      "id": "tpl-883",
+      "kind": "circle",
+      "text": null,
+      "color": "#5A6775",
+      "width": 0.0684,
+      "border": false,
+      "height": 0.1217,
+      "template_shape_id": 883
+     }
+    ],
+    "source": "vlm",
+    "usable": false,
+    "purpose": "Финальный слайд презентации для благодарности аудитории и предоставления контактов спикеров.",
+    "service": false,
+    "category": "closing",
+    "confidence": 0.95,
+    "layout_key": "0:13",
+    "items_count": 2,
+    "slide_index": 28,
+    "charts_count": 0
+   }
+  ]
+ }
+}
