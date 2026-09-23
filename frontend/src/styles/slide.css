@@ -438,6 +438,15 @@
   pointer-events: none;
   z-index: 10;
 }
+/* В просмотре фигуры шаблона — подложка под текст (как в собранном .pptx), а не поверх него.
+   В редакторе слой остаётся сверху, иначе фигуру не выделить и не перетащить. */
+.slide-shapes-layer:not(.is-editable) {
+  z-index: 1;
+}
+.slide__inner,
+.slide__frame {
+  z-index: 2;
+}
 .slide-shapes-layer.is-editable {
   pointer-events: auto;
 }

@@ -25,7 +25,12 @@ export function SlideShapesLayer({
 }: SlideShapesLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
-  if (!shapes || shapes.length === 0) return null
+  // Фигуру шаблона, у которой парсер не распознал заливку (градиент, картинка, сложный эффект),
+  // рисовать нечем: закрасить её акцентом — значит положить цветной блок во весь слайд поверх
+  // текста. Такие фигуры пропускаем; у фигур, добавленных пользователем, акцент остаётся.
+  const visible = (shapes || []).filter((shape) => shape.color || shape.template_shape_id == null)
+
+  if (visible.length === 0) return null
 
   const startDrag = (e: React.PointerEvent, shape: SlideShape, immediate: boolean) => {
     if (!editable) return
@@ -129,7 +134,7 @@ export function SlideShapesLayer({
         }
       }}
     >
-      {shapes.map((shape) => {
+      {visible.map((shape) => {
         const isSelected = editable && selectedShapeId === shape.id
         const color = shape.color || theme.accent
         const isLine = shape.kind === 'line'

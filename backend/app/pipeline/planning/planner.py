@@ -11,6 +11,7 @@
 """
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -58,6 +59,15 @@ PATTERN_TO_KIND = {
     "agenda": "agenda",
 }
 TONES = {"business": "деловой", "neutral": "нейтральный", "inspiring": "вдохновляющий"}
+# Модель иногда пишет на слайде его роль вместо содержания — такие заголовки на слайд не попадают.
+META_TITLES = re.compile(
+    r"^(обложка|титул|титульный слайд|финальный слайд|заключительный слайд|последний слайд|"
+    r"финал|заключение|содержание|разделитель|cover|final slide|closing slide|title slide)"
+    r"\s*(презентации|слайд)?$",
+    re.IGNORECASE,
+)
+CLOSING_TITLE_WORDS = 8
+CLOSING_FALLBACK = "Спасибо"
 
 
 @dataclass
@@ -172,11 +182,22 @@ def _normalize(specs: list[dict[str, Any]], title: str, slides_count: int) -> li
         "ref": "closing", "kind": "closing", "plan_kind": "closing", "priority": 1, "group": None,
         "topic": "Спасибо", "insight": None, "must_include": [],
     }  # fmt: skip
-    # На финале — призыв к действию из вывода, а не «Финальный слайд».
-    closing["topic"] = closing.get("insight") or closing.get("topic") or "Спасибо"
+    # На финале — короткий призыв к действию, а не «Финальный слайд»: длинное предложение
+    # в крупном заголовке финального слайда не помещается.
+    closing["topic"] = _closing_title(closing)
     # Обложка и финал обязательны, остальное подрезается по настройке количества слайдов.
     body = body[: max(slides_count - 2, 1)]
     return [cover, *body, closing]
+
+
+def _closing_title(closing: dict[str, Any]) -> str:
+    topic = (closing.get("topic") or "").strip()
+    if topic and not META_TITLES.match(topic) and len(topic.split()) <= CLOSING_TITLE_WORDS:
+        return topic
+    insight = (closing.get("insight") or "").strip()
+    if insight and len(insight.split()) <= CLOSING_TITLE_WORDS:
+        return insight
+    return CLOSING_FALLBACK
 
 
 def plan_outline(

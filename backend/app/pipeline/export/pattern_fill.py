@@ -257,8 +257,71 @@ def _filled_paragraph(template, text: str):
     return paragraph
 
 
+
+# Кегль слота подгоняется под рамку: модель та же, что у парсера (ёмкость ~ площадь / кегль²),
+# поэтому уменьшение кегля в k раз даёт в k² больше знаков.
+EMU_PER_PT = 12700
+CHAR_WIDTH = 0.58  # средняя ширина знака в долях кегля для обычного текста
+CHAR_WIDTH_SHORT = 0.8  # у крупных чисел («40%») знаки заметно шире средних букв
+TEXT_INSET_PT = 7.2  # стандартные поля текстовой рамки OOXML с двух сторон
+SHORT_TEXT = 6  # столько знаков — это ещё «число», а не фраза
+LINE_HEIGHT = 1.2  # интерлиньяж при переносе
+MIN_FONT_SCALE = 0.35  # ниже текст нечитаем — пусть лучше аудит сообщит о переполнении
+
+
+@dataclass(frozen=True)
+class Fit:
+    """Размер слайда в пунктах: по нему считается, во сколько раз ужать текст в слоте."""
+
+    width_pt: float
+    height_pt: float
+
+    def scale(self, slot: dict[str, Any] | None, text: str) -> float:
+        """Во сколько раз уменьшить кегль слота, чтобы текст поместился в его рамку.
+
+        Два ограничения. По ширине: самое длинное слово перенести некуда, оно должно влезть
+        в строку (для «40%» в рамке под одну цифру это главное условие). По высоте: весь текст
+        с переносами должен уложиться в рамку — уменьшение кегля в k раз и укорачивает строки,
+        и увеличивает их число, поэтому для многострочного текста масштаб берётся под корнем."""
+        text = " ".join((text or "").split())
+        if not slot or not text:
+            return 1.0
+        size = slot.get("size") or 18
+        bbox = slot.get("bbox") or []
+        if len(bbox) != 4 or size <= 0:
+            return 1.0
+        # Текст живёт не во всей фигуре: по краям рамки стандартные поля.
+        box_width = bbox[2] * self.width_pt - 2 * TEXT_INSET_PT
+        box_height = bbox[3] * self.height_pt
+        char_width = (CHAR_WIDTH_SHORT if len(text) <= SHORT_TEXT else CHAR_WIDTH) * size
+        if box_width <= 0 or box_height <= 0 or char_width <= 0:
+            return 1.0
+
+        # Крупные числа шаблон часто ставит с очень плотным интерлиньяжем (16% кегля):
+        # перенос такой строки — это наложение цифр друг на друга, поэтому короткий текст
+        # обязан поместиться в одну строку целиком, а не только самым длинным словом.
+        longest = len(text) if len(text) <= SHORT_TEXT else max(len(word) for word in text.split())
+        width_scale = box_width / (longest * char_width)
+        per_line = box_width / char_width
+        if len(text) <= per_line:
+            height_scale = box_height / size  # одна строка: её высота примерно равна кеглю
+        else:
+            height_scale = (box_width * box_height / (len(text) * char_width * size * LINE_HEIGHT)) ** 0.5
+        return max(MIN_FONT_SCALE, min(1.0, width_scale, height_scale))
+
+
+def slide_fit(slide) -> Fit | None:
+    """Размер слайда из презентации, которой он принадлежит."""
+    try:
+        presentation = slide.part.package.presentation_part.presentation
+        return Fit(presentation.slide_width / EMU_PER_PT, presentation.slide_height / EMU_PER_PT)
+    except Exception:  # noqa: BLE001 — без размеров слайда просто не подгоняем кегль
+        return None
+
+
 def _autofit(body) -> None:
-    """Сжатие текста по рамке (normAutofit): длинный текст не вылезает за карточку."""
+    """Разрешает PowerPoint пересчитывать кегль при правках текста (сам по себе ничего не меняет:
+    уменьшение кегля под рамку делает _scale_runs, потому что fontScale LibreOffice игнорирует)."""
     body_pr = body.find(qn("a:bodyPr"))
     if body_pr is None:
         return
@@ -271,6 +334,20 @@ def _autofit(body) -> None:
         warp.addnext(autofit)
     else:
         body_pr.insert(0, autofit)
+
+
+MIN_FONT_SZ = 600  # 6 pt в сотых долях пункта — мельче текст бессмысленно уменьшать
+
+
+def _scale_runs(body, scale: float, base_size: float | None) -> None:
+    """Уменьшает кегль текста в рамке. LibreOffice не применяет fontScale из normAutofit,
+    поэтому размер проставляется каждому прогону явно — так работает в любом редакторе."""
+    for props in body.iter(qn("a:rPr"), qn("a:endParaRPr"), qn("a:defRPr")):
+        size = props.get("sz")
+        if size and size.isdigit():
+            props.set("sz", str(max(int(int(size) * scale), MIN_FONT_SZ)))
+        elif base_size:
+            props.set("sz", str(max(int(base_size * 100 * scale), MIN_FONT_SZ)))
 
 
 def _plain_head(paragraph) -> None:
@@ -299,7 +376,14 @@ def _plain_head(paragraph) -> None:
 
 
 def set_body(
-    body, lines: list[str], *, head: str | None = None, autofit: bool = True, plain_head: bool = False
+    body,
+    lines: list[str],
+    *,
+    head: str | None = None,
+    autofit: bool = True,
+    plain_head: bool = False,
+    scale: float = 1.0,
+    base_size: float | None = None,
 ) -> bool:
     """Заменяет абзацы txBody. head — первый абзац в стиле первого абзаца шаблона (заголовок карточки)."""
     if body is None:
@@ -320,13 +404,36 @@ def set_body(
         templates = templates[1:] or templates
     for index, line in enumerate(lines if lines or head is not None else [""]):
         body.append(_filled_paragraph(templates[min(index, len(templates) - 1, 1)], line))
+    if scale < 1:
+        _scale_runs(body, scale, base_size)
     if autofit:
         _autofit(body)
     return True
 
 
-def set_text(element, lines: list[str], *, head: str | None = None, plain_head: bool = False) -> bool:
-    return set_body(element.find(qn("p:txBody")), lines, head=head, plain_head=plain_head)
+def set_text(
+    element,
+    lines: list[str],
+    *,
+    head: str | None = None,
+    plain_head: bool = False,
+    slot: dict[str, Any] | None = None,
+    fit: Fit | None = None,
+    scale: float | None = None,
+) -> bool:
+    """Ставит текст в фигуру. slot и fit — чтобы длинный текст ужался по рамке слота;
+    scale — готовый масштаб, когда кегль согласован по всей серии элементов."""
+    text = " ".join([head or "", *lines]).strip()
+    if scale is None:
+        scale = fit.scale(slot, text) if fit else 1.0
+    return set_body(
+        element.find(qn("p:txBody")),
+        lines,
+        head=head,
+        plain_head=plain_head,
+        scale=scale,
+        base_size=(slot or {}).get("size"),
+    )
 
 
 def remove(element) -> None:
@@ -347,7 +454,13 @@ def drop(elements: dict[int, Any], slot: dict[str, Any]) -> None:
 
 
 def _fill_item(
-    elements: dict[int, Any], unit: dict[str, Any], content: ItemContent, number: int, plain_head: bool = False
+    elements: dict[int, Any],
+    unit: dict[str, Any],
+    content: ItemContent,
+    number: int,
+    plain_head: bool = False,
+    fit: Fit | None = None,
+    value_scale: float | None = None,
 ) -> None:
     slots: dict[str, list[tuple[dict[str, Any], Any]]] = {}
     for slot in unit["slots"]:
@@ -359,15 +472,15 @@ def _fill_item(
         if index:
             drop(elements, slot)
             continue
-        set_text(element, [content.value or date or f"{number:02d}"])
+        set_text(element, [content.value or date or f"{number:02d}"], slot=slot, fit=fit, scale=value_scale)
         date = "" if not content.value else date
     for slot, element in slots.get("date", []):
-        set_text(element, [date or f"{number:02d}"])
+        set_text(element, [date or f"{number:02d}"], slot=slot, fit=fit)
         date = ""
     for slot, element in slots.get("number", []):
         # В кружок номера помещается «01» или «Q4», но не «Шаг 1» — такая дата уходит в заголовок.
         fits = date and len(date) <= min(slot["chars"], 3)
-        set_text(element, [date if fits else f"{number:02d}"])
+        set_text(element, [date if fits else f"{number:02d}"], slot=slot, fit=fit)
         date = "" if fits else date
     if date:
         # Даты некуда поставить отдельно — она становится частью заголовка шага.
@@ -388,13 +501,13 @@ def _fill_item(
         if index:
             drop(elements, slot)
         elif slot["role"] == "title_text" or not text_capable:
-            set_text(element, lines, head=title, plain_head=plain_head)
+            set_text(element, lines, head=title, plain_head=plain_head, slot=slot, fit=fit)
             lines = []
         else:
-            set_text(element, [title])
+            set_text(element, [title], slot=slot, fit=fit)
     for index, (slot, element) in enumerate(texts):
         if index == 0 and lines:
-            set_text(element, lines)
+            set_text(element, lines, slot=slot, fit=fit)
             lines = []
         else:
             drop(elements, slot)
@@ -402,10 +515,10 @@ def _fill_item(
         if not lines:
             drop(elements, slot)
         elif index == len(line_slots) - 1:
-            set_text(element, lines)
+            set_text(element, lines, slot=slot, fit=fit)
             lines = []
         else:
-            set_text(element, [lines.pop(0)])
+            set_text(element, [lines.pop(0)], slot=slot, fit=fit)
 
 
 def fill_table(frame, table: TableData) -> None:
@@ -503,12 +616,29 @@ def fill_chart(slide, frame_id: int, chart_spec: ChartData, accents: list[str] |
     return True
 
 
+def series_scale(unit_list: list[dict[str, Any]], content: PatternContent, fit: Fit | None) -> float | None:
+    """Крупные числа серии («8 ч», «40%», «×96») показываются одним кеглем: берём самый мелкий
+    из нужных, иначе соседние KPI отличаются размером в полтора раза."""
+    if fit is None:
+        return None
+    scales = [
+        fit.scale(slot, item.value)
+        for unit, item in zip(unit_list, content.items)
+        if item.value
+        for slot in unit["slots"]
+        if slot["role"] == "value"
+    ]
+    return min(scales) if scales else None
+
+
 def fill_pattern(
     slide, pattern: dict[str, Any], spec: Slide, *, accents: list[str] | None = None
 ) -> dict[str, list[float]]:
     """Заполняет клон слайда-примера (или новый слайд на макете для origin=layout).
     Возвращает рамки элементов для подсветки аудита (адрес → [x, y, w, h])."""
     from_layout = pattern.get("origin") == "layout"
+    # Размеры слайда нужны, чтобы ужать кегль там, где текст длиннее образца из шаблона.
+    fit = slide_fit(slide)
     elements = placeholder_elements(slide) if from_layout else shape_elements(slide)
     plain_head = bool(pattern.get("plain_heads"))
     content = content_for(spec)
@@ -517,16 +647,20 @@ def fill_pattern(
 
     title = pattern.get("title")
     if title and (element := elements.get(title["id"])) is not None:
-        set_text(element, [content.title])
+        set_text(element, [content.title], slot=title, fit=fit)
         targets["title"] = title["bbox"]
         handled.add(title["id"])
 
     prefix = ITEM_TARGETS.get(spec.kind)
     kept: list[list[float]] = []
-    for index, unit in enumerate(units(pattern, spec.kind)):
+    unit_list = list(units(pattern, spec.kind))
+    value_scale = series_scale(unit_list, content, fit)
+    for index, unit in enumerate(unit_list):
         handled.update(slot["id"] for slot in unit["slots"])
         if index < len(content.items):
-            _fill_item(elements, unit, content.items[index], index + 1, plain_head=plain_head)
+            _fill_item(
+                elements, unit, content.items[index], index + 1, plain_head=plain_head, fit=fit, value_scale=value_scale
+            )
             kept.append(unit["bbox"])
             if prefix:
                 targets[f"{prefix}.{index}"] = unit["bbox"]
@@ -564,7 +698,7 @@ def fill_pattern(
             continue
         role = slot["role"]
         if slot is number_slot:
-            set_text(element, [content.subtitle.strip()])
+            set_text(element, [content.subtitle.strip()], slot=slot, fit=fit)
             filled.add("subtitle")
         elif (
             service
@@ -574,15 +708,15 @@ def fill_pattern(
             and number_slot is None
             and "subtitle" not in filled
         ):
-            set_text(element, [content.subtitle])
+            set_text(element, [content.subtitle], slot=slot, fit=fit)
             targets["subtitle"] = slot["bbox"]
             filled.add("subtitle")
         elif role == "body" and use_body and "body" not in filled:
-            set_text(element, content.body)
+            set_text(element, content.body, slot=slot, fit=fit)
             targets["quote" if spec.kind == "quote" else "bullets"] = slot["bbox"]
             filled.add("body")
         elif role == "subtitle" and content.subtitle and "subtitle" not in filled:
-            set_text(element, [content.subtitle])
+            set_text(element, [content.subtitle], slot=slot, fit=fit)
             targets["subtitle"] = slot["bbox"]
             filled.add("subtitle")
         elif role == "decor_text" and NUMBERING_RX.match(slot["sample"]):
