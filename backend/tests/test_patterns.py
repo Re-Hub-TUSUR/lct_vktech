@@ -39,7 +39,8 @@ def compose(parsed, axis: str = "density"):
 def test_patterns_are_extracted(parsed):
     _, result = parsed
     patterns = result.patterns
-    assert len(patterns) == result.slides_count
+    # Паттерны из макетов (origin=layout) — не слайды-примеры, их в колоде шаблона нет.
+    assert len([p for p in patterns if p.get("origin") != "layout"]) == result.slides_count
     usable = [pattern for pattern in patterns if pattern["usable"]]
     assert len(usable) >= 10, "в шаблоне должно найтись хотя бы 10 паттернов под контент"
     assert patterns[0]["category"] == "cover"

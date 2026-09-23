@@ -25,6 +25,9 @@ class Generation(UUIDPk, Timestamps, Base):
     stages: Mapped[list[Any]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     # Снимок версий скиллов и агентов, с которыми выполнялся прогон.
     skills: Mapped[list[Any]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    # План колоды — спецификации слайдов (planning/planner.py). По нему рерол пересобирает
+    # вариант, не обращаясь к модели заново.
+    plan: Mapped[list[Any]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -108,6 +108,7 @@ def compose_single_variant(
     groups: dict[str, str],
     seed: int | None = None,
     patterns: list[dict[str, Any]] | None = None,
+    demo_defects: bool = True,
 ) -> VariantDraft:
     axis_key, axis = axis_config(axis_key)
     layout_names = {layout["key"]: layout["name"] for layout in layouts}
@@ -136,7 +137,9 @@ def compose_single_variant(
     slides = [_to_slide(spec, profile, speaker_notes) for spec in fitted]
     _fill_agenda(slides, groups)
     slides = _apply_order(slides, profile["order"], groups)
-    slides = _inject_demo_defects(slides, cfg.get("demo_defects") or [])
+    # Демо-дефекты нужны только сценарию-заглушке: у текстов от модели дефекты настоящие.
+    if demo_defects:
+        slides = _inject_demo_defects(slides, cfg.get("demo_defects") or [])
     assign_layouts(slides, roles, layout_names)
     # Рерол (seed задан) берёт другой паттерн из равноценных — вёрстка меняется, а не только порядок тезисов.
     assign_patterns(slides, patterns, position=position, layout_names=layout_names, seed=seed)
@@ -162,6 +165,7 @@ def compose_variants(
     roles: dict[str, Any],
     groups: dict[str, str],
     patterns: list[dict[str, Any]] | None = None,
+    demo_defects: bool = True,
 ) -> list[VariantDraft]:
     axis_key, axis = axis_config(axis_key)
     drafts: list[VariantDraft] = []
@@ -178,6 +182,7 @@ def compose_variants(
                 roles=roles,
                 groups=groups,
                 patterns=patterns,
+                demo_defects=demo_defects,
             )
         )
     return drafts
@@ -232,7 +237,8 @@ def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool
         slide.image = ImageSpec(prompt=spec.get("image_prompt") or f"Иллюстрация к слайду «{topic}»")
 
     if speaker_notes:
-        slide.notes = _notes(kind, topic, insight)
+        # Заметку мог написать автор текстов (LLM); иначе — дежурная подсказка по типу слайда.
+        slide.notes = spec.get("notes") or _notes(kind, topic, insight)
     return slide
 
 

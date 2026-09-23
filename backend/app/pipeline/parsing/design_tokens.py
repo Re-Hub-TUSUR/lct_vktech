@@ -131,6 +131,11 @@ def typography(prs, theme: dict[str, Any], type_scale: list[dict[str, Any]]) -> 
     return result
 
 
+FULL_BLEED_AREA = 0.85
+# Поля считаются по текстовым областям: фотографии в корпоративных макетах часто уходят под обрез.
+TEXT_PLACEHOLDERS = {"TITLE", "CENTER_TITLE", "SUBTITLE", "BODY", "OBJECT", "VERTICAL_TITLE", "VERTICAL_BODY"}
+
+
 def _mode(values: list[float], step: float = 0.005) -> float | None:
     if not values:
         return None
@@ -161,23 +166,35 @@ def grid(prs, layouts: list[dict[str, Any]], roles: dict[str, Any]) -> dict[str,
     for layout in layouts:
         if layout["key"] in service:
             continue
+        boxes: list[tuple[float, float, float, float]] = []
         for ph in layout.get("placeholders") or []:
             if ph["type"] in {"SLIDE_NUMBER", "FOOTER", "DATE"} or None in (ph["left"], ph["top"], ph["width"], ph["height"]):
                 continue
             x, y, w, h = ph["left"] / width, ph["top"] / height, ph["width"] / width, ph["height"] / height
             if w <= 0 or h <= 0 or x < 0 or y < 0 or x + w > 1.001 or y + h > 1.001:
                 continue
-            lefts.append(x)
-            tops.append(y)
-            rights.append(1 - x - w)
-            bottoms.append(1 - y - h)
+            if w * h >= FULL_BLEED_AREA:
+                continue  # картинка во весь слайд — это фон макета, а не область контента
             x_edges += [round(x, 3), round(x + w, 3)]
             y_edges += [round(y, 3), round(y + h, 3)]
+            if ph["type"] in TEXT_PLACEHOLDERS:
+                boxes.append((x, y, w, h))
+        if not boxes:
+            continue
+        # Поле макета — расстояние от края слайда до крайней текстовой области, а не до каждого
+        # плейсхолдера: иначе у макета «только заголовок» нижним полем станет вся пустота под ним.
+        lefts.append(min(x for x, _, _, _ in boxes))
+        tops.append(min(y for _, y, _, _ in boxes))
+        rights.append(1 - max(x + w for x, _, w, _ in boxes))
+        bottoms.append(1 - max(y + h for _, y, _, h in boxes))
+    # Поля шаблона — самая крайняя область контента среди макетов: в эти границы помещается
+    # всё, что шаблон вообще размещает на слайде. Среднее здесь врёт: макетов «только заголовок»
+    # в корпоративных шаблонах больше, чем макетов с текстом во всю высоту.
     margins = {
-        "left": _mode(lefts) if lefts else None,
-        "right": _mode(rights) if rights else None,
-        "top": _mode(tops) if tops else None,
-        "bottom": _mode(bottoms) if bottoms else None,
+        "left": round(min(lefts), 4) if lefts else None,
+        "right": round(min(rights), 4) if rights else None,
+        "top": round(min(tops), 4) if tops else None,
+        "bottom": round(min(bottoms), 4) if bottoms else None,
     }
     vertical, horizontal = _guides(prs.part._element, width, height)
     for master in prs.slide_masters:

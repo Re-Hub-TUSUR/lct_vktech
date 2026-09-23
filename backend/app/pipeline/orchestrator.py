@@ -25,9 +25,11 @@ from app.core.db import SessionLocal
 from app.core.redis import generation_channel, publish_presentation_update, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
-from app.pipeline.content.ingest import extract_text, split_sentences
+from app.pipeline.content.ingest import extract_text, sources_digest, split_sentences
 from app.pipeline.layout.composer import axis_config, compose_variants
-from app.pipeline.planning.outline import build_outline, group_labels, purpose_label
+from app.pipeline.planning.outline import group_labels, purpose_label
+from app.pipeline.planning.planner import plan_outline
+from app.pipeline.planning.writer import write_slides
 from app.pipeline.skills import skills_snapshot
 from app.pipeline.stages import STAGE_BY_KEY
 from app.schemas.presentation import GenerationSettings
@@ -196,16 +198,54 @@ async def _run_stages(
                 file.extracted_text = await asyncio.to_thread(extract_text, Path(file.path), file.filename) or ""
             chars += len(file.extracted_text)
         theses = split_sentences(presentation.brief)
+        # Выдержки из материалов уходят в промпты плана и текстов слайдов.
+        sources = sources_digest(
+            [(file.filename, file.extracted_text or "") for file in presentation.files],
+            per_file=settings.llm_source_chars,
+            total=settings.llm_sources_total_chars,
+        )
         stage.detail = (
             f"Бриф: {len(theses)} тезисов · файлов: {len(presentation.files)} · извлечено {chars} знаков текста"
+            + (f" · в запрос к модели уйдёт {len(sources)}" if sources else "")
         )
 
+    purpose = purpose_label(presentation.purpose)
     async with tracker.stage("outline") as stage:
-        specs = build_outline(title=presentation.title, purpose=presentation.purpose, brief=presentation.brief)
-        stage.detail = f"Сценарий «{purpose_label(presentation.purpose)}»: {len(specs)} смысловых блоков (заглушка)"
+        plan = await _keep_alive(
+            tracker.generation.id,
+            asyncio.to_thread(
+                plan_outline,
+                title=presentation.title,
+                purpose=presentation.purpose,
+                brief=presentation.brief,
+                sources=sources,
+                slides_count=options.slides_count,
+                language=options.language,
+                tone=options.tone,
+                audience=options.audience,
+                patterns=template.patterns,
+            ),
+        )
+        specs = plan.specs
+        stage.detail = plan.detail(purpose)
 
     async with tracker.stage("copy") as stage:
-        stage.detail = "Тексты взяты из сценария-заглушки; LLM подключается в skills/slide_writer.yaml"
+        written = await _keep_alive(
+            tracker.generation.id,
+            asyncio.to_thread(
+                write_slides,
+                specs,
+                title=presentation.title,
+                purpose=purpose,
+                sources=sources,
+                language=options.language,
+                tone=options.tone,
+                audience=options.audience,
+            ),
+        )
+        # План с текстами хранится у прогона: по нему рерол пересобирает вариант без новых запросов.
+        tracker.generation.plan = copy.deepcopy(specs)
+        stage.detail = written.detail()
 
     async with tracker.stage("layout") as stage:
         drafts = compose_variants(
@@ -217,6 +257,8 @@ async def _run_stages(
             roles=template.layout_roles,
             groups=group_labels(),
             patterns=template.patterns,
+            # Демо-дефекты подмешиваются только в сценарий-заглушку.
+            demo_defects=plan.source != "llm",
         )
         axis_title = axis_config(options.variant_axis)[1]["title"]
         total = sum(len(d.slides) for d in drafts)

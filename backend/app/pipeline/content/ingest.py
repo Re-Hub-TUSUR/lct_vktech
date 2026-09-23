@@ -1,4 +1,4 @@
-"""Извлечение текста из файлов контент-пакета и разбиение брифа на тезисы."""
+"""Извлечение текста из файлов контент-пакета, выдержки для модели и разбиение брифа на тезисы."""
 
 import logging
 import re
@@ -57,6 +57,27 @@ def _pptx_text(path: Path) -> str:
             if shape.has_text_frame and shape.text_frame.text.strip():
                 lines.append(shape.text_frame.text.strip())
     return "\n".join(lines)
+
+
+def sources_digest(files: list[tuple[str, str]], *, per_file: int, total: int) -> str:
+    """Материалы для промпта: имя файла и выдержка из его текста.
+
+    Целиком контент-пакет в запрос не влезет и не нужен: модели хватает начала каждого
+    файла, где обычно и лежат цифры и тезисы. Границы заданы LLM_SOURCE_CHARS и
+    LLM_SOURCES_TOTAL_CHARS, обрезка отмечается явно — чтобы модель не додумывала хвост."""
+    blocks: list[str] = []
+    left = total
+    for filename, text in files:
+        text = re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", (text or "").strip()))
+        if not text or left <= 0:
+            continue
+        limit = min(per_file, left)
+        excerpt = text[:limit]
+        if len(text) > limit:
+            excerpt += "\n[…документ обрезан…]"
+        left -= len(excerpt)
+        blocks.append(f"### {filename}\n{excerpt}")
+    return "\n\n".join(blocks)
 
 
 def split_sentences(text: str, limit: int = 12) -> list[str]:

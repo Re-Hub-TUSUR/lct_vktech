@@ -125,6 +125,7 @@ def test_template_cache_round_trip(parsed, tmp_path, monkeypatch):
     (storage / "slides").mkdir(parents=True)
     (storage / "slides" / "1.jpg").write_bytes(b"jpeg")
     monkeypatch.setattr(settings, "template_cache_dir", tmp_path / "cache")
+    monkeypatch.setattr(settings, "vlm_base_url", None)  # в тесте разбор без VLM
 
     # Каталога кэша нет — сохранять некуда, читать нечего: разбор идёт обычным путём.
     template_cache.save(source, storage, result)

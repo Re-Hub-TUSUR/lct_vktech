@@ -13,6 +13,7 @@ from app.api.deps import Arq, CurrentUser, DbSession, OptionalUser, get_variant_
 from app.api.serializers import variant_out
 from app.core.redis import publish_presentation_update, redis_client
 from app.core.storage import save_upload, storage_path
+from app.models import Generation
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
 from app.pipeline.layout.composer import compose_single_variant
@@ -141,7 +142,11 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     options = GenerationSettings.model_validate(presentation.settings or {})
-    specs = build_outline(title=presentation.title, purpose=presentation.purpose, brief=presentation.brief)
+    # План прогона: тексты уже написаны моделью, рерол только меняет вёрстку и порядок.
+    generation = await db.get(Generation, variant.generation_id)
+    specs = (generation.plan if generation else None) or build_outline(
+        title=presentation.title, purpose=presentation.purpose, brief=presentation.brief
+    )
     seed = random.randint(1, 1_000_000)
     draft = compose_single_variant(
         specs,
@@ -154,6 +159,7 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         groups=group_labels(),
         seed=seed,
         patterns=template.patterns if template else None,
+        demo_defects=not (generation and generation.plan),
     )
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)

@@ -36,6 +36,24 @@ class Settings(BaseSettings):
     # Параллельных процессов LibreOffice на один процесс приложения (каждый — сотни МБ памяти).
     render_concurrency: int = 2
 
+    # LLM для текстовых стадий: план колоды и тексты слайдов. Любой OpenAI-совместимый API,
+    # модель с открытыми весами до 35B (по ТЗ). Пусто — работает сценарий-заглушка.
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str | None = None
+    llm_timeout_seconds: float = 180
+    # Слайды пишутся параллельно: один запрос на слайд.
+    llm_concurrency: int = 4
+    llm_max_tokens: int = 1600
+    # План всей колоды — длинный ответ: с тесным лимитом он обрывается на середине JSON.
+    llm_plan_max_tokens: int = 4000
+    llm_temperature: float = 0.3
+    llm_disable_reasoning: bool = True
+    llm_extra_body: str | None = None
+    # Сколько знаков материалов контент-пакета уходит в промпт (на файл и всего).
+    llm_source_chars: int = 4000
+    llm_sources_total_chars: int = 12000
+
     # VLM для разметки паттернов слайдов: любой OpenAI-совместимый API (VK Inference с Qwen3.8-27B,
     # Yandex AI Studio, Cloud.ru Foundation Models, свой vLLM/SGLang). Пусто — только эвристики.
     vlm_base_url: str | None = None

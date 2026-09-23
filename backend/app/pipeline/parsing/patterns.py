@@ -544,6 +544,9 @@ def analyze_slide(
         "frames": {},
         "images": [],
         "source": "rules",
+        # Значения на случай раннего выхода (слишком сложный слайд): дальше они уточняются.
+        "service": False,
+        "schema": {"type": "complex"},
     }
 
     title = next((leaf for leaf in leaves if leaf.kind == "title"), None)

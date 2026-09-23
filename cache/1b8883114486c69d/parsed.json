@@ -1,6 +1,6 @@
 {
  "source": "VK_WorkSpace_Клиентская_конференция_Шаблон_03.pptx",
- "parser_version": "0.5.0",
+ "parser_version": "0.5.1",
  "vlm_model": "qwen/qwen3.8-27b",
  "parsed": {
   "slide_width": 12192000,
@@ -17,11 +17,17 @@
     "changed_category": 0
    },
    "grid": {
-    "rows": [
-     0.062,
-     0.232,
-     0.235,
-     0.508
+    "margins": {
+     "left": 0.0352,
+     "right": 0.0335,
+     "top": 0.0619,
+     "bottom": 0.3922
+    },
+    "safe_area": [
+     0.0352,
+     0.0619,
+     0.9313,
+     0.5459
     ],
     "guides": {
      "vertical": [
@@ -48,17 +54,11 @@
      0.429,
      0.677
     ],
-    "margins": {
-     "top": 0.06,
-     "left": 0.035,
-     "right": 0.325,
-     "bottom": 0.77
-    },
-    "safe_area": [
-     0.035,
-     0.06,
-     0.64,
-     0.17
+    "rows": [
+     0.062,
+     0.232,
+     0.235,
+     0.508
     ]
    },
    "fonts": [
