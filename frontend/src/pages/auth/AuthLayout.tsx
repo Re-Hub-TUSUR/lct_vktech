@@ -1,7 +1,8 @@
-import { Check, CheckCircle2 } from 'lucide-react'
+import { Check, CheckCircle2, Moon, Sun } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import vkLogo from '../../assets/vk-logo.png'
+import { useTheme } from '../../lib/theme'
 
 const FEATURES = [
   'Разбирает шаблон .pptx на дизайн-токены и макеты',
@@ -11,6 +12,8 @@ const FEATURES = [
 ]
 
 export function AuthLayout({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+  const { theme, toggleTheme } = useTheme()
+
   return (
     <div className="auth">
       <aside className="auth__promo">
@@ -54,6 +57,17 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
         <small>ЛЦТ 2026 · кейс VK Tech</small>
       </aside>
       <section className="auth__panel">
+        <div style={{ position: 'absolute', top: 20, right: 20 }}>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+            aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+        </div>
         <div className="auth__form-wrap auth__form-card" key={title}>
           <h1>{title}</h1>
           <p className="auth__subtitle">{subtitle}</p>

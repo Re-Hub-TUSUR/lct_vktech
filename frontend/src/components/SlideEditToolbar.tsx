@@ -1,5 +1,5 @@
-import { BarChart3, Check, Copy, ImagePlus, LayoutTemplate, Minus, Plus, Shapes, Trash2, Type, X } from 'lucide-react'
-import { useState } from 'react'
+import { BarChart3, Check, ChevronDown, Copy, ImagePlus, LayoutTemplate, Minus, Plus, Trash2, Type, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { ChartData, Column, Kpi, Slide, SlideKind, SlideShape, SlideTheme, SlideUpdate, TableData, TimelineItem } from '../api/types'
 import { SLIDE_KIND_LABELS } from '../lib/labels'
@@ -38,7 +38,19 @@ export function SlideEditToolbar({
   hasChanges,
 }: SlideEditToolbarProps) {
   const [showChartModal, setShowChartModal] = useState(false)
-  const [showShapeMenu, setShowShapeMenu] = useState(false)
+  const [showInsertMenu, setShowInsertMenu] = useState(false)
+  const insertMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showInsertMenu) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (insertMenuRef.current && !insertMenuRef.current.contains(e.target as Node)) {
+        setShowInsertMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showInsertMenu])
 
   const availableFonts = Array.from(
     new Set([
@@ -263,7 +275,7 @@ export function SlideEditToolbar({
     const currentShapes = slide.shapes || []
     onChange({ shapes: [...currentShapes, newShape] })
     onSelectShape?.(id)
-    setShowShapeMenu(false)
+    setShowInsertMenu(false)
   }
 
   const handleDeleteSelectedShape = () => {
@@ -547,66 +559,86 @@ export function SlideEditToolbar({
             </div>
           </div>
 
-          {/* Кнопка диаграммы */}
-          <div className="slide-edit-topbar__item">
-            {slide.chart ? (
-              <Button
-                size="sm"
-                variant={showChartModal ? 'primary' : 'ghost'}
-                icon={<BarChart3 size={15} />}
-                onClick={() => setShowChartModal(true)}
-              >
-                Диаграмма
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<BarChart3 size={15} />}
-                onClick={handleAddChart}
-              >
-                + График
-              </Button>
-            )}
-          </div>
-
-          {/* Добавление фигур окружения */}
-          <div className="slide-edit-topbar__item" style={{ position: 'relative' }}>
+          {/* Единое меню «+ Вставить» */}
+          <div className="slide-edit-topbar__item" style={{ position: 'relative' }} ref={insertMenuRef}>
             <Button
               size="sm"
-              variant={showShapeMenu ? 'primary' : 'ghost'}
-              icon={<Shapes size={15} />}
-              onClick={() => setShowShapeMenu(!showShapeMenu)}
+              variant={showInsertMenu ? 'primary' : 'ghost'}
+              icon={<Plus size={14} />}
+              onClick={() => setShowInsertMenu(!showInsertMenu)}
             >
-              + Фигура
+              Вставить <ChevronDown size={13} style={{ marginLeft: 2 }} />
             </Button>
-            {showShapeMenu && (
-              <div className="slide-edit-shape-menu">
+            {showInsertMenu && (
+              <div className="slide-edit-shape-menu" style={{ minWidth: 220 }}>
+                <div className="slide-edit-shape-menu__header">Визуализация</div>
                 <button
                   type="button"
                   className="slide-edit-shape-menu__item"
-                  onClick={() => handleAddShape('circle')}
+                  onClick={() => {
+                    setShowInsertMenu(false)
+                    if (slide.chart) {
+                      setShowChartModal(true)
+                    } else {
+                      handleAddChart()
+                    }
+                  }}
                 >
-                  <span className="slide-shape-icon-circle" /> Кругляшок (круг)
+                  <BarChart3 size={15} color="var(--color-primary)" />
+                  {slide.chart ? 'Настроить диаграмму' : 'График / Диаграмма'}
+                </button>
+
+                <button
+                  type="button"
+                  className="slide-edit-shape-menu__item"
+                  disabled={isUploading}
+                  onClick={() => {
+                    setShowInsertMenu(false)
+                    onTriggerImageUpload()
+                  }}
+                >
+                  <ImagePlus size={15} color="var(--color-primary)" />
+                  {isUploading ? 'Загрузка…' : slide.image?.url ? 'Заменить картинку' : 'Изображение'}
+                </button>
+
+                <div className="slide-edit-shape-menu__header">Фигуры</div>
+                <button
+                  type="button"
+                  className="slide-edit-shape-menu__item"
+                  onClick={() => {
+                    setShowInsertMenu(false)
+                    handleAddShape('circle')
+                  }}
+                >
+                  <span className="slide-shape-icon-circle" /> Круг
                 </button>
                 <button
                   type="button"
                   className="slide-edit-shape-menu__item"
-                  onClick={() => handleAddShape('badge')}
+                  onClick={() => {
+                    setShowInsertMenu(false)
+                    handleAddShape('badge')
+                  }}
                 >
-                  <span className="slide-shape-icon-badge" /> Плашка / Бейдж
+                  <span className="slide-shape-icon-badge" /> Бейдж / Плашка
                 </button>
                 <button
                   type="button"
                   className="slide-edit-shape-menu__item"
-                  onClick={() => handleAddShape('rect')}
+                  onClick={() => {
+                    setShowInsertMenu(false)
+                    handleAddShape('rect')
+                  }}
                 >
                   <span className="slide-shape-icon-rect" /> Прямоугольник
                 </button>
                 <button
                   type="button"
                   className="slide-edit-shape-menu__item"
-                  onClick={() => handleAddShape('line')}
+                  onClick={() => {
+                    setShowInsertMenu(false)
+                    handleAddShape('line')
+                  }}
                 >
                   <span className="slide-shape-icon-line" /> Линия-акцент
                 </button>
@@ -810,29 +842,20 @@ export function SlideEditToolbar({
             </div>
           )}
 
-          {/* Загрузка и удаление картинки */}
-          <div className="slide-edit-topbar__item">
-            <div className="row row--xs">
+          {/* Удаление картинки, если она есть на слайде */}
+          {slide.image?.url && (
+            <div className="slide-edit-topbar__item">
               <Button
                 size="sm"
                 variant="ghost"
-                icon={<ImagePlus size={15} />}
-                loading={isUploading}
-                onClick={onTriggerImageUpload}
+                icon={<Trash2 size={13} />}
+                title="Удалить картинку со слайда"
+                onClick={() => onChange({ image: null, kind: 'bullets' })}
               >
-                {slide.image?.url ? 'Заменить картинку' : 'Вставить картинку'}
+                Удалить фото
               </Button>
-              {slide.image?.url && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  icon={<Trash2 size={13} />}
-                  title="Удалить картинку со слайда"
-                  onClick={() => onChange({ image: null, kind: 'bullets' })}
-                />
-              )}
             </div>
-          </div>
+          )}
         </div>
 
         <div className="slide-edit-topbar__right">

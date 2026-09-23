@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { ArrowRight, Ban, CircleAlert, Edit3, Info, RefreshCw, TriangleAlert, WandSparkles } from 'lucide-react'
+import { ArrowRight, Ban, ChevronLeft, ChevronRight, CircleAlert, Edit3, Info, Maximize2, Minimize2, RefreshCw, TriangleAlert, WandSparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
@@ -307,6 +307,61 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     }
     setChecked(new Set())
   }
+
+  const [showTour, setShowTour] = useState(true)
+  const [isZenMode, setIsZenMode] = useState(false)
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target as HTMLElement)?.isContentEditable
+      ) {
+        return
+      }
+      if (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я') {
+        setIsZenMode((prev) => !prev)
+      } else if (e.key === 'Escape' && isZenMode) {
+        setIsZenMode(false)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [isZenMode])
+
+  const currentTourIndex = useMemo(() => {
+    if (!activeIssue) return 0
+    const idx = openIssues.findIndex((i) => i.id === activeIssue)
+    return idx >= 0 ? idx : 0
+  }, [activeIssue, openIssues])
+
+  const currentTourIssue = openIssues[currentTourIndex] || null
+
+  const goToTourIssue = (index: number) => {
+    if (openIssues.length === 0) return
+    const normalized = (index + openIssues.length) % openIssues.length
+    const targetIssue = openIssues[normalized]
+    if (!targetIssue) return
+    setActiveIssue(targetIssue.id)
+    if (targetIssue.slide_index !== null && targetIssue.slide_index !== undefined) {
+      setSlideIndex(targetIssue.slide_index)
+    }
+  }
+
+  useEffect(() => {
+    if (isEditing || !showTour || openIssues.length === 0) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === '[' || (e.key === 'ArrowLeft' && e.altKey)) {
+        goToTourIssue(currentTourIndex - 1)
+      } else if (e.key === ']' || (e.key === 'ArrowRight' && e.altKey)) {
+        goToTourIssue(currentTourIndex + 1)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, showTour, openIssues, currentTourIndex])
 
   const resolve = useMutation({
     mutationFn: ({ ids, action }: { ids: string[]; action: 'fix' | 'ignore' }) =>
@@ -758,7 +813,7 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
         </div>
       )}
 
-      <div className="audit-layout" ref={layoutRef}>
+      <div className={clsx('audit-layout', isZenMode && 'is-zen')} ref={layoutRef}>
         <nav className="audit-slides" aria-label="Слайды">
           {slides.map((slide, index) => {
             const issues = bySlide.get(slide.id) ?? []
@@ -792,6 +847,20 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                   </span>
                 </div>
                 <div className="row row--sm">
+                  {!isEditing && openIssues.length > 0 && !showTour && (
+                    <Button size="sm" variant="ghost" onClick={() => setShowTour(true)}>
+                      Тур по замечаниям ({openIssues.length})
+                    </Button>
+                  )}
+                  <Button
+                    variant={isZenMode ? 'primary' : 'ghost'}
+                    size="sm"
+                    icon={isZenMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                    onClick={() => setIsZenMode(!isZenMode)}
+                    title={isZenMode ? 'Выйти из фокус-режима (Z или Esc)' : 'Фокус-режим: скрыть боковые панели (хоткей Z)'}
+                  >
+                    {isZenMode ? 'Выйти из фокуса' : 'Фокус'}
+                  </Button>
                   {canEdit && <Button
                     variant={isEditing ? 'primary' : 'secondary'}
                     size="sm"
@@ -837,6 +906,72 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                   }}
                 />
               </div>
+
+              {!isEditing && showTour && openIssues.length > 0 && currentTourIssue && (
+                <div className="audit-tour-bar" role="region" aria-label="Пошаговый тур по замечаниям аудита">
+                  <div className="row row--xs" style={{ alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => goToTourIssue(currentTourIndex - 1)}
+                      title="Предыдущее замечание ([)"
+                      aria-label="Предыдущее замечание"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="audit-tour-bar__step">
+                      {currentTourIndex + 1} / {openIssues.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => goToTourIssue(currentTourIndex + 1)}
+                      title="Следующее замечание (])"
+                      aria-label="Следующее замечание"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  <div className="audit-tour-bar__title" title={currentTourIssue.message}>
+                    <SeverityIcon severity={currentTourIssue.severity} />
+                    <strong>{currentTourIssue.check_title}:</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>{currentTourIssue.message}</span>
+                  </div>
+
+                  <div className="row row--xs" style={{ alignItems: 'center' }}>
+                    {currentTourIssue.fixable && canEdit && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={<WandSparkles size={13} />}
+                        loading={resolve.isPending}
+                        onClick={() => resolve.mutate({ ids: [currentTourIssue.id], action: 'fix' })}
+                      >
+                        Исправить
+                      </Button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      style={{ fontSize: 11 }}
+                      title="Скрыть замечание"
+                      onClick={() => resolve.mutate({ ids: [currentTourIssue.id], action: 'ignore' })}
+                    >
+                      Скрыть
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => setShowTour(false)}
+                      title="Закрыть панель обхода"
+                      aria-label="Закрыть панель обхода"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="audit-stage__meta">
                 <span>

@@ -1,10 +1,11 @@
-import { LogOut, Plus } from 'lucide-react'
+import { LogOut, Moon, Plus, Sun } from 'lucide-react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router'
 
 import { useAuth } from '../auth/AuthProvider'
 import vkLogo from '../assets/vk-logo.png'
 import { Button } from './ui'
 import { NotificationsBell } from './NotificationsBell'
+import { useTheme } from '../lib/theme'
 
 export function Logo() {
   return (
@@ -21,6 +22,7 @@ export function Logo() {
 export function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { theme, toggleTheme } = useTheme()
 
   return (
     <div className="app">
@@ -37,6 +39,15 @@ export function AppLayout() {
             Новая презентация
           </Button>
           <NotificationsBell />
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+            aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           <div className="user-chip" title={user?.email}>
             <span className="user-chip__avatar">{user?.full_name.slice(0, 1).toUpperCase()}</span>
             <span className="user-chip__name">{user?.full_name}</span>

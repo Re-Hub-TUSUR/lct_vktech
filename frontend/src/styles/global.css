@@ -147,7 +147,7 @@ input[type='checkbox'] {
   align-items: center;
   gap: var(--space-6);
   padding: 0 var(--space-5);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--color-topbar-bg);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--color-border);
 }
@@ -1120,6 +1120,10 @@ input[type='checkbox'] {
   background: radial-gradient(circle at 20% 20%, #3d8bff 0%, transparent 55%),
     radial-gradient(circle at 80% 90%, #7a4de8 0%, transparent 50%), #0b3fd1;
 }
+[data-theme='dark'] .auth__promo {
+  background: radial-gradient(circle at 20% 20%, #1a3c75 0%, transparent 55%),
+    radial-gradient(circle at 80% 90%, #3e1b7a 0%, transparent 50%), #0c1735;
+}
 .auth__brand {
   display: flex;
   align-items: center;
@@ -1244,7 +1248,8 @@ input[type='checkbox'] {
   display: grid;
   place-items: center;
   padding: var(--space-6);
-  background: #f8f9fb;
+  background: var(--color-bg);
+  position: relative;
 }
 .auth__form-wrap {
   width: min(448px, 100%);
@@ -1254,10 +1259,10 @@ input[type='checkbox'] {
 }
 .auth__form-card {
   padding: 34px;
-  border: 1px solid #e7ebf0;
+  border: 1px solid var(--color-border);
   border-radius: 20px;
   background: var(--color-surface);
-  box-shadow: 0 18px 50px rgba(34, 52, 79, 0.1);
+  box-shadow: var(--shadow-lg);
   animation: auth-form-enter 260ms ease-out both;
 }
 .password-input {
@@ -1331,7 +1336,7 @@ input[type='checkbox'] {
   align-items: center;
   padding: var(--space-6);
   border-radius: 24px;
-  background: linear-gradient(135deg, #ffffff 0%, #eef4ff 100%);
+  background: var(--color-hero-bg);
   border: 1px solid var(--color-border);
 }
 .hero > div {
@@ -1916,7 +1921,7 @@ a:hover > .template-card,
 }
 .variant-card__reroll:hover:not(:disabled) {
   transform: scale(1.1);
-  background: #ffffff;
+  background: var(--color-surface);
   color: var(--color-primary);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
 }
@@ -2164,6 +2169,14 @@ a:hover > .template-card,
   flex-direction: column;
   gap: 2px;
 }
+.slide-edit-shape-menu__header {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-subtle);
+  padding: 6px 10px 2px;
+}
 .slide-edit-shape-menu__item {
   display: flex;
   align-items: center;
@@ -2246,6 +2259,22 @@ a:hover > .template-card,
   grid-template-columns: 150px minmax(0, 1fr) 400px;
   gap: var(--space-4);
   align-items: start;
+  transition: grid-template-columns 0.2s ease;
+}
+.audit-layout.is-zen {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+.audit-layout.is-zen .audit-slides,
+.audit-layout.is-zen .audit-panel {
+  display: none !important;
+}
+.audit-layout.is-zen .audit-stage {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
 }
 @media (max-width: 1200px) {
   .audit-layout {
@@ -2359,6 +2388,54 @@ a:hover > .template-card,
   justify-content: space-between;
   align-items: center;
   gap: var(--space-2);
+}
+/* Интерактивный тур по замечаниям аудита (Next Issue) */
+.audit-stage {
+  position: relative;
+}
+.audit-tour-bar {
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  animation: tourSlideUpFade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  max-width: min(760px, 94%);
+}
+.audit-tour-bar__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+.audit-tour-bar__step {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+@keyframes tourSlideUpFade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 .slide-editor-card {
   display: flex;
@@ -2476,7 +2553,7 @@ a:hover > .template-card,
 .issue.is-active,
 .issue:hover {
   border-color: var(--color-primary);
-  background: #fafcff;
+  background: var(--color-primary-soft);
 }
 .issue__body {
   flex: 1;
