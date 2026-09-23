@@ -47,7 +47,7 @@ function VariantCard({
         <span className="variant-card__letter">{variant.letter}</span>
         <div>
           <h2>{variant.name}</h2>
-          <p>{variant.description}</p>
+          <p>{variant.description?.replace(/\.+$/, '')}</p>
         </div>
       </header>
 
@@ -183,7 +183,7 @@ export function VariantsPage() {
         {header}
         <EmptyState
           title="Варианты ещё не готовы"
-          text="Дождитесь окончания генерации."
+          text="Дождитесь окончания генерации"
           action={<Button onClick={() => navigate(`/presentations/${id}/generation`)}>К генерации</Button>}
         />
       </div>
@@ -198,9 +198,9 @@ export function VariantsPage() {
     <div className="stack">
       {header}
       <div className="axis-banner">
-        <strong>Выберите вариант, с которым продолжите работу: он пойдёт на аудит и экспорт.</strong>
+        <strong>Выберите вариант, с которым продолжите работу: он пойдёт на аудит и экспорт</strong>
         <span>
-          {axis.description} Кубик на превью пересобирает вариант заново.
+          {axis.description?.replace(/\.+$/, '')}. Кубик на превью пересобирает вариант заново
         </span>
       </div>
       <div className="variants-grid">

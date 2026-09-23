@@ -2,9 +2,9 @@
 
 from collections import Counter
 
-from app.models import ContentFile, Generation, Presentation, Template, Variant
+from app.models import ContentFile, Generation, Presentation, Project, Template, Variant
 from app.schemas.generation import GenerationOut, VariantOut, VariantRenders, VariantStats
-from app.schemas.presentation import ContentFileOut, GenerationSettings, PresentationOut, PresentationUserOut
+from app.schemas.presentation import ContentFileOut, GenerationSettings, PresentationOut, PresentationUserOut, ProjectSummary
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme, TemplateDetail, TemplateSummary
 from app.services.renders import render_state
@@ -54,6 +54,10 @@ def content_file_out(file: ContentFile) -> ContentFileOut:
     )
 
 
+def project_summary(project: Project) -> ProjectSummary:
+    return ProjectSummary(id=project.id, name=project.name, color=project.color, icon=project.icon)
+
+
 def presentation_out(presentation: Presentation, files: list[ContentFile]) -> PresentationOut:
     return PresentationOut(
         id=presentation.id,
@@ -64,6 +68,8 @@ def presentation_out(presentation: Presentation, files: list[ContentFile]) -> Pr
         status=presentation.status,
         template_id=presentation.template_id,
         template=template_summary(presentation.template) if presentation.template else None,
+        project_id=presentation.project_id,
+        project=project_summary(presentation.project) if presentation.project else None,
         selected_variant_id=presentation.selected_variant_id,
         access_role=presentation.access_role or "owner",
         owner=PresentationUserOut(

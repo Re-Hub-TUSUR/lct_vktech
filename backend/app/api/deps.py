@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.redis import redis_client
 from app.core.security import resolve_session
-from app.models import Presentation, PresentationMember, Template, User, Variant
+from app.models import Presentation, PresentationMember, Project, ProjectMember, Template, User, Variant
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -81,7 +81,7 @@ async def get_presentation_for_user(
             (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
         )
         .where(Presentation.id == presentation_id, or_(Presentation.owner_id == user.id, PresentationMember.user_id == user.id))
-        .options(selectinload(Presentation.template), selectinload(Presentation.owner))
+        .options(selectinload(Presentation.template), selectinload(Presentation.project), selectinload(Presentation.owner))
     )
     if with_files:
         query = query.options(selectinload(Presentation.files))
@@ -95,6 +95,32 @@ async def get_presentation_for_user(
     if editable and presentation.access_role not in {"owner", "editor"}:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
     return presentation
+
+
+async def get_project_for_user(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    user: User,
+    *,
+    owner_only: bool = False,
+    editable: bool = False,
+) -> Project:
+    query = (
+        select(Project, ProjectMember.role)
+        .outerjoin(ProjectMember, (ProjectMember.project_id == Project.id) & (ProjectMember.user_id == user.id))
+        .where(Project.id == project_id, or_(Project.owner_id == user.id, ProjectMember.user_id == user.id))
+        .options(selectinload(Project.owner))
+    )
+    row = (await db.execute(query)).first()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Проект не найден")
+    project, member_role = row
+    project.access_role = "owner" if project.owner_id == user.id else member_role
+    if owner_only and project.access_role != "owner":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Управлять проектом может только владелец")
+    if editable and project.access_role not in {"owner", "editor"}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
+    return project
 
 
 async def get_variant_for_user(
@@ -112,7 +138,7 @@ async def get_variant_for_user(
                 Variant.id == variant_id,
                 or_(Presentation.owner_id == user.id, PresentationMember.user_id == user.id),
             )
-            .options(selectinload(Presentation.template), selectinload(Presentation.owner))
+            .options(selectinload(Presentation.template), selectinload(Presentation.project), selectinload(Presentation.owner))
         )
     ).first()
     if row is None:

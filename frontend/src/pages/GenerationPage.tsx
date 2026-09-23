@@ -184,7 +184,7 @@ export function GenerationPage() {
           </Card>
           <Card>
             <h3>Версии скиллов и агентов</h3>
-            <p className="muted">Снимок фиксируется для каждого прогона — видно, какой версией пайплайна собрана колода.</p>
+            <p className="muted">Снимок фиксируется для каждого прогона — видно, какой версией пайплайна собрана колода</p>
             <ul className="skills">
               {data.skills.map((skill) => (
                 <li key={skill.name}>

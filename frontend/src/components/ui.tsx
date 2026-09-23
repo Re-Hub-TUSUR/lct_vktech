@@ -47,8 +47,16 @@ export function FullPageSpinner() {
   )
 }
 
-export function Badge({ tone = 'neutral', children }: { tone?: string; children: ReactNode }) {
-  return <span className={clsx('badge', `badge-${tone}`)}>{children}</span>
+export function Badge({
+  tone = 'neutral',
+  className,
+  children,
+}: {
+  tone?: string
+  className?: string
+  children: ReactNode
+}) {
+  return <span className={clsx('badge', `badge-${tone}`, className)}>{children}</span>
 }
 
 export function EmptyState({ icon, title, text, action }: { icon?: ReactNode; title: string; text?: string; action?: ReactNode }) {
@@ -112,14 +120,26 @@ export function Segmented<T extends string>({
   )
 }
 
+export interface SelectOption<T extends string = string> {
+  value: T
+  label: string
+  icon?: ReactNode
+}
+
 export function Select<T extends string>({
   value,
   options,
   onChange,
+  size = 'md',
+  placement = 'down',
+  className,
 }: {
   value: T
-  options: { value: T; label: string }[]
+  options: SelectOption<T>[]
   onChange: (value: T) => void
+  size?: 'sm' | 'md'
+  placement?: 'up' | 'down'
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
@@ -194,7 +214,15 @@ export function Select<T extends string>({
   }
 
   return (
-    <div className={clsx('select', open && 'is-open')} ref={rootRef}>
+    <div
+      className={clsx(
+        'select',
+        size === 'sm' && 'select--sm',
+        open && 'is-open',
+        className
+      )}
+      ref={rootRef}
+    >
       <button
         type="button"
         className="select__trigger"
@@ -204,17 +232,28 @@ export function Select<T extends string>({
         onClick={() => (open ? setOpen(false) : openList())}
         onKeyDown={onKeyDown}
       >
-        <span>{selected?.label ?? '—'}</span>
-        <ChevronDown size={18} className="select__chevron" />
+        <span className="select__trigger-text">
+          {selected?.icon && <span className="select__option-icon">{selected.icon}</span>}
+          <span>{selected?.label ?? '—'}</span>
+        </span>
+        <ChevronDown size={size === 'sm' ? 14 : 18} className="select__chevron" />
       </button>
       {open && (
-        <ul className="select__menu" id={listId} role="listbox">
+        <ul
+          className={clsx('select__menu', placement === 'up' && 'select__menu--up')}
+          id={listId}
+          role="listbox"
+        >
           {options.map((option, index) => (
             <li
               key={option.value}
               role="option"
               aria-selected={option.value === value}
-              className={clsx('select__option', option.value === value && 'is-selected', index === active && 'is-active')}
+              className={clsx(
+                'select__option',
+                option.value === value && 'is-selected',
+                index === active && 'is-active'
+              )}
               onMouseEnter={() => setActive(index)}
               onClick={(event) => {
                 // Field — это <label>: без preventDefault клик по пункту заново «нажмёт» кнопку и список откроется снова.
@@ -222,8 +261,11 @@ export function Select<T extends string>({
                 choose(index)
               }}
             >
-              <span>{option.label}</span>
-              {option.value === value && <Check size={16} />}
+              <span className="select__option-left">
+                {option.icon && <span className="select__option-icon">{option.icon}</span>}
+                <span>{option.label}</span>
+              </span>
+              {option.value === value && <Check size={size === 'sm' ? 14 : 16} />}
             </li>
           ))}
         </ul>

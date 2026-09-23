@@ -9,6 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, CreatedAt, Timestamps, UUIDPk
 
 if TYPE_CHECKING:
+    from app.models.project import Project
     from app.models.template import Template
     from app.models.user import User
 
@@ -19,6 +20,10 @@ class Presentation(UUIDPk, Timestamps, Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     template_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("templates.id", ondelete="SET NULL"), index=True
+    )
+    # Папка, к которой отнесена презентация. NULL — «без проекта». Удаление проекта не удаляет презентации.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True
     )
     title: Mapped[str] = mapped_column(String(300))
     # feature | product | project | initiative
@@ -36,6 +41,7 @@ class Presentation(UUIDPk, Timestamps, Base):
     access_role: ClassVar[str | None] = None
 
     template: Mapped[Optional["Template"]] = relationship("Template", lazy="raise")
+    project: Mapped[Optional["Project"]] = relationship("Project", lazy="raise")
     owner: Mapped["User"] = relationship("User", lazy="raise")
     files: Mapped[list["ContentFile"]] = relationship(
         back_populates="presentation",

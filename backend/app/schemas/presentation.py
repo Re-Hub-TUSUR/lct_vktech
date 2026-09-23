@@ -4,8 +4,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.project_types import ProjectColor, ProjectIcon
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme, TemplateSummary
+
+
+class ProjectSummary(BaseModel):
+    id: uuid.UUID
+    name: str
+    color: ProjectColor
+    icon: ProjectIcon
 
 Purpose = Literal["feature", "product", "project", "initiative"]
 PresentationStatus = Literal["draft", "generating", "ready", "failed"]
@@ -31,6 +39,7 @@ class PresentationCreate(BaseModel):
     purpose: Purpose = "product"
     brief: str = Field("", max_length=20000)
     template_id: uuid.UUID
+    project_id: uuid.UUID | None = None
     settings: GenerationSettings = Field(default_factory=GenerationSettings)
 
 
@@ -39,6 +48,8 @@ class PresentationUpdate(BaseModel):
     purpose: Purpose | None = None
     brief: str | None = Field(None, max_length=20000)
     template_id: uuid.UUID | None = None
+    # Explicit None должен уметь очищать проект («убрать из папки»), поэтому проверяем через model_fields_set, а не is not None.
+    project_id: uuid.UUID | None = None
     settings: GenerationSettings | None = None
 
 
@@ -66,6 +77,8 @@ class PresentationOut(BaseModel):
     status: PresentationStatus
     template_id: uuid.UUID | None
     template: TemplateSummary | None
+    project_id: uuid.UUID | None
+    project: ProjectSummary | None
     selected_variant_id: uuid.UUID | None
     access_role: PresentationAccessRole
     owner: PresentationUserOut
@@ -80,6 +93,7 @@ class PresentationListItem(BaseModel):
     purpose: Purpose
     status: PresentationStatus
     template_name: str | None
+    project: ProjectSummary | None
     theme: SlideTheme | None
     cover: Slide | None
     # Рендер обложки выбранного варианта, если он актуален.

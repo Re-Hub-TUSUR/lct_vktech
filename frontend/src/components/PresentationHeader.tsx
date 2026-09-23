@@ -6,7 +6,7 @@ import { Link } from 'react-router'
 import type { Presentation } from '../api/types'
 import { usePresentationRealtime } from '../api/queries'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
-import { Badge } from './ui'
+import { Badge, Button } from './ui'
 import { ShareDialog } from './ShareDialog'
 
 export type StepKey = 'settings' | 'generation' | 'variants' | 'audit' | 'export'
@@ -44,6 +44,7 @@ export function PresentationHeader({
   const [shareOpen, setShareOpen] = useState(false)
   usePresentationRealtime(presentation.id)
   const currentIndex = STEPS.findIndex((item) => item.key === step)
+  const canShare = presentation.access_role === 'owner'
   return (
     <div className="presentation-header">
       <div className="presentation-header__top">
@@ -67,13 +68,17 @@ export function PresentationHeader({
           </div>
           <h1>{presentation.title}</h1>
         </div>
-        {(actions || presentation.access_role === 'owner') && (
+        {(actions || canShare) && (
           <div className="presentation-header__actions">
             {actions}
-            {presentation.access_role === 'owner' && (
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShareOpen(true)}>
-                <Share2 size={16} /><span className="btn__label">Поделиться</span>
-              </button>
+            {canShare && (
+              <Button
+                variant="secondary"
+                icon={<Share2 size={16} />}
+                onClick={() => setShareOpen(true)}
+              >
+                Поделиться
+              </Button>
             )}
           </div>
         )}

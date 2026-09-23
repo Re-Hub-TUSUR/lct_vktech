@@ -15,9 +15,10 @@ from app.api.deps import (
     CurrentUser,
     DbSession,
     get_presentation_for_user,
+    get_project_for_user,
     get_template_for_user,
 )
-from app.api.serializers import content_file_out, generation_out, presentation_out, variant_out
+from app.api.serializers import content_file_out, generation_out, presentation_out, project_summary, variant_out
 from app.core.redis import (
     generation_channel,
     is_heartbeat_alive,
@@ -65,7 +66,7 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
                 (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
             )
             .where((Presentation.owner_id == user.id) | (PresentationMember.user_id == user.id))
-            .options(selectinload(Presentation.template), selectinload(Presentation.owner))
+            .options(selectinload(Presentation.template), selectinload(Presentation.project), selectinload(Presentation.owner))
             .order_by(Presentation.updated_at.desc())
         )
     )
@@ -96,6 +97,7 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
                 purpose=presentation.purpose,
                 status=presentation.status,
                 template_name=template.name if template else None,
+                project=project_summary(presentation.project) if presentation.project else None,
                 theme=SlideTheme(**template_theme(template)) if template and template.tokens else None,
                 cover=Slide.model_validate(shown.slides[0]) if shown and shown.slides else None,
                 cover_image=renders["slides"][0]["image"] if renders["slides"] else None,
@@ -112,9 +114,12 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
 @router.post("", response_model=PresentationOut, status_code=status.HTTP_201_CREATED)
 async def create_presentation(payload: PresentationCreate, user: CurrentUser, db: DbSession) -> PresentationOut:
     await get_template_for_user(db, payload.template_id, user)
+    if payload.project_id is not None:
+        await get_project_for_user(db, payload.project_id, user, editable=True)
     presentation = Presentation(
         owner_id=user.id,
         template_id=payload.template_id,
+        project_id=payload.project_id,
         title=payload.title.strip(),
         purpose=payload.purpose,
         brief=payload.brief.strip(),
@@ -141,8 +146,11 @@ async def update_presentation(
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("template_id") and changes["template_id"] != presentation.template_id:
         await get_template_for_user(db, changes["template_id"], user)
+    if "project_id" in changes and changes["project_id"] is not None:
+        await get_project_for_user(db, changes["project_id"], user, editable=True)
     for field, value in changes.items():
-        if value is not None:
+        # project_id — единственное поле, которое можно явно очистить (убрать презентацию из папки).
+        if value is not None or field == "project_id":
             setattr(presentation, field, value.strip() if isinstance(value, str) else value)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="settings")

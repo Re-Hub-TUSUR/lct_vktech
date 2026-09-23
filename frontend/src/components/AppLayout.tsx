@@ -32,6 +32,7 @@ export function AppLayout() {
           <NavLink to="/" end>
             Главная
           </NavLink>
+          <NavLink to="/presentations">Мои презентации</NavLink>
           <NavLink to="/templates">Шаблоны</NavLink>
         </nav>
         <div className="topbar__actions">

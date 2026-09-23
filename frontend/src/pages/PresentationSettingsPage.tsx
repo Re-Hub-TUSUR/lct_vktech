@@ -5,9 +5,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api } from '../api/client'
-import { queryKeys, useOptions, usePresentation, useTemplates } from '../api/queries'
+import { queryKeys, useOptions, usePresentation, useProjects, useTemplates } from '../api/queries'
 import type { GenerationSettings, Presentation, PresentationInput, Purpose } from '../api/types'
 import { FileDrop } from '../components/FileDrop'
+import { FolderIcon } from '../components/FolderIcon'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
@@ -30,6 +31,7 @@ interface FormState {
   purpose: Purpose
   brief: string
   templateId: string | null
+  projectId: string | null
   settings: GenerationSettings
 }
 
@@ -43,17 +45,29 @@ export function PresentationSettingsPage() {
   return <SettingsForm key={id ?? 'new'} presentation={existing.data} />
 }
 
-function initialState(presentation: Presentation | undefined, templateParam: string | null): FormState {
+function initialState(
+  presentation: Presentation | undefined,
+  templateParam: string | null,
+  projectParam: string | null
+): FormState {
   if (presentation) {
     return {
       title: presentation.title,
       purpose: presentation.purpose,
       brief: presentation.brief,
       templateId: presentation.template_id,
+      projectId: presentation.project_id ?? null,
       settings: { ...DEFAULT_SETTINGS, ...presentation.settings },
     }
   }
-  return { title: '', purpose: 'product', brief: '', templateId: templateParam, settings: DEFAULT_SETTINGS }
+  return {
+    title: '',
+    purpose: 'product',
+    brief: '',
+    templateId: templateParam,
+    projectId: projectParam,
+    settings: DEFAULT_SETTINGS,
+  }
 }
 
 function SettingsForm({ presentation }: { presentation?: Presentation }) {
@@ -62,9 +76,12 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const notify = useToast()
   const [searchParams] = useSearchParams()
   const templates = useTemplates()
+  const projects = useProjects()
   const options = useOptions()
 
-  const [form, setForm] = useState<FormState>(() => initialState(presentation, searchParams.get('template')))
+  const [form, setForm] = useState<FormState>(() =>
+    initialState(presentation, searchParams.get('template'), searchParams.get('project'))
+  )
   const [files, setFiles] = useState<File[]>([])
   const [existingFiles, setExistingFiles] = useState(presentation?.files ?? [])
   const [step, setStep] = useState<string | null>(null)
@@ -81,6 +98,19 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((current) => ({ ...current, [key]: value }))
   const setOption = <K extends keyof GenerationSettings>(key: K, value: GenerationSettings[K]) =>
     setForm((current) => ({ ...current, settings: { ...current.settings, [key]: value } }))
+
+  const projectOptions = [
+    {
+      value: '',
+      label: 'Без папки (Вне проектов)',
+      icon: <FolderIcon color="gray" icon="folder" size={18} />,
+    },
+    ...(projects.data ?? []).map((project) => ({
+      value: project.id,
+      label: project.name,
+      icon: <FolderIcon color={project.color} icon={project.icon} size={18} />,
+    })),
+  ]
 
   // Участник общей презентации может использовать личный шаблон владельца только внутри неё.
   const selectedTemplate = templates.data?.find((template) => template.id === form.templateId) ?? presentation?.template ?? undefined
@@ -103,6 +133,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
       purpose: form.purpose,
       brief: form.brief,
       template_id: form.templateId,
+      project_id: form.projectId,
       settings: form.settings,
     }
     try {
@@ -177,6 +208,13 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                   placeholder="Например: Цифровой дизайнер презентаций"
                   maxLength={300}
                   required
+                />
+              </Field>
+              <Field label="Папка проекта" hint="Группировка презентации в папку (например, «VK лекторий»)">
+                <Select
+                  value={form.projectId ?? ''}
+                  options={projectOptions}
+                  onChange={(val) => set('projectId', val ? val : null)}
                 />
               </Field>
               <Field label="Назначение">

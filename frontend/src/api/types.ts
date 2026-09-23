@@ -378,6 +378,13 @@ export interface ContentFile {
   created_at: string
 }
 
+export interface ProjectSummary {
+  id: Uuid
+  name: string
+  color: ProjectColor
+  icon: ProjectIcon
+}
+
 export interface Presentation {
   id: Uuid
   title: string
@@ -387,6 +394,8 @@ export interface Presentation {
   status: PresentationStatus
   template_id: Uuid | null
   template: TemplateSummary | null
+  project_id: Uuid | null
+  project: ProjectSummary | null
   selected_variant_id: Uuid | null
   access_role: PresentationAccessRole
   owner: Pick<User, 'id' | 'full_name' | 'email'>
@@ -401,6 +410,7 @@ export interface PresentationListItem {
   purpose: Purpose
   status: PresentationStatus
   template_name: string | null
+  project: ProjectSummary | null
   theme: SlideTheme | null
   cover: Slide | null
   /** Рендер обложки выбранного варианта (если превью готово). */
@@ -417,6 +427,7 @@ export interface PresentationInput {
   purpose: Purpose
   brief: string
   template_id: Uuid
+  project_id?: Uuid | null
   settings: GenerationSettings
 }
 
@@ -438,6 +449,78 @@ export interface ShareAccept {
   presentation_id: Uuid
   title: string
   role: PresentationAccessRole
+}
+
+// --- Проекты (папки для группировки презентаций) --------------------------
+
+export type ProjectColor =
+  | 'blue'
+  | 'purple'
+  | 'pink'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'mint'
+  | 'indigo'
+  | 'gray'
+
+export type ProjectIcon =
+  | 'folder'
+  | 'graduation-cap'
+  | 'book-open'
+  | 'cpu'
+  | 'brain'
+  | 'layers'
+  | 'rocket'
+  | 'briefcase'
+  | 'code'
+  | 'star'
+  | 'target'
+  | 'lightbulb'
+  | 'flame'
+  | 'users'
+  | 'megaphone'
+  | 'palette'
+  | 'flask-conical'
+export type ProjectAccessRole = 'owner' | 'editor' | 'viewer'
+
+export interface Project {
+  id: Uuid
+  name: string
+  color: ProjectColor
+  icon: ProjectIcon
+  access_role: ProjectAccessRole
+  owner: Pick<User, 'id' | 'full_name' | 'email'>
+  presentations_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectInput {
+  name: string
+  color: ProjectColor
+  icon: ProjectIcon
+}
+
+export interface ProjectMember {
+  user: Pick<User, 'id' | 'full_name' | 'email'>
+  role: ProjectAccessRole
+  created_at: string | null
+}
+
+export interface ProjectShareLink {
+  id: Uuid
+  token: string
+  role: ShareRole
+  is_active: boolean
+  created_at: string
+}
+
+export interface ProjectShareAccept {
+  project_id: Uuid
+  name: string
+  role: ProjectAccessRole
 }
 
 export interface Notification {

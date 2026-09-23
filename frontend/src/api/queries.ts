@@ -30,6 +30,9 @@ export const queryKeys = {
   members: (id: string) => ['presentations', id, 'members'] as const,
   shareLinks: (id: string) => ['presentations', id, 'share-links'] as const,
   notifications: ['notifications'] as const,
+  projects: ['projects'] as const,
+  projectMembers: (id: string) => ['projects', id, 'members'] as const,
+  projectShareLinks: (id: string) => ['projects', id, 'share-links'] as const,
 }
 
 export function useOptions() {
@@ -182,5 +185,28 @@ export function useNotifications() {
     queryKey: queryKeys.notifications,
     queryFn: () => api.get<import('./types').Notification[]>('/notifications'),
     refetchInterval: 30000,
+  })
+}
+
+export function useProjects() {
+  return useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: () => api.get<import('./types').Project[]>('/projects'),
+  })
+}
+
+export function useProjectMembers(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.projectMembers(projectId ?? ''),
+    queryFn: () => api.get<import('./types').ProjectMember[]>(`/projects/${projectId}/members`),
+    enabled: Boolean(projectId) && enabled,
+  })
+}
+
+export function useProjectShareLinks(projectId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.projectShareLinks(projectId ?? ''),
+    queryFn: () => api.get<import('./types').ProjectShareLink[]>(`/projects/${projectId}/share-links`),
+    enabled: Boolean(projectId) && enabled,
   })
 }
