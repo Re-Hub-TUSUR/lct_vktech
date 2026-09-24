@@ -17,5 +17,5 @@ prompt:
     Материалы: {sources}
     Верни JSON: {"facts": [{"text": "...", "source": "..."}], "numbers": [...], "theses": [...]}
 params:
-  extensions: [".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx", ".json"]
+  extensions: [".txt", ".md", ".csv", ".pdf", ".docx", ".pptx", ".xlsx", ".json", ".yaml", ".yml", ".png", ".jpg", ".jpeg", ".webp", ".svg"]
   brief_theses_limit: 12

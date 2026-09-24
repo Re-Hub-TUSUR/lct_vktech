@@ -20,8 +20,34 @@ export function FileDrop({
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
 
+  const isAccepted = (file: File): boolean => {
+    if (!accept || accept.trim() === '' || accept === '*') return true
+    const tokens = accept
+      .split(',')
+      .map((t) => t.trim().toLowerCase())
+      .filter(Boolean)
+    if (!tokens.length) return true
+
+    const fileName = file.name.toLowerCase()
+    const fileType = file.type.toLowerCase()
+
+    return tokens.some((token) => {
+      if (token.startsWith('.')) {
+        return fileName.endsWith(token)
+      }
+      if (token.endsWith('/*')) {
+        const prefix = token.slice(0, -1)
+        return fileType.startsWith(prefix)
+      }
+      return fileType === token
+    })
+  }
+
   const take = (list: FileList | null) => {
-    const files = Array.from(list ?? [])
+    let files = Array.from(list ?? [])
+    if (accept) {
+      files = files.filter(isAccepted)
+    }
     if (files.length) onFiles(multiple ? files : files.slice(0, 1))
   }
 

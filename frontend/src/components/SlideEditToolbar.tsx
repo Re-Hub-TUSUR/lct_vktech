@@ -14,7 +14,8 @@ interface SlideEditToolbarProps {
   onSelectShape?: (shapeId: string | null) => void
   onChange: (updates: SlideUpdate) => void
   onSave: () => Promise<void>
-  onTriggerImageUpload: () => void
+  onTriggerImageUpload?: () => void
+  onOpenImagePicker?: () => void
   onOpenDesignModal: () => void
   onClose: () => void
   isSaving: boolean
@@ -31,6 +32,7 @@ export function SlideEditToolbar({
   onChange,
   onSave,
   onTriggerImageUpload,
+  onOpenImagePicker,
   onOpenDesignModal,
   onClose,
   isSaving,
@@ -594,7 +596,11 @@ export function SlideEditToolbar({
                   disabled={isUploading}
                   onClick={() => {
                     setShowInsertMenu(false)
-                    onTriggerImageUpload()
+                    if (onOpenImagePicker) {
+                      onOpenImagePicker()
+                    } else if (onTriggerImageUpload) {
+                      onTriggerImageUpload()
+                    }
                   }}
                 >
                   <ImagePlus size={15} color="var(--color-primary)" />

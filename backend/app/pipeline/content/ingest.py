@@ -1,5 +1,6 @@
 """Извлечение текста из файлов контент-пакета, выдержки для модели и разбиение брифа на тезисы."""
 
+import json
 import logging
 import re
 import zipfile
@@ -14,9 +15,12 @@ logger = logging.getLogger(__name__)
 NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
 
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+_DATA_EXTENSIONS = {".json", ".yaml", ".yml"}
+
 
 def extract_text(path: Path, filename: str) -> str | None:
-    """Текст файла или None, если формат пока не поддержан (xlsx, json — следующий шаг)."""
+    """Текст файла или None, если формат не поддержан."""
     ext = Path(filename).suffix.lower()
     try:
         if ext in {".txt", ".md", ".csv"}:
@@ -28,6 +32,12 @@ def extract_text(path: Path, filename: str) -> str | None:
             return _docx_text(path)
         if ext == ".pptx":
             return _pptx_text(path)
+        if ext == ".json":
+            return _json_text(path)
+        if ext in {".yaml", ".yml"}:
+            return _yaml_text(path)
+        if ext in _IMAGE_EXTENSIONS:
+            return _image_description(path, filename)
     except Exception:
         logger.exception("Не удалось извлечь текст из %s", filename)
     return None
@@ -57,6 +67,81 @@ def _pptx_text(path: Path) -> str:
             if shape.has_text_frame and shape.text_frame.text.strip():
                 lines.append(shape.text_frame.text.strip())
     return "\n".join(lines)
+
+
+def _flatten(obj, *, prefix: str = "", depth: int = 0) -> list[str]:
+    """Рекурсивно разворачивает JSON/YAML объект в список «ключ: значение»."""
+    lines: list[str] = []
+    if depth > 6:
+        lines.append(f"{prefix}: [...]")
+        return lines
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            full_key = f"{prefix}.{k}" if prefix else str(k)
+            if isinstance(v, (dict, list)):
+                lines.extend(_flatten(v, prefix=full_key, depth=depth + 1))
+            else:
+                val = str(v) if v is not None else "null"
+                if len(val) > 200:
+                    val = val[:200] + "…"
+                lines.append(f"{full_key}: {val}")
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj[:50]):  # ограничение списков
+            if isinstance(item, (dict, list)):
+                lines.extend(_flatten(item, prefix=f"{prefix}[{i}]", depth=depth + 1))
+            else:
+                val = str(item) if item is not None else "null"
+                lines.append(f"{prefix}[{i}]: {val}")
+        if len(obj) > 50:
+            lines.append(f"{prefix}: … ещё {len(obj) - 50} элементов")
+    else:
+        val = str(obj) if obj is not None else "null"
+        lines.append(f"{prefix}: {val}")
+    return lines
+
+
+def _json_text(path: Path) -> str:
+    raw = _read_text(path)
+    try:
+        data = json.loads(raw)
+        return "\n".join(_flatten(data))
+    except json.JSONDecodeError:
+        # Если невалидный JSON — вернём как есть (может быть JSONL)
+        return raw
+
+
+def _yaml_text(path: Path) -> str:
+    try:
+        import yaml  # type: ignore[import-untyped]
+
+        raw = _read_text(path)
+        data = yaml.safe_load(raw)
+        if data is None:
+            return ""
+        return "\n".join(_flatten(data))
+    except ImportError:
+        # PyYAML не установлен — вернём сырой текст
+        return _read_text(path)
+    except Exception:
+        return _read_text(path)
+
+
+def _image_description(path: Path, filename: str) -> str:
+    """Метаданные картинки: размер, формат. Если Pillow доступен — добавляем точные размеры."""
+    ext = path.suffix.lower()
+    meta_parts = [f"Изображение: {filename}", f"Формат: {ext.lstrip('.').upper()}"]
+    try:
+        from PIL import Image  # type: ignore[import-untyped]
+
+        with Image.open(path) as img:
+            w, h = img.size
+            mode = img.mode
+            meta_parts.append(f"Размер: {w}×{h} пикселей")
+            meta_parts.append(f"Цветовое пространство: {mode}")
+    except Exception:
+        size_bytes = path.stat().st_size if path.exists() else 0
+        meta_parts.append(f"Размер файла: {size_bytes} байт")
+    return "\n".join(meta_parts)
 
 
 def sources_digest(files: list[tuple[str, str]], *, per_file: int, total: int) -> str:

@@ -15,11 +15,13 @@
 import copy
 import logging
 import math
+import re
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 
 from lxml import etree
+import pymupdf
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
@@ -173,16 +175,69 @@ def build_deck(
     return DeckBuild(data=data, targets=targets)
 
 
-def _user_image(spec: Slide) -> Path | None:
+def _ensure_raster(path: Path) -> Path:
+    """Если файл в формате SVG, растрирует его в PNG через PyMuPDF для python-pptx."""
+    if path.suffix.lower() != ".svg":
+        return path
+    png_path = path.parent / f"{path.name}.png"
+    try:
+        if not png_path.exists() or png_path.stat().st_mtime < path.stat().st_mtime:
+            with pymupdf.open(stream=path.read_bytes(), filetype="svg") as doc:
+                if len(doc) > 0:
+                    pix = doc[0].get_pixmap(dpi=150)
+                    pix.save(str(png_path))
+    except Exception as exc:
+        logger.warning("Не удалось растрировать SVG %s: %s", path, exc)
+        return path
+    return png_path if png_path.exists() else path
+
+
+def _slide_image(spec: Slide) -> Path | None:
+    """Унифицированное разрешение пути к картинке слайда (контент-пакет, user_images или прямой путь)."""
     if not spec.image or not spec.image.url:
         return None
-    path = storage_path("user_images", Path(spec.image.url).name)
-    return path if path.exists() else None
+    url = spec.image.url.strip()
+    if not url:
+        return None
+
+    # 1. Контент-пакет презентации: /presentations/{id}/files/{file_id}[/content]
+    match = re.search(r"/presentations/([0-9a-fA-F-]+)/files/([0-9a-fA-F-]+)", url)
+    if match:
+        pres_id, file_id = match.group(1), match.group(2)
+        content_dir = storage_path("content", pres_id)
+        if content_dir.is_dir():
+            matches = [f for f in content_dir.glob(f"{file_id}.*") if f.is_file() and not f.name.endswith(".svg.png")]
+            if not matches:
+                matches = [f for f in content_dir.glob(f"{file_id}") if f.is_file()]
+            if not matches:
+                matches = [f for f in content_dir.glob(f"{file_id}.*") if f.is_file()]
+            if matches:
+                return _ensure_raster(matches[0])
+
+    # 2. Пользовательские изображения: storage_path("user_images", filename)
+    filename = Path(url).name
+    if filename:
+        user_img = storage_path("user_images", filename)
+        if user_img.is_file():
+            return _ensure_raster(user_img)
+
+    # 3. Прямой путь на файловой системе
+    direct_path = Path(url)
+    try:
+        if direct_path.is_file():
+            return _ensure_raster(direct_path)
+    except OSError:
+        pass
+
+    return None
+
+
+_user_image = _slide_image
 
 
 def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
     """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
-    path = _user_image(spec) if spec.kind == "image_text" else None
+    path = _slide_image(spec) if spec.kind in {"image_text", "title"} else None
     placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
     if placeholders:
         idx = placeholders[0]["id"] - PH_BASE
@@ -195,8 +250,16 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
         return
     if path is None:
         return
-    x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
-    slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+    if spec.kind == "title":
+        if pattern.get("images"):
+            x, y, w, h = pattern["images"][0]["bbox"]
+            slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+        else:
+            logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
+            slide.shapes.add_picture(str(path), int(ctx.width * 0.06), int(ctx.height * 0.06), logo_w, logo_h)
+    else:
+        x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
+        slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
 
 
 def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx, chart_colors, chrome) -> Targets:
@@ -339,6 +402,30 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                 x, y, w, _ = area
                 box = slide.shapes.add_textbox(x, y, w, int(ctx.height * 0.12))
                 _write(box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, font_name=sub_font)
+        if kind == "title" and spec.image:
+            path = _slide_image(spec)
+            if path is not None:
+                img_ph = next(
+                    (
+                        p
+                        for p in placeholders
+                        if hasattr(p, "insert_picture")
+                        and getattr(p.placeholder_format, "type", None) in {PP_PLACEHOLDER.PICTURE, PP_PLACEHOLDER.BITMAP}
+                    ),
+                    None,
+                )
+                if img_ph is not None:
+                    img_ph.insert_picture(str(path))
+                    used.add(img_ph.shape_id)
+                else:
+                    logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
+                    slide.shapes.add_picture(
+                        str(path),
+                        int(ctx.width * 0.06),
+                        int(ctx.height * 0.06),
+                        logo_w,
+                        logo_h,
+                    )
     elif kind in {"bullets", "agenda"}:
         items = spec.bullets
         if kind == "agenda":
@@ -501,15 +588,13 @@ def _image_text(slide, spec: Slide, area, ctx: _Ctx) -> None:
     img_width = x + w - left
     img_height = h
 
-    if spec.image and spec.image.url:
-        img_name = Path(spec.image.url).name
+    path = _slide_image(spec)
+    if path is not None:
         try:
-            local_path = storage_path("user_images", img_name)
-            if local_path.exists():
-                slide.shapes.add_picture(str(local_path), left, y, img_width, img_height)
-                return
+            slide.shapes.add_picture(str(path), left, y, img_width, img_height)
+            return
         except Exception:
-            pass
+            logger.exception("Не удалось вставить картинку %s в слайд", path)
 
     frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, y, img_width, img_height)
     frame.fill.solid()

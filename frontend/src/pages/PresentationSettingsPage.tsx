@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { FileText, Paperclip, Sparkles, Trash2, X } from 'lucide-react'
+import { FileCode, FileText, Sparkles, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
-import { api } from '../api/client'
+import { api, contentFileUrl } from '../api/client'
 import { queryKeys, useOptions, usePresentation, useProjects, useTemplates } from '../api/queries'
 import type { GenerationSettings, Presentation, PresentationInput, Purpose } from '../api/types'
 import { FileDrop } from '../components/FileDrop'
@@ -14,7 +14,7 @@ import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
 import { Button, Card, ErrorState, Field, FullPageSpinner, Segmented, Select, Spinner, Toggle } from '../components/ui'
-import { countLabel, formatSize } from '../lib/format'
+import { ALL_CONTENT_EXTENSIONS, countLabel, formatSize, getCategoryInfo, getContentCategory } from '../lib/format'
 
 const DEFAULT_SETTINGS: GenerationSettings = {
   slides_count: 12,
@@ -68,6 +68,27 @@ function initialState(
     projectId: projectParam,
     settings: DEFAULT_SETTINGS,
   }
+}
+
+function StagedImageThumbnail({ file }: { file: File }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file])
+
+  if (!url) return <FileText size={20} className="file-icon" />
+  return (
+    <img
+      src={url}
+      alt={file.name}
+      className="file-thumbnail"
+      onError={(e) => {
+        e.currentTarget.style.display = 'none'
+      }}
+    />
+  )
 }
 
 function SettingsForm({ presentation }: { presentation?: Presentation }) {
@@ -159,7 +180,10 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
     }
   }
 
-  const accept = (options.data?.content_extensions ?? ['.txt', '.md', '.pdf', '.docx']).join(',')
+  const accept = (options.data?.content_extensions && options.data.content_extensions.length > 0
+    ? options.data.content_extensions
+    : ALL_CONTENT_EXTENSIONS
+  ).join(',')
 
   return (
     <form className="stack" onSubmit={submit}>
@@ -255,35 +279,93 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               multiple
               onFiles={(added) => setFiles((current) => [...current, ...added])}
               title="Добавить файлы"
-              hint={`Поддерживаются: ${accept.replaceAll(',', ', ')}`}
+              hint="Поддерживаются: документы (PDF, DOCX, TXT, MD, CSV, PPTX, XLSX), изображения (PNG, JPG, WEBP, SVG), данные (JSON, YAML)"
             />
             {(existingFiles.length > 0 || files.length > 0) && (
               <ul className="file-list">
-                {existingFiles.map((file) => (
-                  <li key={file.id}>
-                    <FileText size={16} />
-                    <span>{file.filename}</span>
-                    <small>{formatSize(file.size)} · загружен</small>
-                    <button type="button" className="icon-btn" onClick={() => removeExisting(file.id)} aria-label="Удалить">
-                      <Trash2 size={16} />
-                    </button>
-                  </li>
-                ))}
-                {files.map((file, index) => (
-                  <li key={`${file.name}-${index}`}>
-                    <Paperclip size={16} />
-                    <span>{file.name}</span>
-                    <small>{formatSize(file.size)} · будет загружен</small>
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
-                      aria-label="Убрать"
-                    >
-                      <X size={16} />
-                    </button>
-                  </li>
-                ))}
+                {existingFiles.map((file) => {
+                  const cat = getContentCategory(file.filename, file.content_type)
+                  const catInfo = getCategoryInfo(cat)
+                  const isImg = cat === 'image'
+                  return (
+                    <li key={file.id} className="file-list-item">
+                      {isImg && presentation ? (
+                        <img
+                          src={contentFileUrl(presentation.id, file.id)}
+                          alt={file.filename}
+                          className="file-thumbnail"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      ) : cat === 'data' ? (
+                        <FileCode size={20} className="file-icon" />
+                      ) : (
+                        <FileText size={20} className="file-icon" />
+                      )}
+                      <div className="file-info">
+                        <span className="file-name" title={file.filename}>
+                          {file.filename}
+                        </span>
+                        <div className="file-meta">
+                          <span className={clsx('badge', catInfo.badgeClass)}>{catInfo.label}</span>
+                          {file.has_text ? (
+                            <span className="badge badge-success">Текст извлечён</span>
+                          ) : presentation?.status === 'generating' ? (
+                            <span className="badge badge-info">
+                              <Spinner size={10} /> Обработка…
+                            </span>
+                          ) : (
+                            <span className="badge">Загружен</span>
+                          )}
+                          <small>{formatSize(file.size)}</small>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => removeExisting(file.id)}
+                        aria-label="Удалить"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </li>
+                  )
+                })}
+                {files.map((file, index) => {
+                  const cat = getContentCategory(file.name, file.type)
+                  const catInfo = getCategoryInfo(cat)
+                  const isImg = cat === 'image'
+                  return (
+                    <li key={`${file.name}-${index}`} className="file-list-item">
+                      {isImg ? (
+                        <StagedImageThumbnail file={file} />
+                      ) : cat === 'data' ? (
+                        <FileCode size={20} className="file-icon" />
+                      ) : (
+                        <FileText size={20} className="file-icon" />
+                      )}
+                      <div className="file-info">
+                        <span className="file-name" title={file.name}>
+                          {file.name}
+                        </span>
+                        <div className="file-meta">
+                          <span className={clsx('badge', catInfo.badgeClass)}>{catInfo.label}</span>
+                          <span className="badge">Будет загружен</span>
+                          <small>{formatSize(file.size)}</small>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setFiles((current) => current.filter((_, i) => i !== index))}
+                        aria-label="Убрать"
+                      >
+                        <X size={16} />
+                      </button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </Card>

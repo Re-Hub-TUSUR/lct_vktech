@@ -29,6 +29,7 @@ import type {
   AuditIssue,
   AuditReport,
   CheckKind,
+  Presentation,
   ResolveResponse,
   Severity,
   Slide,
@@ -38,6 +39,7 @@ import type {
   SlideUpdate,
   VariantDetail,
 } from '../api/types'
+import { ImagePickerModal } from '../components/ImagePickerModal'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
@@ -110,7 +112,12 @@ export function AuditPage() {
   return (
     <div className="stack">
       {header}
-      <AuditWorkspace detail={variant.data} report={audit.data} canEdit={presentation.data.access_role !== 'viewer'} />
+      <AuditWorkspace
+        detail={variant.data}
+        report={audit.data}
+        canEdit={presentation.data.access_role !== 'viewer'}
+        presentation={presentation.data}
+      />
     </div>
   )
 }
@@ -193,7 +200,17 @@ function applyFieldChange(slide: Slide, path: string, value: string): Slide {
   return slide
 }
 
-function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; report: AuditReport; canEdit: boolean }) {
+function AuditWorkspace({
+  detail,
+  report,
+  canEdit,
+  presentation,
+}: {
+  detail: VariantDetail
+  report: AuditReport
+  canEdit: boolean
+  presentation: Presentation
+}) {
   const queryClient = useQueryClient()
   const notify = useToast()
   const { variant, theme } = detail
@@ -229,6 +246,7 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
   const [showDesignModal, setShowDesignModal] = useState(false)
+  const [showImagePicker, setShowImagePicker] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
 
@@ -485,6 +503,31 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
         ...updates,
       },
     }))
+  }
+
+  const handleSelectContentImage = (imageUrl: string, filename: string) => {
+    if (!currentSlide) return
+    const patch: SlideUpdate = {
+      image: {
+        prompt: `Изображение из контент-пакета: ${filename}`,
+        url: imageUrl,
+        status: 'generated',
+      },
+    }
+    if (activeSlide.kind !== 'image_text' && activeSlide.kind !== 'title') {
+      patch.kind = 'image_text'
+      if (!activeSlide.bullets || activeSlide.bullets.length === 0) {
+        patch.bullets = ['Описание к изображению']
+      }
+    }
+    handleSlideChange(patch)
+    notify('Изображение выбрано из контент-пакета')
+  }
+
+  const handleRemoveSlideImage = () => {
+    if (!currentSlide) return
+    handleSlideChange({ image: null })
+    notify('Изображение удалено со слайда')
   }
 
   const handleChangeKind = (newKind: SlideKind) => {
@@ -815,7 +858,8 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
             onSelectShape={setSelectedShapeId}
             onChange={handleSlideChange}
             onSave={handleSaveSlide}
-            onTriggerImageUpload={() => fileInputRef.current?.click()}
+            onTriggerImageUpload={() => setShowImagePicker(true)}
+            onOpenImagePicker={() => setShowImagePicker(true)}
             onOpenDesignModal={() => setShowDesignModal(true)}
             onClose={handleCloseEdit}
             isSaving={updateSlideMutation.isPending}
@@ -942,7 +986,7 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                     onFieldChange={handleFieldChange}
                     onImageClick={() => {
                       setActiveElement('image')
-                      fileInputRef.current?.click()
+                      setShowImagePicker(true)
                     }}
                   />
                 </div>
@@ -1392,6 +1436,22 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
           onSelectPattern={handleSelectPattern}
           onSelectLayout={handleSelectLayout}
           onClose={() => setShowDesignModal(false)}
+        />
+      )}
+
+      {currentSlide && (
+        <ImagePickerModal
+          isOpen={showImagePicker}
+          presentationId={presentation.id}
+          contentFiles={presentation.files ?? []}
+          currentImageUrl={activeSlide.image?.url}
+          onClose={() => setShowImagePicker(false)}
+          onSelectImage={handleSelectContentImage}
+          onUploadImage={async (file) => {
+            await uploadImageMutation.mutateAsync(file)
+          }}
+          onRemoveImage={activeSlide.image?.url ? handleRemoveSlideImage : undefined}
+          isUploading={uploadImageMutation.isPending}
         />
       )}
     </>

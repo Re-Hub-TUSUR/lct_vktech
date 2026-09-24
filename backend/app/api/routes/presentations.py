@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +14,7 @@ from app.api.deps import (
     Arq,
     CurrentUser,
     DbSession,
+    OptionalUser,
     get_presentation_for_user,
     get_project_for_user,
     get_template_for_user,
@@ -54,6 +55,27 @@ logger = logging.getLogger(__name__)
 
 def _content_extensions() -> set[str]:
     return set(get_skill("content_analyzer").params.get("extensions") or [])
+
+
+CONTENT_MIME_TYPES: dict[str, str] = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+    ".yaml": "application/yaml",
+    ".yml": "application/yaml",
+    ".txt": "text/plain; charset=utf-8",
+    ".md": "text/markdown; charset=utf-8",
+    ".csv": "text/csv; charset=utf-8",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+CONTENT_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 
 
 @router.get("", response_model=list[PresentationListItem])
@@ -204,6 +226,41 @@ async def upload_content_files(
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="files")
     return [content_file_out(file) for file in created]
+
+
+@router.get("/{presentation_id}/files/{file_id}/content")
+async def get_content_file(
+    presentation_id: uuid.UUID,
+    file_id: uuid.UUID,
+    user: OptionalUser,
+    db: DbSession,
+) -> FileResponse:
+    if user is not None:
+        await get_presentation_for_user(db, presentation_id, user)
+    content_file = await db.scalar(
+        select(ContentFile).where(ContentFile.id == file_id, ContentFile.presentation_id == presentation_id)
+    )
+    if content_file is None or content_file.presentation_id != presentation_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл не найден")
+    path = Path(content_file.path)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Файл на диске не найден")
+
+    ext = path.suffix.lower()
+    media_type = CONTENT_MIME_TYPES.get(ext) or content_file.content_type or "application/octet-stream"
+    headers: dict[str, str] = {}
+    if ext in CONTENT_IMAGE_EXTENSIONS:
+        headers["Cache-Control"] = "private, max-age=604800"
+    else:
+        headers["Cache-Control"] = "private, no-cache"
+
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=content_file.filename,
+        content_disposition_type="inline",
+        headers=headers,
+    )
 
 
 @router.delete("/{presentation_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
