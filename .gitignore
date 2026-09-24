@@ -23,3 +23,9 @@ Thumbs.db
 
 # Claude
 .claude/
+
+# Teamwork / AI agents
+.agents/
+ORIGINAL_REQUEST.md
+PROJECT.md
+TEST_INFRA.md
