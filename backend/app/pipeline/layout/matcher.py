@@ -13,7 +13,7 @@ from collections import Counter
 from typing import Any
 
 from app.pipeline.export.pattern_fill import ItemContent, content_for, units
-from app.schemas.slide import Slide
+from app.schemas.slide import Slide, SlideShape
 
 # Тип содержимого слайда → подходящие типы паттернов в порядке предпочтения.
 KIND_TYPES: dict[str, tuple[str, ...]] = {
@@ -186,6 +186,11 @@ def fits(slide: Slide, pattern: dict[str, Any] | None) -> bool:
     return pattern is not None and pattern_score(slide, pattern) is not None
 
 
+def own_shapes(slide: Slide) -> list[SlideShape]:
+    """Фигуры, добавленные пользователем, — у них нет фигуры-источника в шаблоне."""
+    return [shape for shape in slide.shapes if shape.template_shape_id is None]
+
+
 def assign_patterns(
     slides: list[Slide],
     patterns: list[dict[str, Any]] | None,
@@ -207,13 +212,15 @@ def assign_patterns(
 
     def apply(slide: Slide, pattern: dict[str, Any]) -> None:
         nonlocal previous
+        if slide.pattern_id != pattern["id"]:
+            # Фигуры шаблона принадлежат своему слайду-примеру: при смене паттерна берём фигуры нового
+            # (иначе сборка сочтёт его декор удалённым), а добавленные пользователем фигуры сохраняем.
+            # Паттерн прежний — фигуры не трогаем: пользователь мог часть из них удалить или сдвинуть.
+            slide.shapes = own_shapes(slide) + [SlideShape.model_validate(s) for s in pattern.get("shapes") or []]
         slide.pattern_id = pattern["id"]
         if pattern.get("layout_key"):
             slide.layout_key = pattern["layout_key"]
             slide.layout_name = names.get(pattern["layout_key"], slide.layout_name)
-        if not slide.shapes and pattern.get("shapes"):
-            from app.schemas.slide import SlideShape
-            slide.shapes = [SlideShape.model_validate(s) for s in pattern["shapes"]]
         used[pattern["id"]] += 1
         previous = pattern["id"]
 
@@ -230,6 +237,8 @@ def assign_patterns(
             score -= REPEAT_PENALTY * used[pattern["id"]] + (2 if pattern["id"] == previous else 0)
             scored.append((score, pattern))
         if not scored:
+            # Слайд уходит на макет: фигуры бывшего слайда-примера на нём не нужны.
+            slide.shapes = own_shapes(slide)
             slide.pattern_id = None
             previous = None
             continue

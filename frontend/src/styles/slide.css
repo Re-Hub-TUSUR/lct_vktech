@@ -431,23 +431,31 @@
   outline: 2px dashed var(--color-primary, #0077ff);
 }
 
-/* Объекты окружения и фигуры на слайде */
+/* Объекты окружения и фигуры на слайде — в порядке собранного .pptx: фигуры шаблона (подложки карточек,
+   маркеры) лежат под текстом, фигуры пользователя сборка кладёт поверх всего. Слои сами клики не ловят. */
 .slide-shapes-layer {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  z-index: 10;
 }
-/* В просмотре фигуры шаблона — подложка под текст (как в собранном .pptx), а не поверх него.
-   В редакторе слой остаётся сверху, иначе фигуру не выделить и не перетащить. */
-.slide-shapes-layer:not(.is-editable) {
+.slide-shapes-layer--back {
   z-index: 1;
 }
 .slide__inner,
 .slide__frame {
   z-index: 2;
 }
-.slide-shapes-layer.is-editable {
+.slide-shapes-layer--front {
+  z-index: 3;
+}
+/* В редакторе контейнеры текста пропускают клики к фигурам под ними; сам текст, картинка и диаграмма кликабельны. */
+.slide--editable .slide__inner,
+.slide--editable .slide__frame {
+  pointer-events: none;
+}
+.slide--editable [contenteditable='true'],
+.slide--editable .slide__image,
+.slide--editable .slide__chart-box {
   pointer-events: auto;
 }
 .slide-shape-item {
@@ -457,10 +465,11 @@
   justify-content: center;
   user-select: none;
   transition: box-shadow 0.15s ease;
-  pointer-events: auto;
+  pointer-events: none;
   box-sizing: border-box;
 }
 .slide-shapes-layer.is-editable .slide-shape-item {
+  pointer-events: auto;
   cursor: pointer;
 }
 .slide-shape-item.is-selected {
@@ -468,6 +477,18 @@
   outline: 2px dashed #0077ff;
   outline-offset: 3px;
   box-shadow: 0 0 0 4px rgba(0, 119, 255, 0.25);
+}
+/* Рамка и ручки выделенной фигуры шаблона: сверху, но сама рамка клики не перехватывает. */
+.slide-shape-selection {
+  position: absolute;
+  box-sizing: border-box;
+  outline: 2px dashed #0077ff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(0, 119, 255, 0.25);
+  pointer-events: none;
+}
+.slide-shape-selection > * {
+  pointer-events: auto;
 }
 .slide-shape-move-handle {
   position: absolute;

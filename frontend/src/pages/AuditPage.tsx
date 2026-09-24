@@ -19,7 +19,7 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
@@ -915,8 +915,10 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
         <section className="audit-stage">
           {currentSlide && (
             <>
-              <div className="audit-stage-card">
+              {/* Слайд вписывается в свободную часть экрана целиком: пропорции шаблона — в --slide-aspect */}
+              <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect) } as CSSProperties}>
                 <div
+                  className="audit-stage-canvas"
                   onDoubleClick={() => {
                     if (canEdit && !isEditing) setIsEditing(true)
                   }}

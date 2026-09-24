@@ -20,3 +20,6 @@ dist/
 .DS_Store
 Thumbs.db
 ~$*.pptx
+
+# Claude
+.claude/

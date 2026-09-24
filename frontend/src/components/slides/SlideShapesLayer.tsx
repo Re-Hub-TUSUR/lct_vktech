@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { Move, Trash2 } from 'lucide-react'
-import { useRef } from 'react'
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
 
 import type { SlideShape, SlideTheme } from '../../api/types'
 
@@ -14,6 +14,38 @@ interface SlideShapesLayerProps {
   onDeleteShape?: (shapeId: string) => void
 }
 
+/** Фигура слайда-примера шаблона (подложка карточки, маркер, плашка), а не добавленная пользователем. */
+function isTemplateShape(shape: SlideShape): boolean {
+  return shape.template_shape_id != null
+}
+
+/** Скругление углов — как у фигуры в собранном .pptx. */
+function cornerRadius(shape: SlideShape, aspect: number): string {
+  if (shape.kind === 'circle') return '50%'
+  if (shape.kind === 'line') return '2px'
+  if (!isTemplateShape(shape)) return shape.kind === 'rect' ? '1.2cqw' : '9999px'
+  if (shape.kind === 'rect') return '0'
+  // Скруглённый прямоугольник шаблона — не капсула: в PowerPoint радиус по умолчанию — шестая часть короткой
+  // стороны, а у крупных карточек шаблоны обычно ставят его меньше. Точного радиуса парсер не сохраняет,
+  // поэтому у больших фигур он ограничен 1.2% ширины слайда. Размеры — доли слайда, высота переводится в cqw.
+  const shortSide = Math.min(shape.width * 100, (shape.height * 100) / aspect)
+  return `${Math.min(shortSide / 6, 1.2).toFixed(3)}cqw`
+}
+
+function boxStyle(shape: SlideShape): CSSProperties {
+  return {
+    left: `${shape.x * 100}%`,
+    top: `${shape.y * 100}%`,
+    width: `${shape.width * 100}%`,
+    height: shape.kind === 'line' ? '4px' : `${shape.height * 100}%`,
+  }
+}
+
+/**
+ * Фигуры слайда в два слоя — в том же порядке, что и в собранном .pptx: фигуры шаблона лежат под текстом
+ * (слой --back), фигуры пользователя сборка добавляет поверх всего (слой --front). У выделенной фигуры
+ * шаблона рамка и ручки рисуются в верхнем слое, а сама она остаётся под текстом и его не закрывает.
+ */
 export function SlideShapesLayer({
   shapes,
   theme,
@@ -23,20 +55,24 @@ export function SlideShapesLayer({
   onUpdateShape,
   onDeleteShape,
 }: SlideShapesLayerProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-
   // Фигуру шаблона, у которой парсер не распознал заливку (градиент, картинка, сложный эффект),
   // рисовать нечем: закрасить её акцентом — значит положить цветной блок во весь слайд поверх
   // текста. Такие фигуры пропускаем; у фигур, добавленных пользователем, акцент остаётся.
-  const visible = (shapes || []).filter((shape) => shape.color || shape.template_shape_id == null)
-
+  const visible = (shapes || []).filter((shape) => shape.color || !isTemplateShape(shape))
   if (visible.length === 0) return null
 
-  const startDrag = (e: React.PointerEvent, shape: SlideShape, immediate: boolean) => {
+  const aspect = theme.aspect || 16 / 9
+  const back = visible.filter(isTemplateShape)
+  const front = visible.filter((shape) => !isTemplateShape(shape))
+  const selectedBack = editable ? back.find((shape) => shape.id === selectedShapeId) : undefined
+
+  const slideRect = (e: ReactPointerEvent) => (e.currentTarget as HTMLElement).closest('.slide')?.getBoundingClientRect()
+
+  const startDrag = (e: ReactPointerEvent, shape: SlideShape, immediate: boolean) => {
     if (!editable) return
     e.stopPropagation()
 
-    const container = containerRef.current?.getBoundingClientRect()
+    const container = slideRect(e)
     if (!container) return
 
     const startX = e.clientX
@@ -73,7 +109,7 @@ export function SlideShapesLayer({
     window.addEventListener('pointerup', onPointerUp)
   }
 
-  const handleShapePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
+  const handleShapePointerDown = (e: ReactPointerEvent, shape: SlideShape) => {
     if (!editable) return
     e.stopPropagation()
     onSelectShape?.(shape.id)
@@ -87,14 +123,10 @@ export function SlideShapesLayer({
     startDrag(e, shape, false)
   }
 
-  const handleMoveHandlePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
-    startDrag(e, shape, true)
-  }
-
-  const handleResizePointerDown = (e: React.PointerEvent, shape: SlideShape) => {
+  const handleResizePointerDown = (e: ReactPointerEvent, shape: SlideShape) => {
     if (!editable) return
     e.stopPropagation()
-    const container = containerRef.current?.getBoundingClientRect()
+    const container = slideRect(e)
     if (!container) return
 
     const startX = e.clientX
@@ -124,98 +156,106 @@ export function SlideShapesLayer({
     window.addEventListener('pointerup', onPointerUp)
   }
 
-  return (
-    <div
-      ref={containerRef}
-      className={clsx('slide-shapes-layer', editable && 'is-editable')}
-      onClick={(e) => {
-        if (editable && e.target === containerRef.current) {
-          onSelectShape?.(null)
-        }
-      }}
-    >
-      {visible.map((shape) => {
-        const isSelected = editable && selectedShapeId === shape.id
-        const color = shape.color || theme.accent
-        const isLine = shape.kind === 'line'
-        const isCircle = shape.kind === 'circle'
-        const isPill = shape.kind === 'badge' || shape.kind === 'pill'
+  const handles = (shape: SlideShape) => (
+    <>
+      <span
+        className="slide-shape-move-handle"
+        title="Переместить фигуру"
+        onPointerDown={(e) => startDrag(e, shape, true)}
+      >
+        <Move size={11} />
+      </span>
+      <button
+        type="button"
+        className="slide-shape-delete-btn"
+        title="Удалить фигуру"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          onDeleteShape?.(shape.id)
+        }}
+      >
+        <Trash2 size={12} />
+      </button>
+      {shape.kind !== 'line' && (
+        <span
+          className="slide-shape-resize-handle"
+          title="Изменить размер"
+          onPointerDown={(e) => handleResizePointerDown(e, shape)}
+        />
+      )}
+    </>
+  )
 
-        const style: React.CSSProperties = {
-          left: `${shape.x * 100}%`,
-          top: `${shape.y * 100}%`,
-          width: `${shape.width * 100}%`,
-          height: isLine ? '4px' : `${shape.height * 100}%`,
-          backgroundColor: color,
-          opacity: shape.opacity ?? 1,
-          borderRadius: isCircle ? '50%' : isPill ? '9999px' : isLine ? '2px' : '1.2cqw',
-          border: shape.border ? '2px solid var(--slide-text)' : undefined,
-        }
+  const renderShape = (shape: SlideShape) => {
+    const isSelected = editable && selectedShapeId === shape.id
+    const isLine = shape.kind === 'line'
+    const template = isTemplateShape(shape)
 
-        return (
-          <div
-            key={shape.id}
-            className={clsx('slide-shape-item', `slide-shape-item--${shape.kind}`, isSelected && 'is-selected')}
-            style={style}
-            onPointerDown={(e) => handleShapePointerDown(e, shape)}
+    const style: CSSProperties = {
+      ...boxStyle(shape),
+      backgroundColor: shape.color || theme.accent,
+      opacity: shape.opacity ?? 1,
+      borderRadius: cornerRadius(shape, aspect),
+      border: shape.border ? '2px solid var(--slide-text)' : undefined,
+    }
+
+    return (
+      <div
+        key={shape.id}
+        className={clsx(
+          'slide-shape-item',
+          `slide-shape-item--${shape.kind}`,
+          template && 'slide-shape-item--template',
+          isSelected && 'is-selected'
+        )}
+        style={style}
+        onPointerDown={(e) => handleShapePointerDown(e, shape)}
+      >
+        {!isLine && (
+          <span
+            className="slide-shape-text"
+            contentEditable={editable && isSelected}
+            suppressContentEditableWarning
+            style={{
+              fontFamily: shape.font_family ? `"${shape.font_family}", var(--slide-heading-font)` : undefined,
+              fontSize: shape.font_size ? `${shape.font_size}em` : undefined,
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              const txt = e.currentTarget.textContent || ''
+              onUpdateShape?.(shape.id, { text: txt || null })
+            }}
           >
-            {/* Shape text content */}
-            {!isLine && (
-              <span
-                className="slide-shape-text"
-                contentEditable={editable && isSelected}
-                suppressContentEditableWarning
-                style={{
-                  fontFamily: shape.font_family ? `"${shape.font_family}", var(--slide-heading-font)` : undefined,
-                  fontSize: shape.font_size ? `${shape.font_size}em` : undefined,
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  const txt = e.currentTarget.textContent || ''
-                  onUpdateShape?.(shape.id, { text: txt || null })
-                }}
-              >
-                {shape.text || (isSelected && !shape.text ? '' : null)}
-              </span>
-            )}
+            {shape.text || (isSelected && !shape.text ? '' : null)}
+          </span>
+        )}
+        {/* Ручки фигуры шаблона — в верхнем слое (см. ниже), иначе их закроет текст */}
+        {isSelected && !template && handles(shape)}
+      </div>
+    )
+  }
 
-            {/* Move handle in top-left corner */}
-            {isSelected && (
-              <span
-                className="slide-shape-move-handle"
-                title="Переместить фигуру"
-                onPointerDown={(e) => handleMoveHandlePointerDown(e, shape)}
-              >
-                <Move size={11} />
-              </span>
-            )}
-
-            {/* Quick delete floating button */}
-            {isSelected && (
-              <button
-                type="button"
-                className="slide-shape-delete-btn"
-                title="Удалить фигуру"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDeleteShape?.(shape.id)
-                }}
-              >
-                <Trash2 size={12} />
-              </button>
-            )}
-
-            {/* Resize handle in bottom-right corner */}
-            {isSelected && !isLine && (
-              <span
-                className="slide-shape-resize-handle"
-                title="Изменить размер"
-                onPointerDown={(e) => handleResizePointerDown(e, shape)}
-              />
-            )}
-          </div>
-        )
-      })}
-    </div>
+  return (
+    <>
+      {back.length > 0 && (
+        <div className={clsx('slide-shapes-layer', 'slide-shapes-layer--back', editable && 'is-editable')}>
+          {back.map(renderShape)}
+        </div>
+      )}
+      {(front.length > 0 || selectedBack) && (
+        <div className={clsx('slide-shapes-layer', 'slide-shapes-layer--front', editable && 'is-editable')}>
+          {front.map(renderShape)}
+          {selectedBack && (
+            <div
+              className="slide-shape-selection"
+              style={{ ...boxStyle(selectedBack), borderRadius: cornerRadius(selectedBack, aspect) }}
+            >
+              {handles(selectedBack)}
+            </div>
+          )}
+        </div>
+      )}
+    </>
   )
 }

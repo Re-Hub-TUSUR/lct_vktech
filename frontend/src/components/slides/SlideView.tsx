@@ -164,6 +164,14 @@ export function SlideView({
         className
       )}
       style={style}
+      onPointerDown={
+        editable && onSelectShape
+          ? (e) => {
+              // Клик мимо фигуры и её ручек снимает выделение (текст при этом редактируется как обычно).
+              if (!(e.target as HTMLElement).closest('.slide-shape-item, .slide-shape-selection')) onSelectShape(null)
+            }
+          : undefined
+      }
     >
       {skin?.image && <img className="slide__bg" src={skin.image} alt="" draggable={false} loading="lazy" />}
       {framed ? (
@@ -207,7 +215,8 @@ export function SlideView({
   )
 }
 
-/** Слайд как картинка из собранного .pptx; проблемы аудита — рамками поверх элементов. */
+/** Слайд как картинка из собранного .pptx; проблемы аудита — рамками поверх элементов.
+ *  Фигуры слайда (и шаблонные, и добавленные вручную) уже есть на картинке — поверх их не рисуем. */
 function RenderedSlide({
   slide,
   render,
@@ -249,13 +258,6 @@ function RenderedSlide({
           style={box(rect)}
         />
       ))}
-      {slide.shapes && slide.shapes.length > 0 && (
-        <SlideShapesLayer
-          shapes={slide.shapes}
-          theme={{ accent: '#0077FF', accents: [] } as unknown as SlideTheme}
-          editable={false}
-        />
-      )}
       {number !== undefined && <span className="slide__number slide__number--render">{number}</span>}
     </div>
   )

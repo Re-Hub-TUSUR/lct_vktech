@@ -652,9 +652,20 @@ def _timeline(slide, spec: Slide, area, ctx: _Ctx) -> None:
             _run(frame.add_paragraph(), item.text, ctx, size=14, color=ctx.muted)
 
 
+def _changed(value, original, tolerance: float = 1e-3) -> bool:
+    """Правка из редактора: координаты сравниваются с допуском (редактор округляет их до тысячных)."""
+    if isinstance(value, (int, float)) and isinstance(original, (int, float)):
+        return abs(value - original) > tolerance
+    return (value or None) != (original or None)
+
+
 def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) -> None:
     existing = {s.shape_id: s for s in slide.shapes}
     pattern_shapes = pattern_shapes or []
+    # Фигуры слайда-примера в том виде, в каком их разобрал парсер: сравнивая с ними, сборка переносит
+    # в клон только правки пользователя. Цвет парсер знает приблизительно (без прозрачности, оттенков
+    # темы и карты цветов мастера) — перекрашивать нетронутую фигуру шаблона значит исказить её.
+    originals = {ps.get("template_shape_id"): ps for ps in pattern_shapes if ps.get("template_shape_id")}
 
     # Если шаблонные фигуры были удалены пользователем из spec.shapes:
     if pattern_shapes:
@@ -695,22 +706,24 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
 
         # Фигура шаблона, которой нет среди фигур слайда верхнего уровня, лежит внутри группы
         # или удалена сборкой вместе с лишней карточкой — пересоздавать её нельзя: будут дубли и «сироты».
-        if tpl_id and tpl_id not in existing:
-            continue
-        # Если это существующая фигура шаблона на клонированном слайде:
-        if tpl_id and tpl_id in existing:
+        # Фигура чужого слайда-примера (после смены паттерна или на макете) к этому слайду не относится.
+        if tpl_id:
+            original = originals.get(tpl_id)
+            if tpl_id not in existing or original is None:
+                continue
             sp = existing[tpl_id]
-            sp.left = left
-            sp.top = top
-            sp.width = width
-            sp.height = height
-            if color:
+            if any(_changed(value, original.get(key)) for key, value in (("x", x), ("y", y), ("width", w), ("height", h))):
+                sp.left = left
+                sp.top = top
+                sp.width = width
+                sp.height = height
+            if color and str(color).upper() != str(original.get("color") or "").upper():
                 try:
                     sp.fill.solid()
                     sp.fill.fore_color.rgb = ctx.rgb(fill_color)
                 except Exception:
                     pass
-            if text and sp.has_text_frame:
+            if text and sp.has_text_frame and _changed(text, original.get("text")):
                 sp.text_frame.text = text
             continue
 

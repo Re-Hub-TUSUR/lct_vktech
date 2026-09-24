@@ -1,5 +1,6 @@
 import { BarChart3, Check, Palette, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import type { ChartData, ChartSeries } from '../api/types'
 import { Button } from './ui'
@@ -180,7 +181,9 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
     update({ ...localChart, series: nextSeries })
   }
 
-  return (
+  // В body, как Modal: панель редактора лежит внутри рабочей области аудита, а в фокус-режиме
+  // та закреплена поверх страницы — без портала оверлей оказался бы под верхней панелью.
+  return createPortal(
     <div className="chart-editor-overlay" onClick={onClose}>
       <div className="chart-editor-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 780 }}>
         <div className="chart-editor-header">
@@ -465,7 +468,8 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

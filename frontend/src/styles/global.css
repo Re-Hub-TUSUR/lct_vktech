@@ -2536,13 +2536,11 @@ a:hover > .template-card,
   width: 100%;
 }
 
-/* Интерактивный тур по замечаниям аудита (Next Issue) */
+/* Интерактивный тур по замечаниям аудита (Next Issue): стоит в потоке под слайдом и ничего не перекрывает */
 .audit-tour-bar {
-  position: absolute;
-  bottom: 40px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 40;
+  position: relative;
+  align-self: center;
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -2574,11 +2572,11 @@ a:hover > .template-card,
 @keyframes tourSlideUpFade {
   from {
     opacity: 0;
-    transform: translate(-50%, 14px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: none;
   }
 }
 
@@ -2721,6 +2719,8 @@ a:hover > .template-card,
 }
 
 .audit-stage-card {
+  /* Колонка сцены — flex: без запрета сжатия карточка становится ниже слайда и обрезает его низ */
+  flex-shrink: 0;
   background: var(--color-surface);
   border-radius: 0 !important;
   border: 1px solid var(--color-border);
@@ -3929,6 +3929,47 @@ a:hover > .template-card,
     max-height: none;
     overflow-y: auto;
     padding: 0;
+  }
+  /* Слайд вписывается в свободную высоту колонки целиком, как холст в PowerPoint: его ширина — меньшая
+     из ширины колонки и высоты свободного места, умноженной на пропорции слайда. Так он не обрезается
+     ни в просмотре, ни в редакторе (у него панель выше), ни в фокус-режиме. */
+  .audit-stage-card {
+    flex: 1 1 0;
+    min-height: 180px;
+    container-type: size;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+  .audit-stage-canvas {
+    flex: none;
+    width: min(100cqw, 100cqh * var(--slide-aspect, 1.7778));
+    background: var(--color-surface);
+    /* Рамка тенью, а не border: border прибавил бы к высоте холста пару пикселей сверх свободного места */
+    box-shadow: 0 0 0 1px var(--color-border), 0 2px 10px rgba(0, 0, 0, 0.04);
+  }
+  /* Фокус-режим: рабочая область на всё окно под верхней панелью (шапка презентации и шаги уходят под неё),
+     поэтому слайд вписывается в полную высоту экрана, а не только в ширину без боковых панелей. */
+  .audit-layout.is-zen {
+    position: fixed;
+    top: var(--topbar-height);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 15;
+    width: auto;
+    max-width: none;
+    height: auto;
+    margin: 0;
+    padding: var(--space-4) var(--space-6) var(--space-5);
+    background: var(--color-bg);
+  }
+  .audit-layout.is-zen .audit-stage {
+    max-width: 1600px;
   }
   .audit-panel {
     grid-column: 3;

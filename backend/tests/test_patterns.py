@@ -4,6 +4,7 @@ import re
 from io import BytesIO
 
 import pytest
+from lxml import etree
 from pptx import Presentation
 
 from app.pipeline.export.pattern_fill import fill_table, shape_elements
@@ -13,7 +14,7 @@ from app.pipeline.layout.matcher import assign_patterns, fits, pattern_score
 from app.pipeline.parsing.patterns import CATEGORIES, USABLE_TYPES, is_usable
 from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.theme import slide_theme
-from app.schemas.slide import Column, Slide, TableData
+from app.schemas.slide import Column, Slide, SlideShape, TableData
 
 BRIEF = "Сервис собирает презентации в фирменном стиле за минуты."
 # Текст-заглушка слайдов-примеров, который не должен попадать в готовую колоду.
@@ -122,6 +123,67 @@ def test_keep_reassigns_only_misfits(parsed):
     before = [slide.pattern_id for slide in slides]
     assign_patterns(slides, result.patterns, position=0, keep=True)
     assert [slide.pattern_id for slide in slides] == before
+
+
+def test_template_shapes_follow_pattern(parsed):
+    """Фигуры шаблона меняются вместе с паттерном; фигуры пользователя и его удаления сохраняются."""
+    _, result = parsed
+    by_id = {pattern["id"]: pattern for pattern in result.patterns}
+    slide = next(
+        (s for d in compose(parsed) for s in d.slides if s.pattern_id and by_id[s.pattern_id].get("shapes")), None
+    )
+    if slide is None:
+        pytest.skip("в шаблоне нет паттернов с фигурами")
+    user = SlideShape(kind="circle")
+
+    # Паттерн прежний: удалённая пользователем фигура шаблона не возвращается.
+    slide.shapes = [*slide.shapes[1:], user]
+    before = [shape.id for shape in slide.shapes]
+    assign_patterns([slide], result.patterns, keep=True)
+    assert [shape.id for shape in slide.shapes] == before
+
+    # У слайда чужой паттерн (как после автоисправления аудита): у подобранного взамен — его фигуры.
+    foreign = next(p for p in result.patterns if p.get("shapes") and pattern_score(slide, p) is None)
+    slide.pattern_id = foreign["id"]
+    slide.shapes = [SlideShape.model_validate(shape) for shape in foreign["shapes"]] + [user]
+    assign_patterns([slide], result.patterns, keep=True)
+    assert slide.pattern_id != foreign["id"]
+    expected = [shape["template_shape_id"] for shape in (by_id.get(slide.pattern_id or "") or {}).get("shapes") or []]
+    assert [shape.template_shape_id for shape in slide.shapes if shape.template_shape_id is not None] == expected
+    assert user in slide.shapes
+
+
+def test_untouched_template_shapes_keep_their_look(parsed):
+    """Сборка переносит в клон только правки пользователя: нетронутые фигуры шаблона не перекрашиваются
+    и не сдвигаются (цвет парсер знает без прозрачности и оттенков темы)."""
+    path, result = parsed
+    by_id = {pattern["id"]: pattern for pattern in result.patterns}
+    slide = next(
+        (s for s in compose(parsed)[0].slides if s.pattern_id and any(shape.color for shape in s.shapes)), None
+    )
+    if slide is None:
+        pytest.skip("в шаблоне нет паттернов с цветными фигурами")
+    theme = slide_theme(result.tokens, result.layouts, result.roles)
+    source = Presentation(str(path)).slides[by_id[slide.pattern_id]["slide_index"]]
+    colored = {shape.template_shape_id for shape in slide.shapes if shape.color}
+    before = {sp.shape_id: etree.tostring(sp._element.spPr) for sp in source.shapes if sp.shape_id in colored}
+
+    def build(spec: Slide) -> Presentation:
+        deck = build_deck(path, [spec], roles=result.roles, theme=theme, patterns=result.patterns)
+        return Presentation(BytesIO(deck.data))
+
+    built = build(slide).slides[0]
+    after = {sp.shape_id: etree.tostring(sp._element.spPr) for sp in built.shapes if sp.shape_id in before}
+    if not after:
+        pytest.skip("цветные фигуры паттерна лежат внутри групп или уходят вместе с лишними элементами")
+    assert after == {shape_id: before[shape_id] for shape_id in after}, "нетронутые фигуры шаблона изменились"
+
+    moved = slide.model_copy(deep=True)
+    target = next(shape for shape in moved.shapes if shape.template_shape_id in after)
+    target.x = round(target.x + 0.05, 3)
+    deck = build(moved)
+    shifted = next(sp for sp in deck.slides[0].shapes if sp.shape_id == target.template_shape_id)
+    assert abs(shifted.left - int(target.x * deck.slide_width)) <= 1, "правка пользователя должна попасть в .pptx"
 
 
 def test_deck_is_built_from_patterns(parsed):
