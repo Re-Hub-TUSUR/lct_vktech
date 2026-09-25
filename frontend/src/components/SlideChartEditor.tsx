@@ -9,6 +9,7 @@ interface SlideChartEditorProps {
   chart: ChartData
   onChange: (updatedChart: ChartData) => void
   onClose: () => void
+  onDelete?: () => void
 }
 
 const PALETTES = [
@@ -68,7 +69,7 @@ const PRESETS: Record<string, Partial<ChartData>> = {
   },
 }
 
-export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorProps) {
+export function SlideChartEditor({ chart, onChange, onClose, onDelete }: SlideChartEditorProps) {
   const [localChart, setLocalChart] = useState<ChartData>({
     type: chart.type || 'bar',
     caption: chart.caption || '',
@@ -462,7 +463,19 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </div>
         </div>
 
-        <div className="chart-editor-footer" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+        <div className="chart-editor-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+          {onDelete ? (
+            <Button
+              variant="danger"
+              icon={<Trash2 size={15} />}
+              onClick={() => {
+                onDelete()
+                onClose()
+              }}
+            >
+              Удалить диаграмму
+            </Button>
+          ) : <div />}
           <Button variant="primary" onClick={onClose}>
             Применить изменения
           </Button>

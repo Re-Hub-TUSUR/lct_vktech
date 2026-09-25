@@ -3,6 +3,7 @@
 .slide {
   position: relative;
   width: 100%;
+  aspect-ratio: var(--slide-aspect, 1.777778);
   container-type: inline-size;
   overflow: hidden;
   background: var(--slide-bg);
@@ -12,6 +13,7 @@
   /* Слайды часто лежат внутри кнопок-миниатюр, а у кнопок text-align: center. */
   text-align: left;
   user-select: none;
+  box-sizing: border-box;
 }
 .slide__inner {
   position: absolute;
@@ -27,7 +29,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   pointer-events: none;
 }
 .slide--skinned::after {
@@ -46,7 +48,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
   pointer-events: none;
 }
@@ -582,13 +584,13 @@
 }
 
 .slide-assistant-messages {
-  flex: 1;
+  flex: 1 1 auto;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 4px 2px;
-  max-height: 380px;
+  min-height: 0;
 }
 
 .slide-assistant-bubble {
@@ -657,11 +659,39 @@
   margin-top: 4px;
 }
 
+.slide-assistant-chips-wrapper {
+  margin-top: auto;
+  margin-bottom: 0;
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  padding-top: 6px;
+  flex-shrink: 0;
+}
+
+.slide-assistant-chips-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.slide-assistant-chips-toggle:hover {
+  color: var(--color-primary, #0077ff);
+}
+
 .slide-assistant-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 6px 0;
+  padding: 6px 0 2px 0;
 }
 
 .slide-assistant-chip {
@@ -694,6 +724,7 @@
   align-items: flex-end;
   padding-top: 8px;
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .slide-assistant-textarea {

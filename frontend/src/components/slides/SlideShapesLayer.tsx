@@ -7,6 +7,7 @@ import type { SlideShape, SlideTheme } from '../../api/types'
 interface SlideShapesLayerProps {
   shapes: SlideShape[]
   theme: SlideTheme
+  slideAccent?: string
   editable?: boolean
   selectedShapeId?: string | null
   onSelectShape?: (shapeId: string | null) => void
@@ -49,6 +50,7 @@ function boxStyle(shape: SlideShape): CSSProperties {
 export function SlideShapesLayer({
   shapes,
   theme,
+  slideAccent,
   editable = false,
   selectedShapeId,
   onSelectShape,
@@ -194,7 +196,7 @@ export function SlideShapesLayer({
 
     const style: CSSProperties = {
       ...boxStyle(shape),
-      backgroundColor: shape.color || theme.accent,
+      backgroundColor: shape.color || slideAccent || theme.accent,
       opacity: shape.opacity ?? 1,
       borderRadius: cornerRadius(shape, aspect),
       border: shape.border ? '2px solid var(--slide-text)' : undefined,
@@ -220,8 +222,12 @@ export function SlideShapesLayer({
             style={{
               fontFamily: shape.font_family ? `"${shape.font_family}", var(--slide-heading-font)` : undefined,
               fontSize: shape.font_size ? `${shape.font_size}em` : undefined,
+              fontWeight: shape.bold ? 700 : undefined,
             }}
-            onPointerDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => {
+              e.stopPropagation()
+              onSelectShape?.(shape.id)
+            }}
             onBlur={(e) => {
               const txt = e.currentTarget.textContent || ''
               onUpdateShape?.(shape.id, { text: txt || null })

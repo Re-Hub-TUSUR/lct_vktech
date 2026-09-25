@@ -216,6 +216,11 @@ input[type='checkbox'] {
   justify-content: space-between;
   padding: 4px 6px 8px;
 }
+.notifications__panel header strong {
+  font-family: var(--font-display);
+  font-weight: var(--font-display-weight);
+  font-size: 15px;
+}
 .notifications__panel ul,
 .notifications__panel p {
   margin: 0;
@@ -273,7 +278,7 @@ input[type='checkbox'] {
   margin: 0;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow: visible;
 }
 .share-list li {
   display: flex;
@@ -282,8 +287,23 @@ input[type='checkbox'] {
   padding: 9px 12px;
   border-bottom: 1px solid var(--color-border);
 }
-.share-list li:last-child { border-bottom: none; }
+.share-list li:first-child {
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+.share-list li:last-child {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+  border-bottom: none;
+}
 .share-list li.is-inactive { opacity: 0.55; }
+.share-list__role-select {
+  position: relative;
+}
+.share-list__role-select .select__menu {
+  right: 0;
+  left: auto;
+}
 .share-list__avatar {
   display: grid;
   place-items: center;
@@ -2513,29 +2533,6 @@ a:hover > .template-card,
   transition: grid-template-columns 0.2s ease;
 }
 
-/* Фокус-режим (хоткей Z): скрываем список слайдов и боковую панель. Сетка у нас с явными grid-column/grid-row,
-   поэтому в фокусе всё сводим в одну колонку. */
-.audit-layout.is-zen {
-  grid-template-columns: minmax(0, 1fr);
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
-}
-.audit-layout.is-zen .audit-slides,
-.audit-layout.is-zen .audit-panel {
-  display: none !important;
-}
-.audit-layout.is-zen .audit-summary-bar,
-.audit-layout.is-zen .slide-edit-topbar {
-  grid-column: 1;
-}
-.audit-layout.is-zen .audit-stage {
-  grid-column: 1;
-  max-width: 1100px;
-  margin: 0 auto;
-  width: 100%;
-}
-
 /* Интерактивный тур по замечаниям аудита (Next Issue): стоит в потоке под слайдом и ничего не перекрывает */
 .audit-tour-bar {
   position: relative;
@@ -2719,14 +2716,31 @@ a:hover > .template-card,
 }
 
 .audit-stage-card {
-  /* Колонка сцены — flex: без запрета сжатия карточка становится ниже слайда и обрезает его низ */
   flex-shrink: 0;
-  background: var(--color-surface);
-  border-radius: 0 !important;
-  border: 1px solid var(--color-border);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: transparent;
   padding: 0;
+  overflow: visible;
+  width: 100%;
+}
+
+.audit-stage-canvas {
+  width: 100%;
+  max-height: calc(100vh - var(--topbar-height, 60px) - 210px);
+  max-width: calc((100vh - var(--topbar-height, 60px) - 210px) * var(--slide-aspect, 1.77778));
+  aspect-ratio: var(--slide-aspect, 1.77778);
+  background: var(--color-surface);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--color-border), 0 4px 20px rgba(0, 0, 0, 0.08);
   overflow: hidden;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: max-width 0.2s ease, max-height 0.2s ease;
 }
 
 .audit-stage-card .slide,
@@ -2801,11 +2815,17 @@ a:hover > .template-card,
   background: var(--color-info);
 }
 
+.audit-stage-bottom-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .audit-editor-toggle-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 7px 14px;
   border-radius: 8px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
@@ -2814,6 +2834,10 @@ a:hover > .template-card,
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
+}
+
+.audit-editor-toggle-btn--icon {
+  padding: 7px 10px;
 }
 
 .audit-editor-toggle-btn:hover {
@@ -2827,55 +2851,124 @@ a:hover > .template-card,
   color: var(--color-primary);
 }
 
-/* Заметки докладчика */
-.audit-speaker-notes-box {
+/* Заметки докладчика — сворачиваемая полоса под слайдом.
+   Свёрнута: одна строка с началом текста. Раскрыта: текст прокручивается внутри полосы (max-height),
+   поэтому заметки никогда не выталкивают слайд и не растягивают страницу. */
+.audit-notes {
+  flex: none;
   background: var(--color-surface-muted);
+  border: 1px solid transparent;
   border-radius: 12px;
-  padding: 12px 18px;
-  min-height: 52px;
+  overflow: hidden;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.audit-notes.is-open {
+  border-color: var(--color-border);
+}
+.audit-notes__head {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 14px 9px 18px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.audit-notes__head:hover {
+  color: var(--color-text);
+}
+.audit-notes__head:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 12px;
+}
+.audit-notes__title {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 650;
+}
+.audit-notes__preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.audit-notes__preview.is-empty {
+  font-style: italic;
+  opacity: 0.6;
+}
+.audit-notes.is-open .audit-notes__head {
+  flex: none;
+}
+.audit-notes.is-open .audit-notes__title {
+  flex: 1 1 auto;
+}
+.audit-notes__chevron {
+  flex: none;
+  margin-left: auto;
+  transition: transform 0.2s ease;
+}
+.audit-notes.is-open .audit-notes__chevron {
+  transform: rotate(180deg);
+}
+
+/* Плавное раскрытие без замера высоты: строка сетки 0fr → 1fr */
+.audit-notes__body {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden; /* свёрнутый блок не попадает в Tab-порядок и в чтение скринридером */
+  transition: grid-template-rows 0.22s ease, visibility 0s linear 0.22s;
+}
+.audit-notes.is-open .audit-notes__body {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition: grid-template-rows 0.22s ease, visibility 0s;
+}
+.audit-notes__inner {
+  min-height: 0;
+  overflow-y: auto;
+  max-height: 148px;
+  padding: 0 18px;
+}
+.audit-notes.is-open .audit-notes__inner {
+  padding-bottom: 14px;
 }
 
 .audit-speaker-notes-placeholder {
+  margin: 0;
   font-size: 13px;
   color: var(--color-text-muted);
-  font-weight: 650;
-  font-family: var(--font-display);
-  text-transform: none;
-}
-
-.audit-speaker-notes-content {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.audit-speaker-notes-title {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--color-text-muted);
-  font-family: var(--font-display);
-  text-transform: none;
-  letter-spacing: normal;
+  font-style: italic;
 }
 
 .audit-speaker-notes-text {
+  margin: 0;
   font-size: 13.5px;
   color: var(--color-text-muted);
   line-height: 1.5;
   font-weight: 400;
   font-family: var(--font-sans);
+  white-space: pre-wrap;
 }
 
 .audit-speaker-notes-textarea {
+  display: block;
   background: transparent;
   border: 1px dashed var(--color-border-strong);
   border-radius: 8px;
   padding: 8px;
   width: 100%;
-  min-height: 52px;
+  min-height: 84px;
   resize: vertical;
   font-size: 13.5px;
   font-family: var(--font-sans);
@@ -2888,6 +2981,13 @@ a:hover > .template-card,
 .audit-speaker-notes-textarea:focus {
   border-color: var(--color-primary);
   background: var(--color-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audit-notes__body,
+  .audit-notes__chevron {
+    transition: none;
+  }
 }
 
 .audit-stage__meta {
@@ -3887,23 +3987,47 @@ a:hover > .template-card,
   position: absolute;
   right: 8px;
   top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 11px;
-  background: rgba(0, 119, 255, 0.85);
-  color: #fff;
-  padding: 3px 8px;
-  border-radius: 4px;
-  pointer-events: none;
+  background: transparent;
+  pointer-events: auto;
   opacity: 0;
   transition: opacity 0.15s;
+  z-index: 10;
 }
 .slide__chart-box.is-editable-chart:hover .slide__chart-hint {
   opacity: 1;
 }
+.slide__chart-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.slide__chart-delete-btn:hover {
+  background: rgb(220, 38, 38);
+}
 
-/* На широком экране область аудита фиксированной высоты (--audit-h задаёт AuditPage): колонки прокручиваются каждая сама. */
+/* Широкий экран. Слайд ВСЕГДА показывается целиком и в полную ширину колонки, в своих пропорциях
+   (--slide-aspect у шаблона): он не обрезается и не сжимается, чтобы «влезть» в высоту окна.
+   Высота рабочей области — не жёсткая, а «минимум до низа экрана» (--audit-h считает AuditPage): на большом мониторе
+   область заполняет экран, на низком растёт вместе со слайдом и страница просто прокручивается.
+   Миниатюры и панель замечаний имеют contain: size — их собственное содержимое не влияет на высоту строки сетки
+   (её задаёт слайд), они растягиваются на неё и прокручиваются внутри себя. */
 @media (min-width: 1201px) {
   .audit-layout {
-    height: var(--audit-h, auto);
+    height: auto;
+    min-height: var(--audit-h, 0px);
     grid-template-columns: 125px minmax(0, 1fr) 420px;
     grid-template-rows: auto minmax(0, 1fr);
     align-items: stretch;
@@ -3913,11 +4037,17 @@ a:hover > .template-card,
     grid-column: 1 / 3;
     grid-row: 1;
   }
+  /* Миниатюры и панель замечаний «прилипают» под верхней панелью и не выше окна: при прокрутке низкой страницы
+     они остаются на виду, и кнопки «Скрыть / Исправить» не уезжают за край экрана. */
   .audit-slides {
     grid-column: 1;
     grid-row: 2;
-    position: static;
+    position: sticky;
+    top: calc(var(--topbar-height) + var(--space-4));
+    align-self: start;
+    contain: size;
     min-height: 0;
+    height: min(100%, calc(100vh - var(--topbar-height) - var(--space-4) * 2));
     max-height: none;
     overflow-y: auto;
   }
@@ -3927,56 +4057,46 @@ a:hover > .template-card,
     position: static;
     min-height: 0;
     max-height: none;
-    overflow-y: auto;
+    overflow: visible;
     padding: 0;
   }
-  /* Слайд вписывается в свободную высоту колонки целиком, как холст в PowerPoint: его ширина — меньшая
-     из ширины колонки и высоты свободного места, умноженной на пропорции слайда. Так он не обрезается
-     ни в просмотре, ни в редакторе (у него панель выше), ни в фокус-режиме. */
   .audit-stage-card {
-    flex: 1 1 0;
-    min-height: 180px;
-    container-type: size;
+    flex: none;
+    width: 100%;
     display: flex;
-    align-items: center;
     justify-content: center;
+    align-items: center;
     background: transparent;
     border: 0;
     box-shadow: none;
     overflow: visible;
   }
   .audit-stage-canvas {
-    flex: none;
-    width: min(100cqw, 100cqh * var(--slide-aspect, 1.7778));
+    width: 100%;
+    max-height: calc(100vh - var(--topbar-height, 60px) - 210px);
+    max-width: calc((100vh - var(--topbar-height, 60px) - 210px) * var(--slide-aspect, 1.77778));
+    aspect-ratio: var(--slide-aspect, 1.77778);
     background: var(--color-surface);
-    /* Рамка тенью, а не border: border прибавил бы к высоте холста пару пикселей сверх свободного места */
-    box-shadow: 0 0 0 1px var(--color-border), 0 2px 10px rgba(0, 0, 0, 0.04);
-  }
-  /* Фокус-режим: рабочая область на всё окно под верхней панелью (шапка презентации и шаги уходят под неё),
-     поэтому слайд вписывается в полную высоту экрана, а не только в ширину без боковых панелей. */
-  .audit-layout.is-zen {
-    position: fixed;
-    top: var(--topbar-height);
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 15;
-    width: auto;
-    max-width: none;
-    height: auto;
-    margin: 0;
-    padding: var(--space-4) var(--space-6) var(--space-5);
-    background: var(--color-bg);
-  }
-  .audit-layout.is-zen .audit-stage {
-    max-width: 1600px;
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px var(--color-border), 0 4px 20px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: max-width 0.2s ease, max-height 0.2s ease;
   }
   .audit-panel {
     grid-column: 3;
     grid-row: 1 / 3;
+    position: sticky;
+    top: calc(var(--topbar-height) + var(--space-4));
+    align-self: start;
+    contain: size;
     min-height: 0;
-    height: 100%;
-    max-height: 100%;
+    height: min(100%, calc(100vh - var(--topbar-height) - var(--space-4) * 2));
+    max-height: none;
     overflow: hidden;
   }
   .audit-panel .audit-issues-scroll,
@@ -4743,4 +4863,1189 @@ a:hover > .template-card,
 .text-btn:hover {
   text-decoration: underline;
 }
+
+
+/* Полноэкранный показ всей презентации (кнопка «на весь экран» в аудите) */
+.slideshow {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.slideshow.is-idle {
+  cursor: none;
+}
+.slideshow__stage {
+  /* Слайд вписывается в экран целиком: ширина — меньшая из ширины окна и высоты, умноженной на пропорции. */
+  width: min(100vw, calc(100vh * var(--slideshow-aspect, 1.7778)));
+  cursor: pointer;
+}
+.slideshow.is-idle .slideshow__stage {
+  cursor: none;
+}
+.slideshow__slide {
+  width: 100%;
+}
+.slideshow__btn {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.25s ease, background 0.15s ease;
+}
+.slideshow__btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.8);
+}
+.slideshow__btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.slideshow__close {
+  top: 16px;
+  right: 16px;
+}
+.slideshow__nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 52px;
+}
+.slideshow__nav--prev {
+  left: 16px;
+}
+.slideshow__nav--next {
+  right: 16px;
+}
+.slideshow__counter {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.25s ease;
+}
+.slideshow__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.slideshow__progress span {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+/* Пока мышь неподвижна, интерфейс скрыт, чтобы не мешать слайду (кроме кнопок, если это сенсорный экран — они появятся по касанию). */
+.slideshow.is-idle .slideshow__btn,
+.slideshow.is-idle .slideshow__counter {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Диалог доступа: блок «Ваша роль» для редактора и наблюдателя и подсказка про ссылки */
+.share-dialog__me {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.share-dialog__me-label {
+  font-weight: 600;
+}
+.share-dialog__me .muted {
+  flex-basis: 100%;
+  margin: 0;
+}
+.share-dialog__hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ==========================================================================
+   Всплывающие заметки докладчика поверх слайда (Audit Slide Notes Overlay)
+   ========================================================================== */
+.audit-slide-notes-overlay {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 50;
+  pointer-events: auto;
+  animation: slideNotesFadeUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.audit-slide-notes-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.audit-slide-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.audit-slide-notes-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.audit-slide-notes-body {
+  padding: 10px 14px;
+}
+
+.audit-slide-notes-textarea {
+  width: 100%;
+  height: 80px;
+  min-height: 55px;
+  max-height: 160px;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text);
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.audit-slide-notes-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.15);
+}
+
+.audit-slide-notes-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+@keyframes slideNotesFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.audit-editor-toggle-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.audit-editor-toggle-btn--primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: #ffffff;
+}
+
+/* ==========================================================================
+   Полноэкранный редактор презентаций в стиле Google Презентаций
+   ========================================================================== */
+.gslides-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  position: fixed;
+  inset: 0;
+  background: #f8fafc;
+  color: var(--color-text);
+  z-index: 1000;
+  overflow: hidden;
+  user-select: none;
+  font-family: var(--font-sans);
+}
+
+/* Верхняя строка Google Slides */
+.gslides-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--color-border);
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.gslides-header__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gslides-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.gslides-back-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.gslides-title-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gslides-title-input {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: transparent;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.gslides-title-input:hover {
+  border-color: var(--color-border);
+}
+
+.gslides-title-input:focus {
+  background: #ffffff;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.15);
+}
+
+.gslides-save-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  padding-left: 6px;
+}
+
+.gslides-save-status.is-dirty {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.gslides-save-status.is-saved {
+  color: #10b981;
+}
+
+.gslides-header__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.gslides-header-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  color: var(--color-text);
+}
+
+.gslides-header-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.gslides-header-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.gslides-header-btn--primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.gslides-header-btn--success {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+.gslides-header-btn--success:hover {
+  background: #059669;
+}
+
+/* Меню-бар Google Slides: Файл, Правка, Вид, Вставка, Формат, Слайд */
+.gslides-menubar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.gslides-menu-item {
+  position: relative;
+}
+
+.gslides-menu-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.gslides-menu-btn:hover,
+.gslides-menu-btn.is-open {
+  background: var(--color-surface-hover);
+}
+
+.gslides-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: #ffffff;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 6px 0;
+  min-width: 220px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.gslides-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+  transition: background 0.1s;
+}
+
+.gslides-dropdown-item:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.gslides-dropdown-item-shortcut {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.gslides-dropdown-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+/* Панель инструментов (Google Slides Toolbar) */
+.gslides-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--color-border);
+  overflow: visible;
+  position: relative;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.gslides-custom-select .select__trigger {
+  height: 28px;
+  padding: 2px 8px 2px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  min-width: 88px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.gslides-custom-select--font .select__trigger {
+  min-width: 140px;
+  max-width: 175px;
+}
+
+.gslides-custom-select .select__menu {
+  z-index: 1000;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+
+.gslides-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gslides-tool-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--color-border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.gslides-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.gslides-tool-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
+}
+
+.gslides-tool-btn.is-active {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.gslides-tool-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gslides-tool-select {
+  height: 30px;
+  padding: 0 24px 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color: var(--color-text, #1e293b);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.gslides-tool-select:hover {
+  border-color: var(--color-primary, #0077ff);
+  background-color: var(--color-surface, #f8fafc);
+}
+
+.gslides-tool-select:focus {
+  border-color: var(--color-primary, #0077ff);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.15);
+}
+
+/* Колорпикер плашка */
+.gslides-color-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.gslides-color-swatch-bar {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.gslides-color-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: #ffffff;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  z-index: 1000;
+  width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gslides-color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.gslides-color-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.12s;
+  padding: 0;
+}
+
+.gslides-color-circle:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.gslides-color-circle.is-active {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.gslides-custom-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gslides-custom-color-input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Рабочее пространство редактора (Three-pane workspace) */
+.gslides-workspace {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+/* Левая панель - Filmstrip миниатюр слайдов */
+.gslides-filmstrip {
+  width: 190px;
+  background: #ffffff;
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.gslides-filmstrip.is-collapsed {
+  width: 44px;
+}
+
+.gslides-filmstrip.is-collapsed .gslides-filmstrip__header {
+  padding: 8px 4px;
+  justify-content: center;
+}
+
+.gslides-filmstrip__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.gslides-filmstrip__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gslides-thumb-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  cursor: pointer;
+}
+
+.gslides-thumb-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  width: 16px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.gslides-thumb-card {
+  flex: 1;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background: #ffffff;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  transition: all 0.15s;
+}
+
+.gslides-thumb-item:hover .gslides-thumb-card {
+  border-color: var(--color-border-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.gslides-thumb-item.is-selected .gslides-thumb-card {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.25);
+}
+
+.gslides-thumb-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.gslides-thumb-item:hover .gslides-thumb-actions,
+.gslides-thumb-item.is-selected .gslides-thumb-actions {
+  opacity: 1;
+}
+
+.gslides-thumb-action-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 0;
+}
+
+.gslides-thumb-action-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+
+/* Центральный холст (Canvas Area) */
+.gslides-canvas-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: #e2e8f0;
+}
+
+.gslides-canvas-viewport {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+  min-height: 0;
+  position: relative;
+}
+
+.gslides-canvas-frame {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  background: #ffffff;
+  position: relative;
+  transition: width 0.15s, height 0.15s;
+  overflow: hidden;
+}
+
+/* Нижняя панель заметок докладчика на холсте */
+.gslides-notes-bar {
+  background: #ffffff;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: max-height 0.2s ease;
+}
+
+.gslides-notes-bar__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border: none;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gslides-notes-bar__toggle:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+.gslides-notes-bar__content {
+  padding: 10px 16px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.gslides-notes-bar-textarea {
+  width: 100%;
+  min-height: 70px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text);
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+}
+
+.gslides-notes-bar-textarea:focus {
+  border-color: var(--color-primary);
+}
+
+/* Правая боковая панель (Sidebar: Свойства / Макеты / AI) */
+.gslides-sidebar {
+  width: 330px;
+  background: #ffffff;
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.2s ease;
+}
+
+.gslides-sidebar.is-collapsed {
+  width: 0;
+  border-left: none;
+}
+
+.gslides-sidebar__tabs {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  flex-shrink: 0;
+}
+
+.gslides-sidebar__tab {
+  flex: 1;
+  padding: 9px 8px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: center;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.gslides-sidebar__tab:hover {
+  color: var(--color-text);
+}
+
+.gslides-sidebar__tab.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background: #ffffff;
+}
+
+.gslides-sidebar__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Секции в боковой панели */
+.gslides-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gslides-sidebar-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.gslides-sidebar-section__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gslides-sidebar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gslides-sidebar-label {
+  font-size: 12.5px;
+  color: var(--color-text);
+}
+
+/* Всплывающее модальное окно выбора цвета поверх экрана */
+.gslides-color-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: gslidesFadeIn 0.15s ease-out;
+}
+
+.gslides-color-modal {
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  width: 330px;
+  max-width: 95vw;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: gslidesScaleIn 0.15s ease-out;
+}
+
+@keyframes gslidesFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes gslidesScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gslides-color-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.gslides-color-modal__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gslides-color-modal__subtitle {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.gslides-color-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.gslides-color-modal__close:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--color-text);
+}
+
+.gslides-color-modal__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.gslides-color-modal__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gslides-color-modal__section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gslides-color-modal__swatches {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 7px;
+}
+
+.gslides-color-swatch-item {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: transform 0.12s, box-shadow 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gslides-color-swatch-item:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  z-index: 2;
+}
+
+.gslides-color-swatch-item.is-selected {
+  outline: 2.5px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.gslides-color-swatch-item--transparent {
+  background: repeating-conic-gradient(#e2e8f0 0% 25%, #ffffff 0% 50%) 50% / 10px 10px;
+}
+
+.gslides-color-modal__custom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gslides-color-modal__picker-input {
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  background: transparent;
+}
+
+.gslides-color-modal__hex-input {
+  flex: 1;
+  height: 36px;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gslides-color-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  gap: 8px;
+}
+
+/* Адаптивность редактора для 14-дюймовых ноутбуков и компактных экранов (1280px-1440px) */
+@media (max-width: 1440px) {
+  .gslides-toolbar {
+    gap: 4px;
+    padding: 5px 8px;
+  }
+  .gslides-tool-btn {
+    height: 28px;
+    min-width: 28px;
+    padding: 0 5px;
+    font-size: 11.5px;
+    gap: 3px;
+  }
+  .gslides-tool-select {
+    height: 28px;
+    font-size: 11.5px;
+    padding: 0 20px 0 6px;
+  }
+  .gslides-filmstrip {
+    width: 160px;
+  }
+  .gslides-canvas-viewport {
+    padding: 12px 16px;
+  }
+  .gslides-header {
+    padding: 6px 12px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .gslides-toolbar {
+    gap: 3px;
+    padding: 4px 6px;
+  }
+  .gslides-tool-btn {
+    height: 26px;
+    min-width: 26px;
+    padding: 0 4px;
+    font-size: 11px;
+  }
+  .gslides-tool-select {
+    height: 26px;
+    font-size: 11px;
+    max-width: 110px;
+    padding: 0 18px 0 5px;
+  }
+  .gslides-filmstrip {
+    width: 140px;
+  }
+  .gslides-canvas-viewport {
+    padding: 8px 12px;
+  }
+}
+
 

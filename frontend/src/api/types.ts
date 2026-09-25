@@ -50,6 +50,7 @@ export interface SlideShape {
   border?: boolean | null
   font_family?: string | null
   font_size?: number | null
+  bold?: boolean | null
 }
 
 export interface ChartData {
@@ -111,6 +112,14 @@ export interface Slide {
   element_fonts?: Record<string, string> | null
   element_scales?: Record<string, number> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
+  background_color?: string | null
+  text_color?: string | null
+  text_background_color?: string | null
+  accent_color?: string | null
+  element_colors?: Record<string, string> | null
+  element_backgrounds?: Record<string, string> | null
+  is_bold?: boolean | null
+  element_bolds?: Record<string, boolean> | null
 }
 
 export interface SlideUpdate {
@@ -132,16 +141,40 @@ export interface SlideUpdate {
   element_fonts?: Record<string, string> | null
   element_scales?: Record<string, number> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
+  background_color?: string | null
+  text_color?: string | null
+  text_background_color?: string | null
+  accent_color?: string | null
+  element_colors?: Record<string, string> | null
+  element_backgrounds?: Record<string, string> | null
+  is_bold?: boolean | null
+  element_bolds?: Record<string, boolean> | null
   image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
   layout_key?: string | null
   layout_name?: string | null
   pattern_id?: string | null
 }
 
+export interface CreateSlideRequest {
+  kind?: SlideKind
+  title?: string
+  subtitle?: string | null
+  position?: number | null
+}
+
+export interface ReorderSlidesRequest {
+  slide_ids: string[]
+}
+
+export interface BatchSlidesUpdate {
+  slides: Slide[]
+}
+
 export interface RegenerateSlideRequest {
   instruction?: string | null
   style?: string | null
 }
+
 
 export interface SurfaceColors {
   background: string
@@ -356,8 +389,8 @@ export interface TemplateDetail extends TemplateSummary {
 export type Purpose = 'feature' | 'product' | 'project' | 'initiative'
 export type PresentationStatus = 'draft' | 'generating' | 'ready' | 'failed'
 export type VariantAxis = 'density' | 'visualization' | 'structure' | 'layouts'
-export type PresentationAccessRole = 'owner' | 'editor' | 'viewer'
-export type ShareRole = 'editor' | 'viewer'
+export type PresentationAccessRole = 'owner' | 'coowner' | 'editor' | 'viewer'
+export type ShareRole = 'coowner' | 'editor' | 'viewer'
 
 export interface GenerationSettings {
   slides_count: number
@@ -483,7 +516,7 @@ export type ProjectIcon =
   | 'megaphone'
   | 'palette'
   | 'flask-conical'
-export type ProjectAccessRole = 'owner' | 'editor' | 'viewer'
+export type ProjectAccessRole = 'owner' | 'coowner' | 'editor' | 'viewer'
 
 export interface Project {
   id: Uuid

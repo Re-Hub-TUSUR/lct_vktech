@@ -3,9 +3,11 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, get_presentation_for_user
+from app.api.roles import role_label
 from app.core.redis import publish_presentation_update, redis_client
 from app.models import Notification, Presentation, PresentationMember, PresentationShareLink, User
 from app.schemas.presentation import PresentationUserOut
@@ -65,7 +67,7 @@ async def accept_share_link(token: str, user: CurrentUser, db: DbSession) -> Sha
                 user_id=user.id,
                 kind="presentation_shared",
                 title="Вам открыли доступ к презентации",
-                body=f"«{presentation.title}» · роль: {'редактор' if link.role == 'editor' else 'наблюдатель'}",
+                body=f"«{presentation.title}» · роль: {role_label(link.role)}",
                 href=f"/presentations/{presentation.id}",
             )
         )
@@ -74,7 +76,7 @@ async def accept_share_link(token: str, user: CurrentUser, db: DbSession) -> Sha
                 user_id=presentation.owner_id,
                 kind="share_joined",
                 title="К презентации присоединился участник",
-                body=f"{user.full_name} получил(а) роль «{'редактор' if link.role == 'editor' else 'наблюдатель'}» в «{presentation.title}»",
+                body=f"{user.full_name} получил(а) роль «{role_label(link.role)}» в «{presentation.title}»",
                 href=f"/presentations/{presentation.id}",
             )
         )
@@ -107,9 +109,11 @@ async def update_member_role(
     user: CurrentUser,
     db: DbSession,
 ) -> PresentationMemberOut:
-    presentation = await get_presentation_for_user(db, presentation_id, user, owner_only=True)
+    presentation = await get_presentation_for_user(db, presentation_id, user, manage=True)
     if member_user_id == presentation.owner_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя изменить роль владельца")
+    if member_user_id == user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя изменить роль самому себе")
     row = (
         await db.execute(
             select(PresentationMember, User)
@@ -126,7 +130,7 @@ async def update_member_role(
             user_id=member_user.id,
             kind="share_role_changed",
             title="Роль в общей презентации изменена",
-            body=f"«{presentation.title}» · новая роль: {'редактор' if payload.role == 'editor' else 'наблюдатель'}",
+            body=f"«{presentation.title}» · новая роль: {role_label(payload.role)}",
             href=f"/presentations/{presentation.id}",
         )
     )
@@ -137,9 +141,11 @@ async def update_member_role(
 
 @router.delete("/presentations/{presentation_id}/members/{member_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(presentation_id: uuid.UUID, member_user_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
-    presentation = await get_presentation_for_user(db, presentation_id, user, owner_only=True)
+    presentation = await get_presentation_for_user(db, presentation_id, user, manage=True)
     if member_user_id == presentation.owner_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить владельца")
+    if member_user_id == user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить самого себя")
     member = await db.scalar(
         select(PresentationMember).where(
             PresentationMember.presentation_id == presentation.id, PresentationMember.user_id == member_user_id
@@ -163,22 +169,37 @@ async def remove_member(presentation_id: uuid.UUID, member_user_id: uuid.UUID, u
 
 @router.get("/presentations/{presentation_id}/share-links", response_model=list[ShareLinkOut])
 async def list_share_links(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> list[ShareLinkOut]:
-    presentation = await get_presentation_for_user(db, presentation_id, user, owner_only=True)
+    """Активные ссылки: не больше одной на каждую роль (наблюдатель, редактор, совладелец)."""
+    presentation = await get_presentation_for_user(db, presentation_id, user, manage=True)
     links = list(
         await db.scalars(
             select(PresentationShareLink)
-            .where(PresentationShareLink.presentation_id == presentation.id)
+            .where(PresentationShareLink.presentation_id == presentation.id, PresentationShareLink.is_active.is_(True))
             .order_by(PresentationShareLink.created_at.desc())
         )
     )
     return [_link_out(link) for link in links]
 
 
+async def _active_link(db: DbSession, presentation_id: uuid.UUID, role: str) -> PresentationShareLink | None:
+    return await db.scalar(
+        select(PresentationShareLink).where(
+            PresentationShareLink.presentation_id == presentation_id,
+            PresentationShareLink.role == role,
+            PresentationShareLink.is_active.is_(True),
+        )
+    )
+
+
 @router.post("/presentations/{presentation_id}/share-links", response_model=ShareLinkOut, status_code=status.HTTP_201_CREATED)
 async def create_share_link(
     presentation_id: uuid.UUID, payload: ShareLinkCreate, user: CurrentUser, db: DbSession
 ) -> ShareLinkOut:
-    presentation = await get_presentation_for_user(db, presentation_id, user, owner_only=True)
+    """Возвращает активную ссылку на роль; если её нет — создаёт. Дубликатов не бывает."""
+    presentation = await get_presentation_for_user(db, presentation_id, user, manage=True)
+    existing = await _active_link(db, presentation.id, payload.role)
+    if existing is not None:
+        return _link_out(existing)
     link = PresentationShareLink(
         presentation_id=presentation.id,
         created_by_id=user.id,
@@ -186,7 +207,15 @@ async def create_share_link(
         role=payload.role,
     )
     db.add(link)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Параллельный запрос успел создать ссылку на эту роль — отдаём её.
+        await db.rollback()
+        existing = await _active_link(db, presentation.id, payload.role)
+        if existing is None:
+            raise
+        return _link_out(existing)
     await publish_presentation_update(redis_client, presentation.id, kind="share_links")
     return _link_out(link)
 
@@ -199,7 +228,7 @@ async def update_share_link(
     user: CurrentUser,
     db: DbSession,
 ) -> ShareLinkOut:
-    presentation = await get_presentation_for_user(db, presentation_id, user, owner_only=True)
+    presentation = await get_presentation_for_user(db, presentation_id, user, manage=True)
     link = await db.scalar(
         select(PresentationShareLink).where(
             PresentationShareLink.id == share_link_id, PresentationShareLink.presentation_id == presentation.id
@@ -207,7 +236,14 @@ async def update_share_link(
     )
     if link is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ссылка не найдена")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    next_role = changes.get("role", link.role)
+    next_active = changes.get("is_active", link.is_active)
+    if next_active:
+        clash = await _active_link(db, presentation.id, next_role)
+        if clash is not None and clash.id != link.id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Активная ссылка для этой роли уже есть")
+    for field, value in changes.items():
         setattr(link, field, value)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="share_links")

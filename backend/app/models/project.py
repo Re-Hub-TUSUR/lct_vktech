@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, text
+from sqlalchemy import ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, Timestamps, UUIDPk
@@ -36,7 +36,7 @@ class ProjectMember(UUIDPk, Timestamps, Base):
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    # viewer | editor; owner хранится в projects.owner_id.
+    # viewer | editor | coowner; owner хранится в projects.owner_id.
     role: Mapped[str] = mapped_column(String(20))
 
     project: Mapped["Project"] = relationship(lazy="raise")
@@ -47,6 +47,10 @@ class ProjectShareLink(UUIDPk, Timestamps, Base):
     """Многоразовая capability-ссылка, добавляющая пользователя в участники папки."""
 
     __tablename__ = "project_share_links"
+    # Не больше одной активной ссылки на каждую роль.
+    __table_args__ = (
+        Index("uq_project_share_links_active_role", "project_id", "role", unique=True, postgresql_where=text("is_active")),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
     created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))

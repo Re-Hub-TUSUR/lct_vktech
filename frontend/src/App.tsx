@@ -12,6 +12,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ExportPage } from './pages/ExportPage'
 import { GenerationPage } from './pages/GenerationPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PresentationEditorPage } from './pages/PresentationEditorPage'
 import { PresentationSettingsPage } from './pages/PresentationSettingsPage'
 import { TemplatePage } from './pages/TemplatePage'
 import { TemplatesPage } from './pages/TemplatesPage'
@@ -36,6 +37,7 @@ export function App() {
       <Route path="/share/:token" element={<ShareAcceptPage />} />
       <Route path="/share/project/:token" element={<ProjectShareAcceptPage />} />
       <Route path="/project-share/:token" element={<ProjectShareAcceptPage />} />
+      <Route path="presentations/:id/editor" element={<RequireAuth><PresentationEditorPage /></RequireAuth>} />
       <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
         <Route index element={<DashboardPage />} />
         <Route path="presentations" element={<MyPresentationsPage />} />

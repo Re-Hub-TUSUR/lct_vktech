@@ -9,6 +9,7 @@ import {
   Settings2,
   Share2,
   Trash2,
+  Users,
   X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -28,6 +29,7 @@ import { Badge, Button, EmptyState, ErrorState, Select, Spinner } from '../compo
 import { countLabel, formatDate } from '../lib/format'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
 import { PROJECT_COLOR_CONFIGS } from '../lib/projects'
+import { canManageAccess, ROLE_LABEL, ROLE_TONE } from '../lib/roles'
 import { presentationLink } from '../lib/routes'
 
 function FolderCardItem({
@@ -60,15 +62,15 @@ function FolderCardItem({
             {countLabel(project.presentations_count, ['презентация', 'презентации', 'презентаций'])}
           </span>
           {project.access_role !== 'owner' && (
-            <Badge tone="info" className="mac-folder-card__role">
-              {project.access_role === 'editor' ? 'Редактор' : 'Наблюдатель'}
+            <Badge tone={ROLE_TONE[project.access_role]} className="mac-folder-card__role">
+              {ROLE_LABEL[project.access_role]}
             </Badge>
           )}
         </div>
       </button>
 
       <div className="mac-folder-card__actions">
-        {project.access_role === 'owner' ? (
+        {canManageAccess(project.access_role) ? (
           <>
             <button
               className="icon-btn icon-btn--sm"
@@ -94,18 +96,20 @@ function FolderCardItem({
             >
               <Settings2 size={15} />
             </button>
-            <button
-              className="icon-btn icon-btn--sm icon-btn--danger"
-              type="button"
-              title="Удалить папку"
-              aria-label="Удалить папку"
-              onClick={(e) => {
-                e.stopPropagation()
-                onDelete()
-              }}
-            >
-              <Trash2 size={15} />
-            </button>
+            {project.access_role === 'owner' && (
+              <button
+                className="icon-btn icon-btn--sm icon-btn--danger"
+                type="button"
+                title="Удалить папку"
+                aria-label="Удалить папку"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDelete()
+                }}
+              >
+                <Trash2 size={15} />
+              </button>
+            )}
           </>
         ) : (
           <button
@@ -118,7 +122,7 @@ function FolderCardItem({
               onShare()
             }}
           >
-            <Share2 size={15} />
+            <Users size={15} />
           </button>
         )}
       </div>
@@ -205,9 +209,7 @@ function PresentationLibraryCard({
               <div className="presentation-card__badges">
                 <Badge tone={STATUS_TONES[item.status]}>{STATUS_LABELS[item.status]}</Badge>
                 {item.access_role !== 'owner' && (
-                  <Badge tone={item.access_role === 'editor' ? 'info' : 'neutral'}>
-                    {item.access_role === 'editor' ? 'Редактор' : 'Наблюдатель'}
-                  </Badge>
+                  <Badge tone={ROLE_TONE[item.access_role]}>{ROLE_LABEL[item.access_role]}</Badge>
                 )}
               </div>
               <small>{formatDate(item.updated_at)}</small>
@@ -223,7 +225,7 @@ function PresentationLibraryCard({
 
         {/* Панель папки и действий на карточке */}
         <div className="presentation-card__footer">
-          {item.access_role === 'owner' ? (
+          {canManageAccess(item.access_role) ? (
             <div className="presentation-card__folder-assign">
               <Select
                 size="sm"
@@ -249,17 +251,15 @@ function PresentationLibraryCard({
           )}
 
           <div className="presentation-card__actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {item.access_role === 'owner' && (
-              <button
-                className="icon-btn icon-btn--sm"
-                type="button"
-                title="Поделиться презентацией"
-                aria-label="Поделиться презентацией"
-                onClick={() => setShareOpen(true)}
-              >
-                <Share2 size={15} />
-              </button>
-            )}
+            <button
+              className="icon-btn icon-btn--sm"
+              type="button"
+              title={canManageAccess(item.access_role) ? 'Поделиться презентацией' : 'Участники презентации'}
+              aria-label={canManageAccess(item.access_role) ? 'Поделиться презентацией' : 'Участники презентации'}
+              onClick={() => setShareOpen(true)}
+            >
+              {canManageAccess(item.access_role) ? <Share2 size={15} /> : <Users size={15} />}
+            </button>
             {item.access_role === 'owner' && (
               <button
                 className="icon-btn icon-btn--sm"
@@ -279,6 +279,7 @@ function PresentationLibraryCard({
         <ShareDialog
           presentationId={item.id}
           title={item.title}
+          myRole={item.access_role}
           onClose={() => setShareOpen(false)}
         />
       )}
@@ -597,6 +598,7 @@ export function MyPresentationsPage() {
         <ProjectShareDialog
           projectId={sharingProject.id}
           name={sharingProject.name}
+          myRole={sharingProject.access_role}
           onClose={() => setSharingProject(null)}
         />
       )}

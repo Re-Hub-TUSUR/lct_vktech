@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -62,7 +62,7 @@ class PresentationMember(UUIDPk, Timestamps, Base):
         ForeignKey("presentations.id", ondelete="CASCADE"), index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    # viewer | editor; owner хранится в presentations.owner_id.
+    # viewer | editor | coowner; owner хранится в presentations.owner_id.
     role: Mapped[str] = mapped_column(String(20))
 
     presentation: Mapped["Presentation"] = relationship(lazy="raise")
@@ -73,6 +73,10 @@ class PresentationShareLink(UUIDPk, Timestamps, Base):
     """Многоразовая capability-ссылка, добавляющая пользователя в участники."""
 
     __tablename__ = "presentation_share_links"
+    # Не больше одной активной ссылки на каждую роль.
+    __table_args__ = (
+        Index("uq_presentation_share_links_active_role", "presentation_id", "role", unique=True, postgresql_where=text("is_active")),
+    )
 
     presentation_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("presentations.id", ondelete="CASCADE"), index=True

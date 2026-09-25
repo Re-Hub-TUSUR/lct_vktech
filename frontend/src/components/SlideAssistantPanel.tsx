@@ -1,8 +1,8 @@
 import clsx from 'clsx'
 import {
   Bot,
-  Check,
-  LayoutTemplate,
+  ChevronDown,
+  ChevronUp,
   LoaderCircle,
   Send,
   Sparkles,
@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import type { Slide, SlideKind, SlidePattern, SlideTheme } from '../api/types'
-import { PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS, patternLabel } from '../lib/labels'
+import { SLIDE_KIND_LABELS } from '../lib/labels'
 import { Button } from './ui'
 
 interface Message {
@@ -26,9 +26,9 @@ interface SlideAssistantPanelProps {
   theme: SlideTheme
   slideIndex: number
   onRegenerate: (instruction: string) => Promise<void>
-  onChangeKind: (kind: SlideKind) => void
-  onSelectPattern: (pattern: SlidePattern) => void
-  onOpenDesignModal: () => void
+  onChangeKind?: (kind: SlideKind) => void
+  onSelectPattern?: (pattern: SlidePattern) => void
+  onOpenDesignModal?: () => void
   isRegenerating: boolean
 }
 
@@ -43,15 +43,12 @@ const QUICK_PROMPTS = [
 
 export function SlideAssistantPanel({
   slide,
-  theme,
+  theme: _theme,
   slideIndex,
   onRegenerate,
-  onChangeKind,
-  onSelectPattern,
-  onOpenDesignModal,
   isRegenerating,
 }: SlideAssistantPanelProps) {
-  const [activeTab, setActiveTab] = useState<'chat' | 'design'>('chat')
+  const [showQuickPrompts, setShowQuickPrompts] = useState(true)
   const [inputPrompt, setInputPrompt] = useState('')
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -112,8 +109,6 @@ export function SlideAssistantPanel({
     }
   }
 
-  const patterns = theme.patterns || []
-
   return (
     <div className="slide-assistant-panel">
       {/* Header */}
@@ -135,183 +130,93 @@ export function SlideAssistantPanel({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="tabs" style={{ margin: '8px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: 6 }}>
-        <button
-          type="button"
-          className={clsx(activeTab === 'chat' && 'is-active')}
-          onClick={() => setActiveTab('chat')}
-        >
-          Чат-доработка
-        </button>
-        <button
-          type="button"
-          className={clsx(activeTab === 'design' && 'is-active')}
-          onClick={() => setActiveTab('design')}
-        >
-          Дизайн и макет
-        </button>
-      </div>
-
-      {activeTab === 'chat' ? (
-        <div className="slide-assistant-chat">
-          {/* Messages list */}
-          <div className="slide-assistant-messages">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={clsx(
-                  'slide-assistant-bubble',
-                  m.role === 'user' ? 'slide-assistant-bubble--user' : 'slide-assistant-bubble--assistant'
-                )}
-              >
-                <div className="slide-assistant-bubble__avatar">
-                  {m.role === 'user' ? <User size={12} /> : <Bot size={12} />}
-                </div>
-                <div className="slide-assistant-bubble__content">
-                  <div className="slide-assistant-bubble__text">{m.text}</div>
-                  <div className="slide-assistant-bubble__time">{m.time}</div>
-                </div>
-              </div>
-            ))}
-
-            {isRegenerating && (
-              <div className="slide-assistant-bubble slide-assistant-bubble--assistant">
-                <div className="slide-assistant-bubble__avatar">
-                  <LoaderCircle size={12} className="spin" />
-                </div>
-                <div className="slide-assistant-bubble__content">
-                  <div className="slide-assistant-bubble__text" style={{ fontStyle: 'italic', opacity: 0.85 }}>
-                    ИИ переосмысливает слайд…
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Quick prompt suggestion chips */}
-          <div className="slide-assistant-chips">
-            <span className="muted" style={{ fontSize: 11, fontWeight: 600, width: '100%' }}>
-              Быстрые варианты:
-            </span>
-            {QUICK_PROMPTS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                className="slide-assistant-chip"
-                disabled={isRegenerating}
-                onClick={() => handleSend(p)}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-
-          {/* Input form */}
-          <div className="slide-assistant-input-box">
-            <textarea
-              className="slide-assistant-textarea"
-              placeholder="Напишите комментарий для ИИ (Enter — отправить)..."
-              value={inputPrompt}
-              rows={2}
-              disabled={isRegenerating}
-              onChange={(e) => setInputPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-            <Button
-              size="sm"
-              variant="primary"
-              className="slide-assistant-send-btn"
-              disabled={!inputPrompt.trim() || isRegenerating}
-              loading={isRegenerating}
-              icon={<Send size={14} />}
-              onClick={() => handleSend()}
-              title="Отправить запрос на перегенерацию"
-            />
-          </div>
-        </div>
-      ) : (
-        <div className="slide-assistant-design" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
-          <div>
-            <label className="text-sm" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>
-              Тип слайда:
-            </label>
-            <select
-              className="slide-edit-select"
-              style={{ width: '100%', height: 32 }}
-              value={slide.kind}
-              onChange={(e) => onChangeKind(e.target.value as SlideKind)}
+      <div className="slide-assistant-chat">
+        {/* Messages list */}
+        <div className="slide-assistant-messages">
+          {messages.map((m) => (
+            <div
+              key={m.id}
+              className={clsx(
+                'slide-assistant-bubble',
+                m.role === 'user' ? 'slide-assistant-bubble--user' : 'slide-assistant-bubble--assistant'
+              )}
             >
-              {Object.entries(SLIDE_KIND_LABELS).map(([k, label]) => (
-                <option key={k} value={k}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="slide-assistant-bubble__avatar">
+                {m.role === 'user' ? <User size={12} /> : <Bot size={12} />}
+              </div>
+              <div className="slide-assistant-bubble__content">
+                <div className="slide-assistant-bubble__text">{m.text}</div>
+                <div className="slide-assistant-bubble__time">{m.time}</div>
+              </div>
+            </div>
+          ))}
 
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<LayoutTemplate size={15} />}
-            style={{ width: '100%', justifyContent: 'center' }}
-            onClick={onOpenDesignModal}
-          >
-            Открыть галерею шаблонов
-          </Button>
-
-          {patterns.length > 0 && (
-            <div>
-              <label className="text-sm" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                Слайды-примеры темы:
-              </label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' }}>
-                {patterns.map((p) => {
-                  const isCurrent = slide.pattern_id === p.id
-                  const label = PATTERN_TYPE_LABELS[p.type] || (SLIDE_KIND_LABELS as Record<string, string>)[p.type] || p.type
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={clsx('slide-pattern-mini-item', isCurrent && 'is-current')}
-                      onClick={() => onSelectPattern(p)}
-                    >
-                      <div className="row row--xs" style={{ alignItems: 'center', gap: 8, width: '100%' }}>
-                        {(p.render_url || (theme.template_id && p.render)) && (
-                          <img
-                            src={p.render_url || `/api/templates/${theme.template_id}/slides/${p.render}`}
-                            alt=""
-                            className="slide-pattern-mini-thumb"
-                            loading="lazy"
-                          />
-                        )}
-                        <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-                          <div className="row row--xs" style={{ alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                            <span style={{ fontWeight: 600, fontSize: 12 }}>
-                              {patternLabel(p)} · {label}
-                            </span>
-                            {isCurrent && (
-                              <span className="badge badge-success" style={{ fontSize: 9, padding: '1px 4px' }}>
-                                <Check size={9} />
-                              </span>
-                            )}
-                          </div>
-                          {(p.layout_name || p.layout_key) && (
-                            <div className="muted text-sm" style={{ fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              «{p.layout_name || p.layout_key}»
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
+          {isRegenerating && (
+            <div className="slide-assistant-bubble slide-assistant-bubble--assistant">
+              <div className="slide-assistant-bubble__avatar">
+                <LoaderCircle size={12} className="spin" />
+              </div>
+              <div className="slide-assistant-bubble__content">
+                <div className="slide-assistant-bubble__text" style={{ fontStyle: 'italic', opacity: 0.85 }}>
+                  ИИ переосмысливает слайд…
+                </div>
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
-      )}
+
+        {/* Quick prompt suggestion chips with toggle */}
+        <div className="slide-assistant-chips-wrapper">
+          <button
+            type="button"
+            className="slide-assistant-chips-toggle"
+            onClick={() => setShowQuickPrompts(!showQuickPrompts)}
+            title={showQuickPrompts ? 'Свернуть быстрые варианты' : 'Развернуть быстрые варианты'}
+          >
+            <span className="slide-assistant-chips-title">Быстрые варианты</span>
+            {showQuickPrompts ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          {showQuickPrompts && (
+            <div className="slide-assistant-chips">
+              {QUICK_PROMPTS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className="slide-assistant-chip"
+                  disabled={isRegenerating}
+                  onClick={() => handleSend(p)}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Input form */}
+        <div className="slide-assistant-input-box">
+          <textarea
+            className="slide-assistant-textarea"
+            placeholder="Напишите комментарий для ИИ (Enter — отправить)..."
+            value={inputPrompt}
+            rows={2}
+            disabled={isRegenerating}
+            onChange={(e) => setInputPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <Button
+            size="sm"
+            variant="primary"
+            className="slide-assistant-send-btn"
+            disabled={!inputPrompt.trim() || isRegenerating}
+            loading={isRegenerating}
+            icon={<Send size={14} />}
+            onClick={() => handleSend()}
+            title="Отправить запрос на перегенерацию"
+          />
+        </div>
+      </div>
     </div>
   )
 }

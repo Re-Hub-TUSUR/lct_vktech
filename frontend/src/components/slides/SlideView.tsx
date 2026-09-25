@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { ImageIcon } from 'lucide-react'
+import { ImageIcon, Trash2 } from 'lucide-react'
 import type { CSSProperties, ReactNode } from 'react'
 
 import type { FrameRect, LayoutSkin, Severity, Slide, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
@@ -27,12 +27,14 @@ interface SlideViewProps {
   /** Режим ручного визуального редактирования (Canva-style). */
   editable?: boolean
   selectedShapeId?: string | null
+  activeElement?: string | null
   onElementSelect?: (elementId: string) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
   onSelectShape?: (shapeId: string | null) => void
   onUpdateShape?: (shapeId: string, patch: Partial<SlideShape>) => void
   onDeleteShape?: (shapeId: string) => void
+  onDeleteChart?: () => void
 }
 
 /** Рендер слайда варианта, если превью актуально. */
@@ -73,15 +75,47 @@ export function getElementStyle(
   target: string,
   elementFonts?: Record<string, string> | null,
   elementScales?: Record<string, number> | null,
+  elementColors?: Record<string, string> | null,
+  elementBackgrounds?: Record<string, string> | null,
+  slideTextBg?: string | null,
+  slideTextColor?: string | null,
+  elementBolds?: Record<string, boolean> | null,
+  slideIsBold?: boolean | null,
+  activeElement?: string | null,
 ): CSSProperties {
   const font = elementFonts?.[target] || elementFonts?.[target.split('.')[0]]
   const scale = elementScales?.[target] || elementScales?.[target.split('.')[0]]
+  const color = elementColors?.[target] || elementColors?.[target.split('.')[0]] || (slideTextColor && slideTextColor !== 'transparent' ? slideTextColor : undefined)
+  const bg =
+    elementBackgrounds?.[target] ||
+    elementBackgrounds?.[target.split('.')[0]] ||
+    (slideTextBg && slideTextBg !== 'transparent' ? slideTextBg : undefined)
+  const isBold =
+    elementBolds?.[target] ?? elementBolds?.[target.split('.')[0]] ?? slideIsBold
+
   const style: CSSProperties = {}
   if (font) {
     style.fontFamily = `"${font}", var(--slide-heading-font)`
   }
   if (scale !== undefined && scale !== null && scale !== 1.0) {
     style.fontSize = `calc(1em * ${scale})`
+  }
+  if (color) {
+    style.color = color
+  }
+  if (isBold !== undefined && isBold !== null) {
+    style.fontWeight = isBold ? 700 : 400
+  }
+  if (bg && bg !== 'transparent') {
+    style.backgroundColor = bg
+    style.padding = '2px 8px'
+    style.borderRadius = '4px'
+    style.display = 'inline-block'
+  }
+  if (activeElement && (activeElement === target || activeElement === target.split('.')[0])) {
+    style.outline = '2px dashed var(--color-primary)'
+    style.outlineOffset = '2px'
+    style.borderRadius = '4px'
   }
   return style
 }
@@ -96,12 +130,14 @@ export function SlideView({
   render,
   editable = false,
   selectedShapeId,
+  activeElement,
   onElementSelect,
   onFieldChange,
   onImageClick,
   onSelectShape,
   onUpdateShape,
   onDeleteShape,
+  onDeleteChart,
 }: SlideViewProps) {
   // В обычном режиме показываем точный рендер экспортированного .pptx, если он готов
   if (render && !editable) {
@@ -135,15 +171,17 @@ export function SlideView({
   const scaleMultiplier = slide.font_size_scale || 1.0
 
   const style = {
-    '--slide-bg': surface.background,
-    '--slide-text': surface.text,
-    '--slide-muted': skin?.muted ?? (isCover(slide) ? surface.text : theme.muted),
-    '--slide-accent': theme.accent,
+    '--slide-bg': slide.background_color || surface.background,
+    '--slide-text': slide.text_color || surface.text,
+    '--slide-text-bg': slide.text_background_color || 'transparent',
+    '--slide-muted': skin?.muted ?? (isCover(slide) ? (slide.text_color || surface.text) : theme.muted),
+    '--slide-accent': slide.accent_color || theme.accent,
     '--slide-surface': skin?.surface ?? theme.surface,
     '--slide-heading-font': headingFont,
     '--slide-body-font': bodyFont,
     '--slide-font-scale': String(scaleMultiplier),
-    aspectRatio: String(theme.aspect),
+    '--slide-aspect': String(theme.aspect || 16 / 9),
+    aspectRatio: String(theme.aspect || 16 / 9),
   } as CSSProperties
 
   // Подсветка проблем аудита: target — адрес элемента (title, bullets.2, chart, slide…).
@@ -181,9 +219,11 @@ export function SlideView({
           theme={theme}
           flag={flag}
           editable={editable}
+          activeElement={activeElement}
           onElementSelect={onElementSelect}
           onFieldChange={onFieldChange}
           onImageClick={onImageClick}
+          onDeleteChart={onDeleteChart}
         />
       ) : (
         <div className="slide__inner">
@@ -192,9 +232,11 @@ export function SlideView({
             theme={theme}
             flag={flag}
             editable={editable}
+            activeElement={activeElement}
             onElementSelect={onElementSelect}
             onFieldChange={onFieldChange}
             onImageClick={onImageClick}
+            onDeleteChart={onDeleteChart}
           />
         </div>
       )}
@@ -203,6 +245,7 @@ export function SlideView({
       <SlideShapesLayer
         shapes={effectiveShapes}
         theme={theme}
+        slideAccent={slide.accent_color || theme.accent}
         editable={editable}
         selectedShapeId={selectedShapeId}
         onSelectShape={onSelectShape}
@@ -270,18 +313,22 @@ function FramedSlide({
   theme,
   flag,
   editable,
+  activeElement,
   onElementSelect,
   onFieldChange,
   onImageClick,
+  onDeleteChart,
 }: {
   slide: Slide
   skin: LayoutSkin
   theme: SlideTheme
   flag: Flag
   editable?: boolean
+  activeElement?: string | null
   onElementSelect?: (elementId: string) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
+  onDeleteChart?: () => void
 }) {
   const frames = skin.frames!
   const titleRect = frames.title!
@@ -294,6 +341,19 @@ function FramedSlide({
     0.16,
   ]
   const Heading = cover ? 'h1' : 'h2'
+  const elStyle = (target: string) =>
+    getElementStyle(
+      target,
+      slide.element_fonts,
+      slide.element_scales,
+      slide.element_colors,
+      slide.element_backgrounds,
+      slide.text_background_color,
+      slide.text_color,
+      slide.element_bolds,
+      slide.is_bold,
+      activeElement,
+    )
 
   return (
     <>
@@ -302,7 +362,7 @@ function FramedSlide({
         style={{
           ...box(titleRect),
           fontSize: `${size}cqw`,
-          color: skin.title.color,
+          color: slide.text_color || skin.title.color,
           justifyContent: ANCHOR[skin.title.anchor ?? ''] ?? 'flex-start',
           textAlign: ALIGN[skin.title.align ?? ''] ?? 'left',
           fontWeight: skin.title.bold === false ? 400 : 700,
@@ -312,8 +372,9 @@ function FramedSlide({
           className={flag('title')}
           contentEditable={editable}
           suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+          style={elStyle('title')}
           onFocus={() => onElementSelect?.('title')}
+          onClick={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
           {slide.title}
@@ -326,8 +387,9 @@ function FramedSlide({
               className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
               contentEditable={editable}
               suppressContentEditableWarning
-              style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
+              style={elStyle('subtitle')}
               onFocus={() => onElementSelect?.('subtitle')}
+              onClick={() => onElementSelect?.('subtitle')}
               onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
             >
               {slide.subtitle}
@@ -341,9 +403,11 @@ function FramedSlide({
             theme={theme}
             flag={flag}
             editable={editable}
+            activeElement={activeElement}
             onElementSelect={onElementSelect}
             onFieldChange={onFieldChange}
             onImageClick={onImageClick}
+            onDeleteChart={onDeleteChart}
           />
         </div>
       )}
@@ -357,18 +421,36 @@ function FlowSlide({
   theme,
   flag,
   editable,
+  activeElement,
   onElementSelect,
   onFieldChange,
   onImageClick,
+  onDeleteChart,
 }: {
   slide: Slide
   theme: SlideTheme
   flag: Flag
   editable?: boolean
+  activeElement?: string | null
   onElementSelect?: (elementId: string) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
+  onDeleteChart?: () => void
 }) {
+  const elStyle = (target: string) =>
+    getElementStyle(
+      target,
+      slide.element_fonts,
+      slide.element_scales,
+      slide.element_colors,
+      slide.element_backgrounds,
+      slide.text_background_color,
+      slide.text_color,
+      slide.element_bolds,
+      slide.is_bold,
+      activeElement,
+    )
+
   if (slide.kind === 'title' || slide.kind === 'closing') {
     return (
       <div className="slide__cover">
@@ -376,8 +458,9 @@ function FlowSlide({
           className={clsx('slide__cover-title', flag('title'))}
           contentEditable={editable}
           suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+          style={elStyle('title')}
           onFocus={() => onElementSelect?.('title')}
+          onClick={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
           {slide.title}
@@ -387,8 +470,9 @@ function FlowSlide({
             className={clsx('slide__subtitle', flag('subtitle'))}
             contentEditable={editable}
             suppressContentEditableWarning
-            style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
+            style={elStyle('subtitle')}
             onFocus={() => onElementSelect?.('subtitle')}
+            onClick={() => onElementSelect?.('subtitle')}
             onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
           >
             {slide.subtitle}
@@ -405,8 +489,9 @@ function FlowSlide({
             className="slide__section-number"
             contentEditable={editable}
             suppressContentEditableWarning
-            style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
+            style={elStyle('subtitle')}
             onFocus={() => onElementSelect?.('subtitle')}
+            onClick={() => onElementSelect?.('subtitle')}
             onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
           >
             {slide.subtitle}
@@ -416,8 +501,9 @@ function FlowSlide({
           className={clsx('slide__cover-title', flag('title'))}
           contentEditable={editable}
           suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+          style={elStyle('title')}
           onFocus={() => onElementSelect?.('title')}
+          onClick={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
           {slide.title}
@@ -432,8 +518,9 @@ function FlowSlide({
           className={clsx('slide__title', flag('title'))}
           contentEditable={editable}
           suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+          style={elStyle('title')}
           onFocus={() => onElementSelect?.('title')}
+          onClick={() => onElementSelect?.('title')}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
           {slide.title}
@@ -444,9 +531,11 @@ function FlowSlide({
         theme={theme}
         flag={flag}
         editable={editable}
+        activeElement={activeElement}
         onElementSelect={onElementSelect}
         onFieldChange={onFieldChange}
         onImageClick={onImageClick}
+        onDeleteChart={onDeleteChart}
       />
     </>
   )
@@ -458,18 +547,36 @@ function SlideContent({
   theme,
   flag,
   editable,
+  activeElement,
   onElementSelect,
   onFieldChange,
   onImageClick,
+  onDeleteChart,
 }: {
   slide: Slide
   theme: SlideTheme
   flag: Flag
   editable?: boolean
+  activeElement?: string | null
   onElementSelect?: (elementId: string) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
+  onDeleteChart?: () => void
 }): ReactNode {
+  const elStyle = (target: string) =>
+    getElementStyle(
+      target,
+      slide.element_fonts,
+      slide.element_scales,
+      slide.element_colors,
+      slide.element_backgrounds,
+      slide.text_background_color,
+      slide.text_color,
+      slide.element_bolds,
+      slide.is_bold,
+      activeElement,
+    )
+
   switch (slide.kind) {
     case 'agenda':
       return (
@@ -480,8 +587,9 @@ function SlideContent({
               className={flag(`bullets.${i}`)}
               contentEditable={editable}
               suppressContentEditableWarning
-              style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
+              style={elStyle(`bullets.${i}`)}
               onFocus={() => onElementSelect?.(`bullets.${i}`)}
+              onClick={() => onElementSelect?.(`bullets.${i}`)}
               onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
             >
               <span>{String(i + 1).padStart(2, '0')}</span>
@@ -500,8 +608,9 @@ function SlideContent({
                 className={flag(`columns.${ci}.title`)}
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`columns.${ci}.title`)}
                 onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
+                onClick={() => onElementSelect?.(`columns.${ci}.title`)}
                 onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
               >
                 {card.title}
@@ -512,8 +621,9 @@ function SlideContent({
                   className={flag(`columns.${ci}.bullets.${bi}`)}
                   contentEditable={editable}
                   suppressContentEditableWarning
-                  style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
+                  style={elStyle(`columns.${ci}.bullets.${bi}`)}
                   onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
+                  onClick={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
                   onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
                 >
                   {line}
@@ -533,8 +643,9 @@ function SlideContent({
                 className={flag(`columns.${ci}.title`)}
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`columns.${ci}.title`)}
                 onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
+                onClick={() => onElementSelect?.(`columns.${ci}.title`)}
                 onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
               >
                 {column.title}
@@ -546,8 +657,9 @@ function SlideContent({
                     className={flag(`columns.${ci}.bullets.${bi}`)}
                     contentEditable={editable}
                     suppressContentEditableWarning
-                    style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
+                    style={elStyle(`columns.${ci}.bullets.${bi}`)}
                     onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
+                    onClick={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
                     onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
                   >
                     {item}
@@ -563,6 +675,7 @@ function SlideContent({
       return (
         <div
           className={clsx('slide__chart-box', editable && 'is-editable-chart')}
+          style={elStyle('chart')}
           onClick={() => {
             if (editable) onElementSelect?.('chart')
           }}
@@ -572,7 +685,7 @@ function SlideContent({
               className={clsx('slide__caption', flag('chart'))}
               contentEditable={editable}
               suppressContentEditableWarning
-              style={getElementStyle('chart.caption', slide.element_fonts, slide.element_scales)}
+              style={elStyle('chart.caption')}
               onFocus={() => onElementSelect?.('chart.caption')}
               onBlur={(e) => onFieldChange?.('chart.caption', e.currentTarget.textContent || '')}
             >
@@ -584,9 +697,20 @@ function SlideContent({
               <SlideChart chart={slide.chart} colors={theme.accents} />
             </div>
           )}
-          {editable && (
+          {editable && onDeleteChart && (
             <div className="slide__chart-hint">
-              <span>Кликните для редактирования данных диаграммы</span>
+              <button
+                type="button"
+                className="slide__chart-delete-btn"
+                title="Удалить диаграмму"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onDeleteChart()
+                }}
+              >
+                <Trash2 size={13} />
+                <span>Удалить</span>
+              </button>
             </div>
           )}
         </div>
@@ -603,8 +727,9 @@ function SlideContent({
                     key={ci}
                     contentEditable={editable}
                     suppressContentEditableWarning
-                    style={getElementStyle(`table.columns.${ci}`, slide.element_fonts, slide.element_scales)}
+                    style={elStyle(`table.columns.${ci}`)}
                     onFocus={() => onElementSelect?.(`table.columns.${ci}`)}
+                    onClick={() => onElementSelect?.(`table.columns.${ci}`)}
                     onBlur={(e) => onFieldChange?.(`table.columns.${ci}`, e.currentTarget.textContent || '')}
                   >
                     {cell}
@@ -620,8 +745,9 @@ function SlideContent({
                       key={ci}
                       contentEditable={editable}
                       suppressContentEditableWarning
-                      style={getElementStyle(`table.rows.${ri}.${ci}`, slide.element_fonts, slide.element_scales)}
+                      style={elStyle(`table.rows.${ri}.${ci}`)}
                       onFocus={() => onElementSelect?.(`table.rows.${ri}.${ci}`)}
+                      onClick={() => onElementSelect?.(`table.rows.${ri}.${ci}`)}
                       onBlur={(e) => onFieldChange?.(`table.rows.${ri}.${ci}`, e.currentTarget.textContent || '')}
                     >
                       {cell}
@@ -642,8 +768,9 @@ function SlideContent({
               <strong
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`kpis.${i}.value`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`kpis.${i}.value`)}
                 onFocus={() => onElementSelect?.(`kpis.${i}.value`)}
+                onClick={() => onElementSelect?.(`kpis.${i}.value`)}
                 onBlur={(e) => onFieldChange?.(`kpis.${i}.value`, e.currentTarget.textContent || '')}
               >
                 {kpi.value}
@@ -651,8 +778,9 @@ function SlideContent({
               <span
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`kpis.${i}.label`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`kpis.${i}.label`)}
                 onFocus={() => onElementSelect?.(`kpis.${i}.label`)}
+                onClick={() => onElementSelect?.(`kpis.${i}.label`)}
                 onBlur={(e) => onFieldChange?.(`kpis.${i}.label`, e.currentTarget.textContent || '')}
               >
                 {kpi.label}
@@ -670,8 +798,9 @@ function SlideContent({
               <b
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`timeline.${i}.date`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`timeline.${i}.date`)}
                 onFocus={() => onElementSelect?.(`timeline.${i}.date`)}
+                onClick={() => onElementSelect?.(`timeline.${i}.date`)}
                 onBlur={(e) => onFieldChange?.(`timeline.${i}.date`, e.currentTarget.textContent || '')}
               >
                 {item.date}
@@ -679,8 +808,9 @@ function SlideContent({
               <strong
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`timeline.${i}.title`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`timeline.${i}.title`)}
                 onFocus={() => onElementSelect?.(`timeline.${i}.title`)}
+                onClick={() => onElementSelect?.(`timeline.${i}.title`)}
                 onBlur={(e) => onFieldChange?.(`timeline.${i}.title`, e.currentTarget.textContent || '')}
               >
                 {item.title}
@@ -688,8 +818,9 @@ function SlideContent({
               <p
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`timeline.${i}.text`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`timeline.${i}.text`)}
                 onFocus={() => onElementSelect?.(`timeline.${i}.text`)}
+                onClick={() => onElementSelect?.(`timeline.${i}.text`)}
                 onBlur={(e) => onFieldChange?.(`timeline.${i}.text`, e.currentTarget.textContent || '')}
               >
                 {item.text || ''}
@@ -706,8 +837,9 @@ function SlideContent({
           <span
             contentEditable={editable}
             suppressContentEditableWarning
-            style={getElementStyle('quote.text', slide.element_fonts, slide.element_scales)}
+            style={elStyle('quote.text')}
             onFocus={() => onElementSelect?.('quote.text')}
+            onClick={() => onElementSelect?.('quote.text')}
             onBlur={(e) => onFieldChange?.('quote.text', e.currentTarget.textContent || '')}
           >
             {slide.quote?.text || ''}
@@ -716,8 +848,9 @@ function SlideContent({
           <footer
             contentEditable={editable}
             suppressContentEditableWarning
-            style={getElementStyle('quote.author', slide.element_fonts, slide.element_scales)}
+            style={elStyle('quote.author')}
             onFocus={() => onElementSelect?.('quote.author')}
+            onClick={() => onElementSelect?.('quote.author')}
             onBlur={(e) => onFieldChange?.('quote.author', e.currentTarget.textContent || '')}
           >
             {slide.quote?.author ? `— ${slide.quote.author}` : '— Автор'}
@@ -735,8 +868,9 @@ function SlideContent({
                 className={flag(`bullets.${i}`)}
                 contentEditable={editable}
                 suppressContentEditableWarning
-                style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
+                style={elStyle(`bullets.${i}`)}
                 onFocus={() => onElementSelect?.(`bullets.${i}`)}
+                onClick={() => onElementSelect?.(`bullets.${i}`)}
                 onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
               >
                 {item}
@@ -777,8 +911,9 @@ function SlideContent({
                   className={flag(`bullets.${i}`)}
                   contentEditable={editable}
                   suppressContentEditableWarning
-                  style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
+                  style={elStyle(`bullets.${i}`)}
                   onFocus={() => onElementSelect?.(`bullets.${i}`)}
+                  onClick={() => onElementSelect?.(`bullets.${i}`)}
                   onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
                 >
                   {item}
@@ -807,8 +942,9 @@ function SlideContent({
               className={flag(`bullets.${i}`)}
               contentEditable={editable}
               suppressContentEditableWarning
-              style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
+              style={elStyle(`bullets.${i}`)}
               onFocus={() => onElementSelect?.(`bullets.${i}`)}
+              onClick={() => onElementSelect?.(`bullets.${i}`)}
               onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
             >
               {item}

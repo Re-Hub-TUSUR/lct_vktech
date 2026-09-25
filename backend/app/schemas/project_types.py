@@ -74,5 +74,5 @@ PROJECT_ICONS: tuple[ProjectIcon, ...] = (
     "flask-conical",
 )
 
-ProjectAccessRole = Literal["owner", "editor", "viewer"]
-ProjectShareRole = Literal["viewer", "editor"]
+ProjectAccessRole = Literal["owner", "coowner", "editor", "viewer"]
+ProjectShareRole = Literal["viewer", "editor", "coowner"]

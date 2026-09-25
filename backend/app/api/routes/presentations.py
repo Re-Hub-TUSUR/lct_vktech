@@ -18,6 +18,7 @@ from app.api.deps import (
     get_project_for_user,
     get_template_for_user,
 )
+from app.api.roles import EDIT_ROLES, best_role
 from app.api.serializers import content_file_out, generation_out, presentation_out, project_summary, variant_out
 from app.core.redis import (
     generation_channel,
@@ -27,7 +28,7 @@ from app.core.redis import (
     redis_client,
 )
 from app.core.storage import remove_dir, remove_file, save_upload, storage_path
-from app.models import ContentFile, Generation, Presentation, PresentationMember, Variant
+from app.models import ContentFile, Generation, Presentation, PresentationMember, Project, ProjectMember, Variant
 from app.models.base import utcnow
 from app.pipeline.layout.composer import axis_config
 from app.pipeline.skills import get_skill
@@ -60,19 +61,41 @@ def _content_extensions() -> set[str]:
 async def list_presentations(user: CurrentUser, db: DbSession) -> list[PresentationListItem]:
     rows = list(
         await db.execute(
-            select(Presentation, PresentationMember.role)
+            select(
+                Presentation,
+                PresentationMember.role.label("direct_role"),
+                Project.owner_id.label("project_owner_id"),
+                ProjectMember.role.label("project_role"),
+            )
             .outerjoin(
                 PresentationMember,
                 (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
             )
-            .where((Presentation.owner_id == user.id) | (PresentationMember.user_id == user.id))
+            .outerjoin(
+                Project,
+                Presentation.project_id == Project.id,
+            )
+            .outerjoin(
+                ProjectMember,
+                (ProjectMember.project_id == Presentation.project_id) & (ProjectMember.user_id == user.id),
+            )
+            .where(
+                (Presentation.owner_id == user.id)
+                | (PresentationMember.user_id == user.id)
+                | (Project.owner_id == user.id)
+                | (ProjectMember.user_id == user.id)
+            )
             .options(selectinload(Presentation.template), selectinload(Presentation.project), selectinload(Presentation.owner))
             .order_by(Presentation.updated_at.desc())
         )
     )
     presentations = []
-    for presentation, member_role in rows:
-        presentation.access_role = "owner" if presentation.owner_id == user.id else member_role
+    for presentation, direct_role, project_owner_id, project_role in rows:
+        if presentation.owner_id == user.id:
+            presentation.access_role = "owner"
+        else:
+            folder_role = "coowner" if project_owner_id == user.id else project_role
+            presentation.access_role = best_role(direct_role, folder_role)
         presentations.append(presentation)
     variants_by_presentation: dict[uuid.UUID, list[Variant]] = defaultdict(list)
     if presentations:
@@ -394,7 +417,7 @@ async def list_variants(presentation_id: uuid.UUID, user: CurrentUser, db: DbSes
     # Превью, отставшие от слайдов (например, после обновления парсера), пересобираются в фоне.
     scheduled = (
         [await schedule_render(db, arq, variant, presentation.template) for variant in variants]
-        if presentation.access_role in {"owner", "editor"}
+        if presentation.access_role in EDIT_ROLES
         else []
     )
     if any(scheduled):
