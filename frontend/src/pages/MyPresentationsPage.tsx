@@ -539,6 +539,17 @@ export function MyPresentationsPage() {
 
           {/* Поиск по названию */}
           <div className="library-controls">
+            <Select
+              size="sm"
+              className="status-filter-select"
+              value={sortMode}
+              options={[
+                { value: 'updated', label: 'Сначала новые' },
+                { value: 'title', label: 'По названию' },
+                { value: 'status', label: 'По статусу' },
+              ]}
+              onChange={(value) => setSortMode(value as SortMode)}
+            />
             <div className="search-box">
               <Search size={16} className="search-box__icon" />
               <input
@@ -559,16 +570,6 @@ export function MyPresentationsPage() {
                 </button>
               )}
             </div>
-            <Select
-              size="sm"
-              value={sortMode}
-              options={[
-                { value: 'updated', label: 'Сначала новые' },
-                { value: 'title', label: 'По названию' },
-                { value: 'status', label: 'По статусу' },
-              ]}
-              onChange={(value) => setSortMode(value as SortMode)}
-            />
           </div>
         </div>
 

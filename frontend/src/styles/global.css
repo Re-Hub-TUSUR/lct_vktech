@@ -378,8 +378,8 @@ input[type='checkbox'] {
 .logo__text {
   font-family: var(--font-display);
   font-size: 16px;
-  /* Название «VK Tech» жирнее остальных заголовков: настоящий Bold 700. Подпись под ним (small) задаёт свой вес. */
-  font-weight: 700;
+  /* Чуть легче настоящего Bold — 600 (DemiBold), чтобы не выглядело слишком жирно рядом с остальными заголовками. */
+  font-weight: 600;
   letter-spacing: -0.01em;
   white-space: nowrap;
 }
@@ -651,10 +651,11 @@ input[type='checkbox'] {
   padding: 9px 12px;
   border-radius: 9px;
   font-size: 14px;
+  color: var(--color-text);
   cursor: pointer;
 }
 .select__option.is-active {
-  background: #eef2f7;
+  background: var(--color-surface-hover);
 }
 .select__option.is-selected {
   color: var(--color-primary);
@@ -2023,7 +2024,7 @@ a:hover > .template-card,
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--color-text);
+  background: var(--color-primary);
   color: #fff;
   font-weight: 700;
 }
@@ -3911,7 +3912,7 @@ a:hover > .template-card,
   border-radius: var(--radius-lg, 16px);
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.22);
   width: 100%;
-  max-width: 680px;
+  max-width: 760px;
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -3923,7 +3924,7 @@ a:hover > .template-card,
   to { opacity: 1; transform: scale(1); }
 }
 .chart-editor-header {
-  padding: 16px 20px;
+  padding: 18px 24px;
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
@@ -3935,16 +3936,16 @@ a:hover > .template-card,
   font-weight: 700;
 }
 .chart-editor-body {
-  padding: 20px;
+  padding: 24px;
   overflow-y: auto;
   flex: 1;
 }
 .chart-editor-footer {
-  padding: 12px 20px;
+  padding: 16px 24px;
   border-top: 1px solid var(--color-border);
   display: flex;
   justify-content: flex-end;
-  background: var(--color-surface-subtle, #f8f9fa);
+  background: var(--color-surface-muted);
 }
 .chart-data-table-container {
   overflow-x: auto;
@@ -3958,7 +3959,7 @@ a:hover > .template-card,
 }
 .chart-data-table th,
 .chart-data-table td {
-  padding: 6px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--color-border);
 }
 .chart-data-table th {
@@ -4491,6 +4492,10 @@ a:hover > .template-card,
 }
 .library-controls .select {
   flex: 0 0 auto;
+}
+/* Сортировка слева от строки поиска — той же высоты, что и строка поиска рядом (36px) */
+.status-filter-select .select__trigger {
+  height: 36px;
 }
 .search-box:focus-within {
   border-radius: var(--radius-md);
@@ -5233,8 +5238,8 @@ a:hover > .template-card,
 }
 
 .audit-slide-notes-card {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06);
   backdrop-filter: blur(14px);
@@ -5248,8 +5253,8 @@ a:hover > .template-card,
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(248, 250, 252, 0.9);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
 }
 
 .audit-slide-notes-title {
@@ -5270,7 +5275,7 @@ a:hover > .template-card,
   height: 80px;
   min-height: 55px;
   max-height: 160px;
-  background: #ffffff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 8px 12px;
