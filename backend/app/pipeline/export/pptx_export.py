@@ -32,11 +32,14 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 from app.core.storage import storage_path
+from app.pipeline.export.chart_style import chart_caption, highlight_points, number_format
+from app.pipeline.export.facts import digest, slide_facts
 from app.pipeline.export.pattern_fill import clone_slide, fill_pattern, remove, set_body
 from app.pipeline.geometry import content_frame
 from app.pipeline.parsing.layout_patterns import PH_BASE
 from app.pipeline.parsing.template_parser import extract_theme, layout_background
 from app.pipeline.theme import mix, text_on
+from app.pipeline.visuals.numbers import numeric_columns
 from app.schemas.slide import Slide
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,8 @@ logger = logging.getLogger(__name__)
 TITLE_TYPES = {PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE}
 BODY_TYPES = {PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT, PP_PLACEHOLDER.SUBTITLE}
 REFERENCE_WIDTH = 12192000  # 13,333" — ширина, под которую подобраны кегли
+# Кегль ближе этой доли к ступени типографической шкалы шаблона встаёт на ступень.
+SCALE_SNAP = 0.15
 CHART_TYPES = {
     "bar": XL_CHART_TYPE.COLUMN_CLUSTERED,
     "horizontal_bar": XL_CHART_TYPE.BAR_CLUSTERED,
@@ -79,6 +84,8 @@ class DeckBuild:
     data: bytes
     # Рамки элементов каждого слайда — для подсветки проблем аудита на рендере.
     targets: list[Targets] = field(default_factory=list)
+    # Что реально стоит на слайдах (export/facts.py) — для проверок аудита по рендеру.
+    facts: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -90,14 +97,25 @@ class _Ctx:
     fg: str = "#000000"
     muted: str = "#737373"
     surface: str = "#E6F1FF"
+    background: str = "#FFFFFF"
     font_family: str | None = None
 
     @property
     def scale(self) -> float:
         return self.width / REFERENCE_WIDTH
 
+    @property
+    def steps(self) -> list[float]:
+        """Ступени типографической шкалы шаблона (частые кегли его слайдов), от 8 pt."""
+        return [item["size_pt"] for item in self.design.get("type_scale") or [] if (item.get("size_pt") or 0) >= 8]
+
     def pt(self, size: float) -> Pt:
-        return Pt(round(size * self.scale, 1))
+        """Кегль в масштабе слайда; близкий к ступени шкалы шаблона встаёт на неё (template.font_sizes)."""
+        value = size * self.scale
+        nearest = min(self.steps, key=lambda step: abs(step - value), default=None)
+        if nearest is not None and abs(nearest - value) <= value * SCALE_SNAP:
+            value = nearest
+        return Pt(round(value, 1))
 
     @property
     def design(self) -> dict:
@@ -123,8 +141,16 @@ def build_pptx(
 
 
 def build_deck(
-    template_path: str | Path, slides: list[Slide], *, roles: dict, theme: dict, patterns: list[dict] | None = None
+    template_path: str | Path,
+    slides: list[Slide],
+    *,
+    roles: dict,
+    theme: dict,
+    patterns: list[dict] | None = None,
+    strict: bool = True,
 ) -> DeckBuild:
+    """Собирает колоду. strict=False — для рендера: слайд-картинка не прерывает сборку, а попадает
+    в факты (integrity.raster_slide), чтобы аудит показал проблему на превью."""
     prs = Presentation(str(template_path))
     # Слайды-примеры нужны как источники паттернов до конца сборки, потом удаляются.
     sources = list(prs.slides)
@@ -152,6 +178,7 @@ def build_deck(
             fg=fg,
             muted=mix(fg, background, 0.45),
             surface=mix(theme["accent"], background, 0.88),
+            background=background,
             font_family=spec.font_family,
         )
         pattern = by_id.get(spec.pattern_id or "")
@@ -168,11 +195,27 @@ def build_deck(
         _add_chrome(slide, layout, chrome)
     clear_slides(prs, len(sources))
 
+    theme_fonts = extract_theme(prs).get("fonts") or {}
+    logo_digests = {logo["image"] for logo in chrome.get("logos") or [] if logo.get("image")}
+    facts = []
+    for spec, slide in zip(slides, prs.slides):
+        path = _user_image(spec)
+        facts.append(
+            slide_facts(
+                slide,
+                width=ctx.width,
+                height=ctx.height,
+                theme_fonts=theme_fonts,
+                user_digests={digest(path.read_bytes())} if path else set(),
+                logo_digests=logo_digests,
+            )
+        )
+
     buffer = BytesIO()
     prs.save(buffer)
     data = buffer.getvalue()
-    _verify(data, expected=len(slides))
-    return DeckBuild(data=data, targets=targets)
+    _verify(data, expected=len(slides), strict=strict)
+    return DeckBuild(data=data, targets=targets, facts=facts)
 
 
 def _ensure_raster(path: Path) -> Path:
@@ -244,7 +287,7 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
         holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
         if holder is not None:
             if path is not None and hasattr(holder, "insert_picture"):
-                holder.insert_picture(str(path))
+                holder.insert_picture(str(path))  # python-pptx обрезает картинку под рамку, не растягивая
             else:
                 remove(holder._element)
         return
@@ -269,14 +312,18 @@ def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx,
         if layout is None:
             raise ExportError(f"Макет паттерна {pattern['id']} не найден")
         slide = prs.slides.add_slide(layout)
-        slide_targets = fill_pattern(slide, pattern, spec, accents=chart_colors)
+        slide_targets = fill_pattern(
+            slide, pattern, spec, accents=chart_colors, background=ctx.background, steps=ctx.steps
+        )
         _add_chrome(slide, layout, chrome)
     else:
         index = pattern.get("slide_index", -1)
         if not 0 <= index < len(sources):
             raise ExportError(f"Слайд-пример паттерна {pattern['id']} не найден")
         slide = clone_slide(prs, sources[index])
-        slide_targets = fill_pattern(slide, pattern, spec, accents=chart_colors)
+        slide_targets = fill_pattern(
+            slide, pattern, spec, accents=chart_colors, background=ctx.background, steps=ctx.steps
+        )
     _place_image(slide, pattern, spec, ctx)
     _shapes(slide, spec.shapes, ctx, pattern_shapes=pattern.get("shapes"))
     return slide_targets
@@ -329,14 +376,17 @@ def clear_slides(prs, count: int | None = None) -> None:
         ext.getparent().remove(ext)
 
 
-def _verify(data: bytes, *, expected: int) -> None:
-    """integrity.file_opens и integrity.raster_slide: файл открывается, слайды не картинки."""
+def _verify(data: bytes, *, expected: int, strict: bool = True) -> None:
+    """integrity.file_opens и integrity.raster_slide: файл открывается, слайды не картинки.
+    strict=False не проверяет слайды-картинки: при рендере их отмечают факты сборки."""
     try:
         prs = Presentation(BytesIO(data))
     except Exception as exc:  # noqa: BLE001
         raise ExportError(f"Собранный .pptx не открывается: {exc}") from exc
     if len(prs.slides) != expected:
         raise ExportError(f"В файле {len(prs.slides)} слайдов вместо {expected}")
+    if not strict:
+        return
     for number, slide in enumerate(prs.slides, start=1):
         shapes = list(slide.shapes)
         if shapes and all(shape.shape_type == MSO_SHAPE_TYPE.PICTURE for shape in shapes):
@@ -613,9 +663,13 @@ def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
     chart_spec = spec.chart
     chart_style = ctx.design.get("chart_style") or {}
     x, y, w, h = area
-    if chart_spec.caption:
+    bars = chart_spec.type in ("bar", "horizontal_bar")
+    labelled = chart_spec.show_values if chart_spec.show_values is not None else True
+    # Подписанным столбцам ось значений не нужна — единица измерения уходит в подпись диаграммы.
+    caption_text = chart_caption(chart_spec) if bars and labelled else chart_spec.caption
+    if caption_text:
         caption = slide.shapes.add_textbox(x, y, w, int(h * 0.1))
-        _write(caption.text_frame, [chart_spec.caption], ctx, size=ctx.role_size("caption", 14), color=ctx.muted)
+        _write(caption.text_frame, [caption_text], ctx, size=ctx.role_size("caption", 14), color=ctx.muted)
         y, h = y + int(h * 0.11), int(h * 0.89)
 
     data = CategoryChartData()
@@ -636,8 +690,11 @@ def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
         chart.legend.include_in_layout = False
 
     plot = chart.plots[0]
-    plot.has_data_labels = chart_spec.show_values if chart_spec.show_values is not None else True
-    plot.data_labels.font.size = ctx.pt(12)
+    plot.has_data_labels = labelled
+    if labelled:
+        plot.data_labels.font.size = ctx.pt(12)
+        plot.data_labels.number_format = number_format(chart_spec)
+        plot.data_labels.number_format_is_linked = False
     accents = chart_spec.colors or chart_style.get("series_colors") or ctx.theme["accents"]
     if chart_spec.type in ("pie", "donut"):
         for i, point in enumerate(plot.series[0].points):
@@ -645,18 +702,25 @@ def _chart(slide, spec: Slide, area, ctx: _Ctx) -> None:
             point.format.fill.fore_color.rgb = ctx.rgb(accents[i % len(accents)])
         return
 
-    if chart_spec.unit:
+    if bars and labelled:
+        chart.value_axis.visible = False
+        chart.value_axis.has_major_gridlines = False
+    elif chart_spec.unit:
         chart.value_axis.has_title = True
         chart.value_axis.axis_title.text_frame.text = chart_spec.unit
+    if chart_spec.type == "horizontal_bar":
+        # У горизонтальных столбцов PowerPoint рисует первую категорию снизу — порядок как в данных.
+        chart.category_axis.reverse_order = True
     for i, series in enumerate(plot.series):
-        color = ctx.rgb(accents[i % len(accents)])
+        color = accents[i % len(accents)]
         if chart_spec.type == "line":
-            series.format.line.color.rgb = color
+            series.format.line.color.rgb = ctx.rgb(color)
             series.format.line.width = Pt(2.5)
             series.smooth = False
         else:
             series.format.fill.solid()
-            series.format.fill.fore_color.rgb = color
+            series.format.fill.fore_color.rgb = ctx.rgb(color)
+    highlight_points(plot, chart_spec, ctx.background)
 
 
 def _table(slide, spec: Slide, area, ctx: _Ctx) -> None:
@@ -678,12 +742,17 @@ def _table(slide, spec: Slide, area, ctx: _Ctx) -> None:
         table_props.set("bandRow", "1" if style.get("band_row", True) else "0")
     size = ctx.absolute(style.get("font_size_pt"), 14)
     cells = [table_spec.columns, *table_spec.rows]
+    numeric = numeric_columns(table_spec)
     for r, row in enumerate(cells):
         for c in range(columns):
             cell = table.cell(r, c)
             cell.text = ""
             text = row[c] if c < len(row) else ""
-            _run(cell.text_frame.paragraphs[0], text, ctx, size=size, bold=r == 0, styled=True)
+            paragraph = cell.text_frame.paragraphs[0]
+            _run(paragraph, text, ctx, size=size, bold=r == 0, styled=True)
+            if c in numeric:
+                # Числа сравнивают по разрядам — столбец чисел выравнивается вправо вместе с шапкой.
+                paragraph.alignment = PP_ALIGN.RIGHT
 
 
 def _kpis(slide, spec: Slide, area, ctx: _Ctx) -> None:

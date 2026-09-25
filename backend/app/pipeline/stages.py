@@ -1,4 +1,4 @@
-"""Стадии пайплайна генерации — порядок, названия, скиллы и длительность заглушек."""
+"""Стадии пайплайна генерации — порядок, названия и скиллы."""
 
 from dataclasses import dataclass
 from typing import Any
@@ -9,20 +9,18 @@ class StageDef:
     key: str
     title: str
     skill: str | None
-    # Сколько секунд длится стадия-заглушка при MOCK_SPEED=1.
-    mock_seconds: float
 
 
 STAGES: tuple[StageDef, ...] = (
-    StageDef("template", "Декомпозиция шаблона", "template_parser", 1.2),
-    StageDef("content", "Анализ контент-пакета", "content_analyzer", 1.0),
-    StageDef("outline", "Генерация структуры", "outline_planner", 2.0),
-    StageDef("copy", "Тексты слайдов", "slide_writer", 2.0),
-    StageDef("layout", "Вёрстка трёх вариантов", "layout_composer", 2.5),
-    StageDef("visuals", "Графики, таблицы и инфографика", "visualizer", 1.5),
-    StageDef("images", "Генерация изображений", "image_generator", 1.5),
-    StageDef("render", "Сборка слайдов по шаблону", None, 0.0),
-    StageDef("audit", "Аудит слайдов", "auditor", 2.0),
+    StageDef("template", "Декомпозиция шаблона", "template_parser"),
+    StageDef("content", "Анализ контент-пакета", "content_analyzer"),
+    StageDef("outline", "Генерация структуры", "outline_planner"),
+    StageDef("copy", "Тексты слайдов", "slide_writer"),
+    StageDef("layout", "Вёрстка трёх вариантов", "layout_composer"),
+    StageDef("visuals", "Графики, таблицы и инфографика", "visualizer"),
+    StageDef("images", "Генерация изображений", "image_generator"),
+    StageDef("render", "Сборка слайдов по шаблону", None),
+    StageDef("audit", "Аудит слайдов", "auditor"),
 )
 STAGE_BY_KEY = {stage.key: stage for stage in STAGES}
 

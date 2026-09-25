@@ -2,12 +2,12 @@
 
 На входе — бриф, назначение, настройки генерации, материалы контент-пакета и то, что
 умеет шаблон (типы его паттернов). На выходе — список «спецификаций слайдов» в том же
-формате, что и сценарий-заглушка из skills/outline_planner.yaml: ref, тип, группа,
+формате, что и колода без модели (planning/outline.py): ref, тип, группа,
 приоритет, тема и вывод. Тексты слайдов пишет следующая стадия (planning/writer.py).
 
 Модель не придумывает вёрстку: она выбирает тип слайда из списка, который поддерживает
 композитор, и предпочитает те типы, для которых у шаблона есть слайды-примеры. Если модель
-выключена, недоступна или ответила мусором — возвращается детерминированный сценарий.
+выключена, недоступна или ответила мусором — колода собирается из тезисов брифа.
 """
 
 import logging
@@ -73,14 +73,14 @@ CLOSING_FALLBACK = "Спасибо"
 @dataclass
 class DeckPlan:
     specs: list[dict[str, Any]]
-    source: str = "storyline"  # llm или storyline (детерминированный сценарий)
+    source: str = "brief"  # llm или brief (без модели: тезисы брифа как есть)
     usage: Usage | None = None
     warning: str | None = None
 
     def detail(self, purpose: str) -> str:
         if self.source != "llm":
-            reason = f" ({self.warning})" if self.warning else " — модель не подключена"
-            return f"Сценарий «{purpose}»: {len(self.specs)} смысловых блоков{reason}"
+            reason = self.warning or "модель не подключена"
+            return f"Без модели ({reason}): колода из тезисов брифа — {len(self.specs)} слайдов, «{purpose}»"
         kinds = ", ".join(sorted({spec.get("plan_kind") or spec["kind"] for spec in self.specs}))
         return f"План на {len(self.specs)} слайдов ({kinds}) · {self.usage.detail() if self.usage else ''}"
 
@@ -212,7 +212,7 @@ def plan_outline(
     audience: str = "",
     patterns: list[dict[str, Any]] | None = None,
 ) -> DeckPlan:
-    """План колоды: LLM, а при её отсутствии или ошибке — сценарий из outline_planner.yaml."""
+    """План колоды: LLM, а при её отсутствии или ошибке — колода из тезисов брифа (planning/outline.py)."""
     fallback = lambda warning=None: DeckPlan(  # noqa: E731 — короткая ветка отката
         specs=build_outline(title=title, purpose=purpose, brief=brief), warning=warning
     )
@@ -249,7 +249,7 @@ def plan_outline(
             max_tokens=settings.llm_plan_max_tokens,
         )
     if not answer or not isinstance(answer.get("slides"), list):
-        logger.warning("LLM не построила план — беру сценарий из skills/outline_planner.yaml")
+        logger.warning("LLM не построила план — колода собирается из тезисов брифа")
         return fallback("модель не ответила")
 
     used_refs: set[str] = set()

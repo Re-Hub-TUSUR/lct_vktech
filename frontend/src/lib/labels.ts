@@ -1,5 +1,6 @@
 import type {
   CheckKind,
+  CheckMethod,
   CheckStatus,
   PatternCategory,
   PresentationStatus,
@@ -35,11 +36,17 @@ export const KIND_LABELS: Record<CheckKind, string> = {
 }
 
 export const CHECK_STATUS_LABELS: Record<CheckStatus, string> = {
-  implemented: 'Работает',
-  heuristic: 'Эвристика',
-  stub: 'Нужна LLM',
-  planned: 'В плане',
-  export: 'При экспорте',
+  done: 'Выполнена',
+  fallback: 'По правилу',
+  pending: 'Ждёт',
+  unavailable: 'Недоступна',
+}
+
+export const CHECK_METHOD_LABELS: Record<CheckMethod, string> = {
+  data: 'По данным',
+  render: 'По рендеру',
+  llm: 'Модель',
+  vlm: 'Модель по картинке',
 }
 
 export const SLIDE_KIND_LABELS: Record<SlideKind, string> = {

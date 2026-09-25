@@ -9,7 +9,6 @@ x-backend-env: &backend-env
   COOKIE_SECURE: ${COOKIE_SECURE:-false}
   SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-168}
   MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
-  MOCK_SPEED: ${MOCK_SPEED:-1}
   RENDER_TIMEOUT_SECONDS: ${RENDER_TIMEOUT_SECONDS:-420}
   RENDER_CONCURRENCY: ${RENDER_CONCURRENCY:-1}
   # LLM для плана колоды и текстов слайдов (необязательно): OpenAI-совместимый API.
@@ -24,6 +23,14 @@ x-backend-env: &backend-env
   LLM_EXTRA_BODY: ${LLM_EXTRA_BODY:-}
   LLM_SOURCE_CHARS: ${LLM_SOURCE_CHARS:-4000}
   LLM_SOURCES_TOTAL_CHARS: ${LLM_SOURCES_TOTAL_CHARS:-12000}
+  # Модель-судья аудита (необязательно): пустые поля берутся из LLM_*.
+  AUDIT_BASE_URL: ${AUDIT_BASE_URL:-}
+  AUDIT_API_KEY: ${AUDIT_API_KEY:-}
+  AUDIT_MODEL: ${AUDIT_MODEL:-}
+  AUDIT_TIMEOUT_SECONDS: ${AUDIT_TIMEOUT_SECONDS:-180}
+  AUDIT_MAX_TOKENS: ${AUDIT_MAX_TOKENS:-6000}
+  AUDIT_CONCURRENCY: ${AUDIT_CONCURRENCY:-6}
+  AUDIT_WAIT_SECONDS: ${AUDIT_WAIT_SECONDS:-60}
   # VLM для разметки паттернов слайдов (необязательно): OpenAI-совместимый API.
   VLM_BASE_URL: ${VLM_BASE_URL:-}
   VLM_API_KEY: ${VLM_API_KEY:-}

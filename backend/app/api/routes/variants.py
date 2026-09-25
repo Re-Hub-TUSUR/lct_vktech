@@ -16,14 +16,25 @@ from app.core.storage import save_upload, storage_path
 from app.models import Generation
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
-from app.pipeline.layout.composer import compose_single_variant
+from app.pipeline.layout.composer import assign_layouts, compose_single_variant
+from app.pipeline.layout.matcher import assign_patterns
+from app.pipeline.planning.editor import EditError, edit_slide
 from app.pipeline.planning.outline import build_outline, group_labels
-from app.schemas.audit import AuditReport, ResolveRequest, ResolveResponse
+from app.pipeline.visuals.visualizer import refine_variant
+from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
 from app.schemas.presentation import GenerationSettings
 from app.schemas.slide import ImageSpec, RegenerateSlideRequest, SlideUpdate
 from app.schemas.template import SlideTheme
-from app.services.audit import audit_report, build_audit_context, issue_counts, load_slides, refresh_audit, resolve_issues
+from app.services.audit import (
+    audit_report,
+    build_audit_context,
+    issue_counts,
+    load_slides,
+    refresh_audit,
+    resolve_issues,
+    review_variant,
+)
 from app.services.export import ExportUnavailable, export_deck
 from app.services.renders import rendered_images, schedule_render, variant_dir
 from app.services.templates import template_theme
@@ -83,8 +94,10 @@ async def get_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> 
 
 @router.post("/{variant_id}/audit/run", response_model=AuditReport)
 async def rerun_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> AuditReport:
+    """Перезапуск аудита: судья проверяет слайды без вердикта (новые, изменённые, прошлые неответы)."""
     variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     ctx = await build_audit_context(db, presentation, presentation.template)
+    await review_variant(variant, ctx)
     await refresh_audit(db, variant, ctx)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="audit")
@@ -99,7 +112,7 @@ async def resolve(
     template = presentation.template
     ctx = await build_audit_context(db, presentation, template)
     applied = await resolve_issues(db, variant, payload.issue_ids, payload.action, ctx, template)
-    await schedule_render(db, arq, variant, template)
+    await schedule_render(db, arq, variant, template, audit=True)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="audit")
     return ResolveResponse(
@@ -159,12 +172,15 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         groups=group_labels(),
         seed=seed,
         patterns=template.patterns if template else None,
-        demo_defects=not (generation and generation.plan),
     )
+    if template is not None:
+        # Те же правила визуализации, что и при генерации (стадия «Графики, таблицы, инфографика»).
+        names = {layout["key"]: layout["name"] for layout in template.layouts or []}
+        refine_variant(draft.slides, template.patterns, position=variant.position, layout_names=names)
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)
     await refresh_audit(db, variant, ctx)
-    await schedule_render(db, arq, variant, template)
+    await schedule_render(db, arq, variant, template, audit=True)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="variant")
     return await _variant_payload(db, variant, presentation)
@@ -287,7 +303,7 @@ async def get_uploaded_image(
     return FileResponse(path, media_type=media, headers={"Cache-Control": "private, max-age=604800"})
 
 
-@router.post("/{variant_id}/slides/{slide_id}/regenerate", response_model=ResolveResponse)
+@router.post("/{variant_id}/slides/{slide_id}/regenerate", response_model=RegenerateSlideResponse)
 async def regenerate_slide(
     variant_id: uuid.UUID,
     slide_id: str,
@@ -295,8 +311,9 @@ async def regenerate_slide(
     user: CurrentUser,
     db: DbSession,
     arq: Arq,
-) -> ResolveResponse:
-    """Точечная перегенерация отдельного слайда (ручка-стаб для последующей привязки ML)."""
+) -> RegenerateSlideResponse:
+    """Правка слайда из чата редактора: модель переписывает слайд по инструкции (planning/editor.py).
+    Тип слайда и оформление сохраняются, текст укладывается в ёмкость слотов паттерна шаблона."""
     variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     slides = load_slides(variant)
@@ -304,24 +321,47 @@ async def regenerate_slide(
     if target_idx is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
 
-    slide = slides[target_idx]
-    # Стаб-логика: если передан запрос или стиль, освежаем текст/порядок или плейсхолдеры
-    instruction = (payload.instruction or "").strip()
-    if instruction:
-        slide.notes = f"Инструкция перегенерации: {instruction}"
-    if slide.bullets:
-        # Слегка варьируем или сокращаем формулировки, имитируя работу модели
-        slide.bullets = [f"{b.rstrip('.')}." for b in slide.bullets]
-
-    variant.slides = [s.model_dump(mode="json") for s in slides]
+    instruction = (payload.instruction or "").strip() or DEFAULT_INSTRUCTION
+    if payload.style:
+        instruction += f". Стиль: {payload.style.strip()}"
     ctx = await build_audit_context(db, presentation, template)
+    slide = slides[target_idx]
+    try:
+        result = await asyncio.to_thread(
+            edit_slide,
+            slide,
+            instruction,
+            deck=slides,
+            title=presentation.title,
+            purpose=ctx.purpose,
+            brief=presentation.brief or "",
+            sources=ctx.materials,
+            language=ctx.language,
+            tone=ctx.tone,
+            audience=ctx.audience,
+            pattern=ctx.patterns.get(slide.pattern_id or ""),
+        )
+    except EditError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+
+    slides[target_idx] = result.slide
+    if template is not None:
+        # Новый текст мог перестать помещаться в паттерн слайда — тогда подбирается другой.
+        names = {layout["key"]: layout["name"] for layout in template.layouts or []}
+        assign_layouts(slides, template.layout_roles or {}, names)
+        assign_patterns(slides, template.patterns, position=variant.position, layout_names=names, keep=True)
+    variant.slides = [s.model_dump(mode="json") for s in slides]
     await refresh_audit(db, variant, ctx)
-    await schedule_render(db, arq, variant, template)
+    await schedule_render(db, arq, variant, template, audit=True)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
-    return ResolveResponse(
+    return RegenerateSlideResponse(
+        reply=result.reply,
         applied=1,
         report=await audit_report(db, variant),
         variant=await _variant_payload(db, variant, presentation),
     )
+
+
+DEFAULT_INSTRUCTION = "Улучши слайд: заголовок — вывод, тезисы короче и конкретнее, без воды"

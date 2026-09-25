@@ -6,7 +6,12 @@ from pydantic import BaseModel, Field
 
 from app.schemas.generation import VariantOut
 
-CheckStatus = Literal["implemented", "heuristic", "stub", "planned", "export"]
+# Чем выполняется проверка: данные слайда и шаблона, собранный .pptx и его рендер, модель-судья по тексту
+# колоды, модель-судья по картинке слайда.
+CheckMethod = Literal["data", "render", "llm", "vlm"]
+# Состояние проверки в этом отчёте: выполнена; выполнена запасным правилом (нет рендера или модели);
+# ждёт рендера или ответа модели; недоступна (нет LibreOffice или модели и нет запасного правила).
+CheckState = Literal["done", "fallback", "pending", "unavailable"]
 
 
 class AuditIssueOut(BaseModel):
@@ -34,7 +39,10 @@ class CheckOut(BaseModel):
     category: str
     kind: Literal["deterministic", "contextual"]
     severity: Literal["error", "warning", "info"]
-    status: CheckStatus
+    method: CheckMethod
+    fallback: CheckMethod | None = None
+    status: CheckState
+    note: str | None = None
     description: str
     fixable: bool
     fix: str | None
@@ -50,6 +58,7 @@ class AuditSummary(BaseModel):
     by_kind: dict[str, int]
     checks_run: int
     checks_failed: int
+    checks_pending: int = 0
 
 
 class AuditReport(BaseModel):
@@ -58,6 +67,8 @@ class AuditReport(BaseModel):
     summary: AuditSummary
     issues: list[AuditIssueOut]
     checks: list[CheckOut]
+    # Модель-судья контекстуальных проверок (AUDIT_MODEL или LLM_MODEL); None — не подключена.
+    judge: str | None = None
 
 
 class ResolveRequest(BaseModel):
@@ -69,3 +80,9 @@ class ResolveResponse(BaseModel):
     applied: int
     report: AuditReport
     variant: VariantOut
+
+
+class RegenerateSlideResponse(ResolveResponse):
+    """Правка слайда из чата: ответ модели для чата и состояние варианта после правки."""
+
+    reply: str

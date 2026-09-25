@@ -1,4 +1,4 @@
-from app.pipeline.audit.catalog import AuditContext, limits, load_catalog
+from app.pipeline.audit.catalog import METHODS, AuditContext, limits, load_catalog
 from app.pipeline.audit.checks import CHECKS
 from app.pipeline.audit.fixes import FIXES, FixContext, IssueRef, apply_fixes, shorten
 from app.pipeline.audit.runner import run_checks
@@ -25,7 +25,8 @@ def make_ctx(**overrides) -> AuditContext:
 
 
 def found(slides: list[Slide], ctx: AuditContext | None = None) -> set[str]:
-    return {result.finding.check_id for result in run_checks(slides, ctx or make_ctx())}
+    results, _ = run_checks(slides, ctx or make_ctx())
+    return {result.finding.check_id for result in results}
 
 
 def content_slide(**fields) -> Slide:
@@ -37,11 +38,12 @@ def test_catalog_is_consistent():
     catalog = load_catalog()
     ids = [check.id for check in catalog]
     assert len(ids) == len(set(ids)), "идентификаторы проверок должны быть уникальны"
+    assert len(ids) == 34, "каталог повторяет 34 проверки ТЗ"
     for check in catalog:
-        if check.status in {"implemented", "heuristic"}:
-            assert check.id in CHECKS, f"нет реализации для {check.id}"
+        assert check.id in CHECKS, f"нет реализации для {check.id}"
+        assert check.method in METHODS and (check.fallback is None or check.fallback in METHODS)
         if check.fixable:
-            assert check.id in FIXES, f"нет автоисправления для {check.id}"
+            assert check.id in FIXES or (check.editor and check.fix_prompt), f"нет автоисправления для {check.id}"
 
 
 def test_clean_slide_passes():
@@ -100,7 +102,7 @@ def test_fixes_resolve_findings():
         content_slide(bullets=["Нормальный тезис", "TODO: вставьте цифры", "слово " * 20]),
     ]
     ctx = make_ctx()
-    results = run_checks(slides, ctx)
+    results, _ = run_checks(slides, ctx)
     issues = [
         IssueRef(str(i), r.finding.check_id, r.finding.slide_id, r.finding.target, r.finding.evidence)
         for i, r in enumerate(results)
@@ -121,3 +123,12 @@ def test_fixes_resolve_findings():
 def test_shorten_keeps_short_text():
     assert shorten("Короткий тезис") == "Короткий тезис"
     assert len(shorten("слово " * 30, 15).split()) <= 15
+
+
+def test_derived_numbers_are_grounded():
+    """Итог, разность и отношение чисел из материалов — не выдуманные факты; «42.0» и «42» — одно число."""
+    ctx = make_ctx(sources_text="Продажи подготовили 42 презентации, маркетинг — 27, HR — 15. Было 8 часов, стало 5 минут.")
+    total = content_slide(bullets=["Всего 84 презентации", "Продажи — 42.0", "Быстрее в 96 раз", "Было 8 часов — 480 минут"])
+    assert "content.facts_grounded" not in found([total], ctx)
+    invented = content_slide(bullets=["Всего 137 презентаций"])
+    assert "content.facts_grounded" in found([invented], ctx)
