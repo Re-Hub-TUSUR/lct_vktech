@@ -1,38 +1,24 @@
-"""Генерация структуры презентации — ЗАГЛУШКА.
+"""Структура колоды без модели — запасной путь, когда LLM не подключена или не ответила.
 
-Сейчас план берётся из сценария в skills/outline_planner.yaml, а тезисы брифа
-подставляются в слайд с use_brief. Здесь будет вызов LLM с промптом из того же файла;
-контракт — список «спецификаций слайдов» (dict), который потребляет композитор.
+Колода собирается только из того, что дал пользователь: название, назначение и тезисы брифа.
+Ничего не придумывается — ни фактов, ни цифр: тезисы раскладываются по слайдам как есть
+(первый тезис группы становится заголовком, остальные — пунктами), обложка и финал служебные.
+Контракт тот же, что у плана от модели (planning/planner.py): список «спецификаций слайдов».
 """
 
-import copy
-from datetime import date
 from typing import Any
 
 from app.pipeline.content.ingest import split_sentences
 from app.pipeline.skills import get_skill
 
-MONTHS = (
-    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
-    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
-)  # fmt: skip
+# Столько тезисов брифа ложится на один слайд: заголовок и до трёх пунктов.
+THESES_PER_SLIDE = 4
+TITLE_WORDS = 10
 
 
 def _shorten(text: str, max_words: int) -> str:
     words = text.split()
     return text if len(words) <= max_words else " ".join(words[:max_words]) + "…"
-
-
-def _substitute(value: Any, values: dict[str, str]) -> Any:
-    if isinstance(value, str):
-        for key, replacement in values.items():
-            value = value.replace("{" + key + "}", replacement)
-        return value
-    if isinstance(value, list):
-        return [_substitute(item, values) for item in value]
-    if isinstance(value, dict):
-        return {key: _substitute(item, values) for key, item in value.items()}
-    return value
 
 
 def purpose_label(purpose: str) -> str:
@@ -44,32 +30,31 @@ def group_labels() -> dict[str, str]:
     return dict(get_skill("outline_planner").params.get("groups") or {})
 
 
-def build_outline(*, title: str, purpose: str, brief: str, today: date | None = None) -> list[dict[str, Any]]:
-    params = get_skill("outline_planner").params
-    purposes = params.get("purposes") or {}
-    purpose_cfg = purposes.get(purpose) or {}
-    overrides = (params.get("purpose_overrides") or {}).get(purpose) or {}
-    today = today or date.today()
-
+def build_outline(*, title: str, purpose: str, brief: str) -> list[dict[str, Any]]:
+    purpose_cfg = (get_skill("outline_planner").params.get("purposes") or {}).get(purpose) or {}
     theses = split_sentences(brief)
-    subtitle = _shorten(theses[0], 16) if theses else purpose_cfg.get("subtitle", "")
-    values = {
-        "title": title.strip() or "Новая презентация",
-        "subtitle": subtitle,
-        "purpose": purpose_cfg.get("label", purpose),
-        "date": f"{MONTHS[today.month - 1]} {today.year}",
-    }
-
-    specs: list[dict[str, Any]] = []
-    for raw in params.get("storyline") or []:
-        spec = copy.deepcopy(raw)
-        spec.update(copy.deepcopy(overrides.get(spec.get("ref"), {})))
-        spec = _substitute(spec, values)
-        # Тезисы брифа важнее заготовки: берём их, если их хватает на слайд.
-        if spec.get("use_brief") and len(theses) >= 4:
-            spec["bullets"] = theses[1:7]
-            # Заготовленные карточки и колонки описывают сценарий-пример, а не бриф.
-            spec.pop("cards", None)
-            spec.pop("columns", None)
-        specs.append(spec)
+    specs: list[dict[str, Any]] = [
+        {
+            "ref": "cover",
+            "kind": "title",
+            "priority": 1,
+            "topic": title.strip() or "Новая презентация",
+            "subtitle": _shorten(theses[0], 16) if theses else purpose_cfg.get("subtitle", ""),
+        }
+    ]
+    body = theses[1:] if len(theses) > 1 else theses
+    for number, start in enumerate(range(0, len(body), THESES_PER_SLIDE), start=1):
+        chunk = body[start : start + THESES_PER_SLIDE]
+        specs.append(
+            {
+                "ref": f"brief_{number}",
+                "kind": "bullets",
+                "priority": 1 if number == 1 else 2,
+                "topic": _shorten(chunk[0], TITLE_WORDS),
+                "insight": _shorten(chunk[0], TITLE_WORDS),
+                # Тезис-заголовок не повторяется пунктом, если есть другие тезисы.
+                "bullets": chunk[1:] or chunk,
+            }
+        )
+    specs.append({"ref": "closing", "kind": "closing", "priority": 1, "topic": "Спасибо", "subtitle": "Вопросы и обсуждение"})
     return specs

@@ -92,11 +92,15 @@ def test_plan_is_normalized_for_composer(llm_on):
     assert plan.specs[0]["subtitle"] == "Презентации по шаблону за минуты"
 
 
-def test_plan_falls_back_to_storyline_without_model(monkeypatch):
+def test_plan_falls_back_to_brief_without_model(monkeypatch):
     monkeypatch.setattr(settings, "llm_base_url", None)
     plan = planner.plan_outline(title="Тест", purpose="product", brief=BRIEF, sources="", slides_count=8)
-    assert plan.source == "storyline" and plan.specs and plan.specs[0]["kind"] == "title"
-    assert "Сценарий" in plan.detail("Продукт")
+    assert plan.source == "brief" and plan.specs and plan.specs[0]["kind"] == "title"
+    assert plan.specs[-1]["kind"] == "closing"
+    assert "Без модели" in plan.detail("Продукт")
+    # Ничего не придумано: на слайдах только тезисы брифа.
+    texts = " ".join(" ".join([spec.get("subtitle") or "", spec.get("topic") or "", *spec.get("bullets", [])]) for spec in plan.specs[1:-1])
+    assert "8 часов" in texts or "8 часов" in plan.specs[0]["subtitle"]
 
 
 def test_slides_are_written_and_normalized(llm_on):
@@ -111,7 +115,7 @@ def test_slides_are_written_and_normalized(llm_on):
     assert data["categories"] == ["Вручную", "Сервис"]
     assert data["series"][0]["values"] == [480.0, 5.0], "ряд подрезается под число категорий"
     # Таблица для варианта «данные таблицей» строится из тех же чисел, без нового запроса.
-    assert data["table"]["rows"] == [["Вручную", "480.0"], ["Сервис", "5.0"]]
+    assert data["table"]["rows"] == [["Вручную", "480"], ["Сервис", "5"]]
     # Служебные слайды модель не пишет: обложка и финал остаются из плана.
     assert all("bullets" not in spec for spec in plan.specs if spec["plan_kind"] in {"title", "closing"})
 
@@ -127,7 +131,6 @@ def test_written_plan_reaches_slides(llm_on):
         layouts=[],
         roles={},
         groups={"problem": "Проблема", "results": "Результаты"},
-        demo_defects=False,
     )
     lean = drafts[0].slides  # вариант A: карточки и KPI
     problem = next(slide for slide in lean if slide.ref == "problem")

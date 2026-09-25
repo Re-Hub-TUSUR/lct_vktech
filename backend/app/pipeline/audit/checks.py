@@ -1,8 +1,10 @@
-"""Реализации проверок аудита. Метаданные (название, категория, тип, статус) — в каталоге.
+"""Проверки аудита по данным слайда и контекстуальные проверки по вердиктам модели-судьи.
 
-Детерминированные проверки работают по данным слайда и шаблона. Контекстуальные
-в продукте выполняет VLM по картинке слайда; здесь часть из них заменена
-эвристиками (status: heuristic в каталоге), остальные не выполняются (stub).
+Метаданные (название, категория, способ проверки) — в каталоге skills/auditor.yaml. Проверки по
+рендеру — в audit/geometry.py. Контекстуальные читают вердикты судьи (audit/review.py) из
+контекста; у слайда без вердикта (модель не подключена или не ответила) работает запасное
+правило, если оно есть: короткий заголовок — тема, числа ищутся в материалах, служебные маркеры,
+доля латиницы.
 """
 
 import re
@@ -111,11 +113,32 @@ def words(text: str) -> int:
     return len(WORD_RX.findall(text))
 
 
+def verdict(ctx: AuditContext, slide: Slide) -> dict | None:
+    """Вердикт судьи по слайду; None — вердикта нет, работает запасное правило."""
+    found = ctx.reviews.get(slide.id)
+    return found if found and not found.get("failed") else None
+
+
+def clean(text: object) -> str:
+    return " ".join(str(text or "").split())
+
+
+def locate(slide: Slide, fragment: str) -> str | None:
+    """Адрес элемента слайда, где встречается фрагмент (без учёта регистра и пунктуации)."""
+    needle = normalize(fragment)
+    if not needle:
+        return None
+    for target, text in text_items(slide):
+        if needle in normalize(text):
+            return target
+    return None
+
+
 # --- Вёрстка -----------------------------------------------------------------------
 
 
-@check("layout.text_overflow")
-def text_overflow(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+def text_overflow_estimate(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    """Запасное правило layout.text_overflow без рендера: объём текста против ёмкости рамки."""
     default_title = int(ctx.limits.get("max_title_chars", 100))
     for slide in slides:
         pattern = ctx.patterns.get(slide.pattern_id or "")
@@ -287,26 +310,109 @@ def duplicates(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
             seen[signature] = index
 
 
-# --- Содержание (эвристики вместо VLM) ---------------------------------------------
+# --- Содержание (модель-судья, запасные правила) ----------------------------------------
+
+CONTENT_EXEMPT = INVERSE_KINDS | {"agenda"}
 
 
 @check("content.title_is_insight")
 def title_is_insight(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     for slide in slides:
-        if slide.kind in INVERSE_KINDS or slide.kind == "agenda" or not slide.title:
+        if slide.kind in CONTENT_EXEMPT or not slide.title:
             continue
-        if words(slide.title) <= 3:
+        found = verdict(ctx, slide)
+        if found is not None:
+            if found.get("title_is_topic"):
+                better = clean(found.get("better_title"))
+                yield Finding(
+                    "content.title_is_insight",
+                    slide.id,
+                    "title",
+                    f"«{slide.title}» — тема, а не вывод" + (f". Вывод из содержимого: «{better}»" if better else ""),
+                    better or None,
+                )
+        elif words(slide.title) <= 3:
             yield Finding(
                 "content.title_is_insight",
                 slide.id,
                 "title",
                 f"«{slide.title}» — тема, а не вывод: из заголовка непонятно, что следует из слайда",
-                slide.title,
             )
 
 
+@check("content.matches_title")
+def matches_title(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    for slide in slides:
+        found = verdict(ctx, slide)
+        if slide.kind in CONTENT_EXEMPT or found is None or not found.get("content_mismatch"):
+            continue
+        better = clean(found.get("better_title"))
+        yield Finding(
+            "content.matches_title",
+            slide.id,
+            "title",
+            f"Содержимое не подтверждает заголовок «{slide.title}»"
+            + (f". Из содержимого следует: «{better}»" if better else ""),
+            better or None,
+        )
+
+
+@check("content.one_sentence")
+def one_sentence(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    for slide in slides:
+        found = verdict(ctx, slide)
+        if slide.kind in CONTENT_EXEMPT or found is None or clean(found.get("summary")):
+            continue
+        yield Finding(
+            "content.one_sentence",
+            slide.id,
+            "slide",
+            "Главную мысль слайда не удаётся пересказать одним предложением — на слайде несколько тем",
+        )
+
+
 def _number_key(raw: str) -> str:
-    return raw.replace(" ", "").replace(",", ".").lstrip("×x").rstrip("%").rstrip(".")
+    """Число без оформления: «1 250», «42.0», «×96», «40%» → «1250», «42», «96», «40»."""
+    key = raw.replace(" ", "").replace("\u00a0", "").replace(",", ".").lstrip("×x").rstrip("%").rstrip(".")
+    try:
+        return f"{float(key):g}"
+    except ValueError:
+        return key
+
+
+TRIPLE_SUM_LIMIT = 15
+# Пересчёт единиц: часы в минуты, сутки в часы, недели в дни, годы в месяцы, доли в проценты, тысячи.
+UNIT_FACTORS = (60, 24, 7, 12, 100, 1000)
+
+
+def _numbers(keys: set[str]) -> list[float]:
+    values = []
+    for key in keys:
+        try:
+            values.append(float(key))
+        except ValueError:
+            continue
+    return sorted(set(values))[:60]
+
+
+def derivable(value: float, numbers: list[float]) -> bool:
+    """Число получается из чисел материалов: сумма двух-трёх, разность, отношение, прирост в процентах."""
+    close = lambda a, b: abs(a - b) <= max(0.011 * abs(b), 0.051)  # noqa: E731 — округление при пересчёте
+    if any(close(value, a * k) or close(value, a / k) for a in numbers for k in UNIT_FACTORS):
+        return True  # «8 часов» на слайде стали «480 минутами»
+    for i, a in enumerate(numbers):
+        for b in numbers[i + 1 :]:
+            if close(value, a + b) or close(value, b - a) or (a and close(value, b / a)):
+                return True
+            if a and close(value, (b - a) / a * 100):
+                return True
+            # Итог из трёх слагаемых («всего 84 = 42 + 27 + 15») — только для короткого списка чисел,
+            # иначе суммой троек объясняется почти любое число.
+            if len(numbers) <= TRIPLE_SUM_LIMIT:
+                for c in numbers[numbers.index(b) + 1 :]:
+                    if close(value, a + b + c):
+                        return True
+    return False
 
 
 def _is_trivial(key: str) -> bool:
@@ -320,7 +426,9 @@ def _is_trivial(key: str) -> bool:
 
 @check("content.facts_grounded")
 def facts_grounded(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    """Числа ищутся в полном тексте материалов (правило), факты сверяет судья по брифу и выдержкам."""
     source_numbers = {_number_key(m) for m in NUMBER_RX.findall(ctx.sources_text or "")}
+    values = _numbers(source_numbers)
     for slide in slides:
         if slide.kind in {"title", "closing"}:
             continue
@@ -329,17 +437,31 @@ def facts_grounded(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
         for target, text in text_items(slide):
             for raw in NUMBER_RX.findall(text):
                 key = _number_key(raw)
-                if _is_trivial(key) or key in source_numbers or raw.strip() in missing:
+                if _is_trivial(key) or key in source_numbers or raw.strip() in missing or derivable(float(key), values):
                     continue
                 missing.append(raw.strip())
                 first_target = first_target or target
-        if missing:
-            shown = ", ".join(missing[:5]) + (" …" if len(missing) > 5 else "")
+        claims: list[str] = []
+        found = verdict(ctx, slide)
+        for claim in (found or {}).get("unsupported") or []:
+            claim = clean(claim)
+            target = locate(slide, claim)
+            numbers = [_number_key(raw) for raw in NUMBER_RX.findall(claim)]
+            # Судья видит только выдержку материалов: число, которое есть в полном тексте, — подтверждено.
+            if numbers and all(key in source_numbers or _is_trivial(key) for key in numbers):
+                continue
+            # Факт должен быть на слайде: иначе судья пересказал своё, и показывать нечего.
+            if claim and (target or any(raw.strip() in missing for raw in NUMBER_RX.findall(claim))):
+                claims.append(claim)
+                first_target = first_target or target
+        items = claims + [number for number in missing if not any(number in claim for claim in claims)]
+        if items:
+            shown = "; ".join(items[:5]) + (" …" if len(items) > 5 else "")
             yield Finding(
                 "content.facts_grounded",
                 slide.id,
                 first_target,
-                f"Цифры не найдены в брифе и контент-пакете: {shown}",
+                f"Не найдено в брифе и контент-пакете: {shown}",
                 shown,
             )
 
@@ -347,17 +469,96 @@ def facts_grounded(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
 @check("content.service_text")
 def service_text(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     for slide in slides:
+        seen: set[str] = set()
         for target, text in text_items(slide):
             match = SERVICE_RX.search(text)
             if match:
+                seen.add(normalize(text))
                 yield Finding(
                     "content.service_text", slide.id, target, f"Служебный текст на слайде: «{match.group(0)}»", text
                 )
+        for fragment in (verdict(ctx, slide) or {}).get("service") or []:
+            fragment = clean(fragment)
+            target = locate(slide, fragment)
+            if target and normalize(fragment) not in seen:
+                seen.add(normalize(fragment))
+                yield Finding(
+                    "content.service_text", slide.id, target, f"Служебный текст на слайде: «{fragment[:60]}»", fragment
+                )
+
+
+@check("content.typos")
+def typos(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    for slide in slides:
+        for typo in (verdict(ctx, slide) or {}).get("typos") or []:
+            wrong, right = clean((typo or {}).get("wrong")), clean((typo or {}).get("right"))
+            if not wrong or not right or wrong.lower() == right.lower():
+                continue
+            target = next(
+                (t for t, text in text_items(slide) if re.search(rf"(?<!\w){re.escape(wrong)}(?!\w)", text, re.IGNORECASE)),
+                None,
+            )
+            if target:
+                yield Finding("content.typos", slide.id, target, f"Опечатка: «{wrong}» → «{right}»", f"{wrong} → {right}")
+
+
+@check("content.table_relevance")
+def table_relevance(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    for slide in slides:
+        for item in (verdict(ctx, slide) or {}).get("irrelevant") or []:
+            item = clean(item)
+            key = normalize(item)
+            if not key:
+                continue
+            if slide.table and any(row and normalize(row[0]) == key for row in slide.table.rows):
+                yield Finding("content.table_relevance", slide.id, "table", f"Строка «{item}» не работает на вывод слайда", item)
+            elif slide.chart and any(normalize(name) == key for name in slide.chart.categories):
+                yield Finding("content.table_relevance", slide.id, "chart", f"Категория «{item}» не работает на вывод слайда", item)
+            elif slide.chart and len(slide.chart.series) > 1 and any(normalize(s.name) == key for s in slide.chart.series):
+                yield Finding("content.table_relevance", slide.id, "chart", f"Ряд «{item}» не работает на вывод слайда", item)
+
+
+@check("content.logical_flow")
+def logical_flow(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    for index, slide in enumerate(slides):
+        if index == 0 or slide.kind in {"title", "section"}:
+            continue
+        found = verdict(ctx, slide)
+        if found and found.get("flow_break"):
+            yield Finding(
+                "content.logical_flow",
+                slide.id,
+                "slide",
+                f"Слайд не продолжает мысль предыдущего («{slides[index - 1].title}») и выпадает из темы колоды",
+            )
+
+
+@check("content.images_relevant")
+def images_relevant(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
+    for slide in slides:
+        found = ctx.image_reviews.get(slide.id)
+        if found and not found.get("failed") and found.get("relevant") is False:
+            reason = clean(found.get("reason"))
+            yield Finding(
+                "content.images_relevant",
+                slide.id,
+                "image",
+                "Картинка не относится к теме слайда" + (f": {reason}" if reason else ""),
+            )
 
 
 @check("content.single_language")
 def single_language(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     for slide in slides:
+        found = verdict(ctx, slide)
+        if found is not None:
+            fragments = [clean(item) for item in found.get("foreign") or [] if locate(slide, clean(item))]
+            if fragments:
+                shown = "; ".join(fragments[:4])
+                yield Finding(
+                    "content.single_language", slide.id, locate(slide, fragments[0]), f"Не на языке колоды: {shown}", shown
+                )
+            continue
         text = " ".join(t for _, t in text_items(slide))
         latin = [w for w in LATIN_WORD_RX.findall(text) if w.lower() not in LATIN_ALLOWED and not w.isupper()]
         cyrillic = CYRILLIC_WORD_RX.findall(text)

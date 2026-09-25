@@ -25,7 +25,8 @@ interface SlideAssistantPanelProps {
   slide: Slide
   theme: SlideTheme
   slideIndex: number
-  onRegenerate: (instruction: string) => Promise<void>
+  // Правка слайда моделью; возвращает ответ модели — что она изменила.
+  onRegenerate: (instruction: string) => Promise<string>
   onChangeKind: (kind: SlideKind) => void
   onSelectPattern: (pattern: SlidePattern) => void
   onOpenDesignModal: () => void
@@ -57,7 +58,7 @@ export function SlideAssistantPanel({
     {
       id: 'welcome',
       role: 'assistant',
-      text: `Привет! Я AI-ассистент этого слайда. Напишите в чат, что хотите изменить (переписать тезисы, сменить фокус или стиль), либо выберите быстрый сценарий ниже.`,
+      text: `Напишите, что изменить на слайде: переписать тезисы, сменить фокус или стиль, поправить числа. Модель перепишет текст так, чтобы он поместился в макет шаблона. Или выберите быстрый сценарий ниже.`,
       time: 'сейчас',
     },
   ])
@@ -86,19 +87,20 @@ export function SlideAssistantPanel({
     if (textToSend === undefined) setInputPrompt('')
 
     try {
-      await onRegenerate(prompt)
+      const reply = await onRegenerate(prompt)
       const assistantMsg: Message = {
         id: String(Date.now() + 1),
         role: 'assistant',
-        text: 'Слайд успешно обновлён в соответствии с вашим комментарием! Вы можете оценить результат на холсте слева.',
+        text: reply,
         time: timeStr,
       }
       setMessages((prev) => [...prev, assistantMsg])
-    } catch {
+    } catch (error) {
+      const reason = error instanceof Error && error.message ? error.message : 'Попробуйте ещё раз.'
       const errorMsg: Message = {
         id: String(Date.now() + 1),
         role: 'assistant',
-        text: 'К сожалению, произошла ошибка при перегенерации слайда. Попробуйте ещё раз.',
+        text: `Не получилось изменить слайд: ${reason}`,
         time: timeStr,
       }
       setMessages((prev) => [...prev, errorMsg])

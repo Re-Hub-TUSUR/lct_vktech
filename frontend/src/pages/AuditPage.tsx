@@ -29,6 +29,7 @@ import type {
   AuditIssue,
   AuditReport,
   CheckKind,
+  RegenerateSlideResponse,
   ResolveResponse,
   Severity,
   Slide,
@@ -46,7 +47,7 @@ import { SlideView, slideRender, type Highlights } from '../components/slides/Sl
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
-import { CHECK_STATUS_LABELS, KIND_LABELS, SEVERITY_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
+import { CHECK_METHOD_LABELS, CHECK_STATUS_LABELS, SEVERITY_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 
 const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
 const SEVERITY_TONES: Record<Severity, string> = { error: 'danger', warning: 'warning', info: 'info' }
@@ -459,9 +460,12 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     onError: (error) => notify(error.message, 'error'),
   })
 
+  // Правка слайда моделью по сообщению из чата; ответ модели показывает ассистент, ошибку — тоже он.
   const regenerateSlideMutation = useMutation({
     mutationFn: (instruction: string) =>
-      api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, { instruction }),
+      api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, {
+        instruction,
+      }),
     onSuccess: (result) => {
       applyResult(result)
       if (currentSlide) {
@@ -471,9 +475,8 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
           return next
         })
       }
-      notify('Слайд перегенерирован')
+      notify('Слайд обновлён')
     },
-    onError: (error) => notify(error.message, 'error'),
   })
 
   const handleSlideChange = (updates: SlideUpdate) => {
@@ -870,6 +873,13 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                   <span className="audit-summary-bullet-dot" />
                   <span>{summary.by_kind.contextual ?? 0} контекстуальных</span>
                 </div>
+                <div className="audit-summary-dot-row" title="Модель, которая выполняет контекстуальные проверки">
+                  <span className="audit-summary-bullet-dot" />
+                  <span>
+                    {report.judge ? `Судья: ${report.judge}` : 'Модель-судья не подключена'}
+                    {summary.checks_pending > 0 && ` · ждут ${countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}`}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -1097,9 +1107,7 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
               slide={activeSlide}
               theme={theme}
               slideIndex={slideIndex}
-              onRegenerate={async (instruction) => {
-                await regenerateSlideMutation.mutateAsync(instruction)
-              }}
+              onRegenerate={async (instruction) => (await regenerateSlideMutation.mutateAsync(instruction)).reply}
               onChangeKind={handleChangeKind}
               onSelectPattern={handleSelectPattern}
               onOpenDesignModal={() => setShowDesignModal(true)}
@@ -1404,13 +1412,14 @@ function ChecksCatalog({ report }: { report: AuditReport }) {
     label,
     checks: report.checks.filter((check) => check.category === key),
   }))
-  const runnable = (check: AuditCheck) => check.status === 'implemented' || check.status === 'heuristic'
+  const runnable = (check: AuditCheck) => check.status === 'done' || check.status === 'fallback'
 
   return (
     <div className="checks">
       <p className="muted">
-        Каталог проверок — <code>backend/skills/auditor.yaml</code>. Детерминированные дают одинаковый результат на одном слайде;
-        контекстуальные оценивают смысл и в продукте выполняются VLM.
+        Каталог проверок — <code>backend/skills/auditor.yaml</code>. Проверки по данным и по рендеру дают одинаковый
+        результат на одном слайде; контекстуальные оценивает модель-судья
+        {report.judge ? ` (${report.judge})` : ''} — по тексту колоды и по картинкам слайдов.
       </p>
       {groups.map((group) => (
         <section key={group.key}>
@@ -1430,11 +1439,12 @@ function ChecksCatalog({ report }: { report: AuditReport }) {
                     ))}
                 </div>
                 <div className="issue__meta">
-                  <Badge tone={check.kind === 'contextual' ? 'purple' : 'neutral'}>{KIND_LABELS[check.kind]}</Badge>
+                  <Badge tone={check.kind === 'contextual' ? 'purple' : 'neutral'}>{CHECK_METHOD_LABELS[check.method]}</Badge>
                   <Badge tone={runnable(check) ? 'info' : 'neutral'}>{CHECK_STATUS_LABELS[check.status]}</Badge>
                   {check.fixable && <Badge tone="success">автоисправление</Badge>}
                 </div>
                 <small className="muted">{check.description}</small>
+                {check.note && <small className="muted">{check.note}</small>}
               </li>
             ))}
           </ul>

@@ -23,8 +23,10 @@ from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.opc.package import Part, XmlPart
 from pptx.oxml.ns import qn
 
+from app.pipeline.export.chart_style import highlight_points
 from app.pipeline.parsing.layout_patterns import slot_id
 from app.pipeline.parsing.patterns import _walk
+from app.pipeline.visuals.numbers import numeric_columns
 from app.schemas.slide import INVERSE_KINDS, ChartData, Slide, TableData
 
 R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -271,10 +273,12 @@ MIN_FONT_SCALE = 0.35  # ниже текст нечитаем — пусть л�
 
 @dataclass(frozen=True)
 class Fit:
-    """Размер слайда в пунктах: по нему считается, во сколько раз ужать текст в слоте."""
+    """Размер слайда в пунктах: по нему считается, во сколько раз ужать текст в слоте.
+    steps — ступени типографической шкалы шаблона: ужатый кегль встаёт на ближайшую меньшую."""
 
     width_pt: float
     height_pt: float
+    steps: tuple[float, ...] = ()
 
     def scale(self, slot: dict[str, Any] | None, text: str) -> float:
         """Во сколько раз уменьшить кегль слота, чтобы текст поместился в его рамку.
@@ -310,11 +314,15 @@ class Fit:
         return max(MIN_FONT_SCALE, min(1.0, width_scale, height_scale))
 
 
-def slide_fit(slide) -> Fit | None:
+def slide_fit(slide, steps: list[float] | None = None) -> Fit | None:
     """Размер слайда из презентации, которой он принадлежит."""
     try:
         presentation = slide.part.package.presentation_part.presentation
-        return Fit(presentation.slide_width / EMU_PER_PT, presentation.slide_height / EMU_PER_PT)
+        return Fit(
+            presentation.slide_width / EMU_PER_PT,
+            presentation.slide_height / EMU_PER_PT,
+            tuple(sorted(steps or ())),
+        )
     except Exception:  # noqa: BLE001 — без размеров слайда просто не подгоняем кегль
         return None
 
@@ -337,17 +345,26 @@ def _autofit(body) -> None:
 
 
 MIN_FONT_SZ = 600  # 6 pt в сотых долях пункта — мельче текст бессмысленно уменьшать
+STEP_DROP = 0.8  # до ступени шкалы кегль уменьшается не больше чем ещё на пятую часть
 
 
-def _scale_runs(body, scale: float, base_size: float | None) -> None:
+def snap_size(size: int, steps: tuple[float, ...]) -> int:
+    """Ужатый кегль (в сотых пункта) — на ближайшую меньшую ступень шкалы шаблона, если она рядом."""
+    lower = [int(step * 100) for step in steps if step * 100 <= size]
+    if lower and lower[-1] >= size * STEP_DROP:
+        return lower[-1]
+    return size
+
+
+def _scale_runs(body, scale: float, base_size: float | None, steps: tuple[float, ...] = ()) -> None:
     """Уменьшает кегль текста в рамке. LibreOffice не применяет fontScale из normAutofit,
     поэтому размер проставляется каждому прогону явно — так работает в любом редакторе."""
     for props in body.iter(qn("a:rPr"), qn("a:endParaRPr"), qn("a:defRPr")):
         size = props.get("sz")
         if size and size.isdigit():
-            props.set("sz", str(max(int(int(size) * scale), MIN_FONT_SZ)))
+            props.set("sz", str(max(snap_size(int(int(size) * scale), steps), MIN_FONT_SZ)))
         elif base_size:
-            props.set("sz", str(max(int(base_size * 100 * scale), MIN_FONT_SZ)))
+            props.set("sz", str(max(snap_size(int(base_size * 100 * scale), steps), MIN_FONT_SZ)))
 
 
 def _plain_head(paragraph) -> None:
@@ -384,6 +401,8 @@ def set_body(
     plain_head: bool = False,
     scale: float = 1.0,
     base_size: float | None = None,
+    steps: tuple[float, ...] = (),
+    align: str | None = None,
 ) -> bool:
     """Заменяет абзацы txBody. head — первый абзац в стиле первого абзаца шаблона (заголовок карточки)."""
     if body is None:
@@ -405,7 +424,14 @@ def set_body(
     for index, line in enumerate(lines if lines or head is not None else [""]):
         body.append(_filled_paragraph(templates[min(index, len(templates) - 1, 1)], line))
     if scale < 1:
-        _scale_runs(body, scale, base_size)
+        _scale_runs(body, scale, base_size, steps)
+    if align:
+        for paragraph in body.findall(qn("a:p")):
+            props = paragraph.find(qn("a:pPr"))
+            if props is None:
+                props = etree.Element(qn("a:pPr"))
+                paragraph.insert(0, props)
+            props.set("algn", align)
     if autofit:
         _autofit(body)
     return True
@@ -433,6 +459,7 @@ def set_text(
         plain_head=plain_head,
         scale=scale,
         base_size=(slot or {}).get("size"),
+        steps=fit.steps if fit else (),
     )
 
 
@@ -545,6 +572,7 @@ def fill_table(frame, table: TableData) -> None:
     templates = tbl.findall(qn("a:tr"))
     if not templates:
         return
+    numeric = numeric_columns(table)
     frame_height = sum(int(row.get("h", "0")) for row in templates)
     row_height = max(frame_height // max(len(rows_data), 1), 1)
     # Шапка — первая строка шаблона, данные — одна «типовая» строка из середины: крайние строки
@@ -564,10 +592,11 @@ def fill_table(frame, table: TableData) -> None:
             row.remove(cell)
         while len(row.findall(qn("a:tc"))) < n_cols:
             row.append(copy.deepcopy(cells[-1]))
-        for cell, text in zip(row.findall(qn("a:tc")), values + [""] * n_cols):
+        for column, (cell, text) in enumerate(zip(row.findall(qn("a:tc")), values + [""] * n_cols)):
             for attr in ("gridSpan", "rowSpan", "hMerge", "vMerge"):
                 cell.attrib.pop(attr, None)
-            set_body(cell.find(qn("a:txBody")), [text], autofit=False)
+            # Столбец чисел — по правому краю вместе с шапкой: так сравнивают разряды.
+            set_body(cell.find(qn("a:txBody")), [text], autofit=False, align="r" if column in numeric else None)
         tbl.append(row)
 
     extent = frame.find(f"{qn('p:xfrm')}/{qn('a:ext')}")
@@ -583,7 +612,9 @@ def _union(boxes: list[list[float]]) -> list[float]:
     return [round(x0, 4), round(y0, 4), round(x1 - x0, 4), round(y1 - y0, 4)]
 
 
-def fill_chart(slide, frame_id: int, chart_spec: ChartData, accents: list[str] | None = None) -> bool:
+def fill_chart(
+    slide, frame_id: int, chart_spec: ChartData, accents: list[str] | None = None, background: str = "#FFFFFF"
+) -> bool:
     """Данные слайда в диаграмму слайда-примера: цвета, шрифты и оси остаются шаблонными."""
     shape = next(
         (s for s in _walk(slide.shapes) if s.shape_id == frame_id and getattr(s, "has_chart", False) and s.has_chart),
@@ -613,6 +644,8 @@ def fill_chart(slide, frame_id: int, chart_spec: ChartData, accents: list[str] |
                     series.format.fill.fore_color.rgb = RGBColor.from_string(color)
                 except Exception:  # noqa: BLE001 — у линий нет заливки, красим линию
                     series.format.line.color.rgb = RGBColor.from_string(color)
+    if chart.plots:
+        highlight_points(chart.plots[0], chart_spec, background, fallback=(accents or [None])[0])
     return True
 
 
@@ -632,13 +665,19 @@ def series_scale(unit_list: list[dict[str, Any]], content: PatternContent, fit: 
 
 
 def fill_pattern(
-    slide, pattern: dict[str, Any], spec: Slide, *, accents: list[str] | None = None
+    slide,
+    pattern: dict[str, Any],
+    spec: Slide,
+    *,
+    accents: list[str] | None = None,
+    background: str = "#FFFFFF",
+    steps: list[float] | None = None,
 ) -> dict[str, list[float]]:
     """Заполняет клон слайда-примера (или новый слайд на макете для origin=layout).
     Возвращает рамки элементов для подсветки аудита (адрес → [x, y, w, h])."""
     from_layout = pattern.get("origin") == "layout"
     # Размеры слайда нужны, чтобы ужать кегль там, где текст длиннее образца из шаблона.
-    fit = slide_fit(slide)
+    fit = slide_fit(slide, steps)
     elements = placeholder_elements(slide) if from_layout else shape_elements(slide)
     plain_head = bool(pattern.get("plain_heads"))
     content = content_for(spec)
@@ -678,7 +717,7 @@ def fill_pattern(
         fill_table(frame, spec.table)
         targets["table"] = table["bbox"]
     chart = pattern["frames"].get("chart")
-    if chart and spec.chart and fill_chart(slide, chart["id"], spec.chart, accents):
+    if chart and spec.chart and fill_chart(slide, chart["id"], spec.chart, accents, background):
         targets["chart"] = chart["bbox"]
 
     # Обложка, разделитель, финал: подзаголовок — в свой слот или в текстовый, номер раздела — в «01».

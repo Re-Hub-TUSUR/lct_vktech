@@ -7,7 +7,7 @@
 
 Всё, что вернула модель, нормализуется по ограничениям из skills/slide_writer.yaml:
 число тезисов, длина фразы, размер таблицы, согласованность рядов диаграммы с категориями.
-Слайд, для которого модель не ответила, остаётся с тезисами из плана — колода не разваливается.
+Слайд, для которого модель не ответила, остаётся с фактами из плана — колода не разваливается.
 """
 
 import logging
@@ -43,12 +43,12 @@ class CopyResult:
     written: int = 0
     failed: int = 0
     usage: Usage | None = None
-    source: str = "storyline"
+    source: str = "brief"
     reason: str = "модель не подключена (LLM_BASE_URL)"
 
     def detail(self) -> str:
         if self.source != "llm":
-            return f"Тексты из сценария-заглушки: {self.reason}"
+            return f"Тексты — тезисы брифа как есть: {self.reason}"
         parts = [f"написано слайдов: {self.written}"]
         if self.failed:
             parts.append(f"осталось из плана: {self.failed}")
@@ -97,6 +97,8 @@ def slide_schema(kind: str, limits: dict[str, int]) -> dict[str, Any]:
                 "unit": {"type": "string"},
                 "chart_type": {"type": "string", "enum": CHART_TYPES},
                 "categories": _strings(6),
+                # Категория, которая доказывает вывод слайда: её диаграмма выделит акцентом.
+                "key": {"type": "string"},
                 "series": {
                     "type": "array",
                     "maxItems": 2,
@@ -121,7 +123,7 @@ def slide_schema(kind: str, limits: dict[str, int]) -> dict[str, Any]:
                     },
                 },
             },
-            "required": ["caption", "unit", "chart_type", "categories", "series", "kpis"],
+            "required": ["caption", "unit", "chart_type", "categories", "key", "series", "kpis"],
             "additionalProperties": False,
         }
     if kind == "timeline":
@@ -184,6 +186,11 @@ def _as_cards(spec: dict[str, Any], kpis: list[dict[str, str]]) -> bool:
     return True
 
 
+def cell_number(value: float) -> str:
+    """Число для ячейки таблицы: целое без дробной части, дробное — с запятой."""
+    return f"{value:g}".replace(".", ",")
+
+
 def _apply_data(spec: dict[str, Any], data: Any, limits: dict[str, int]) -> bool:
     """Числа слайда: ряды подгоняются под категории, KPI и таблица строятся по тем же данным."""
     if not isinstance(data, dict):
@@ -217,17 +224,21 @@ def _apply_data(spec: dict[str, Any], data: Any, limits: dict[str, int]) -> bool
         logger.info("Слайд «%s»: единицы измерения разные — показываем числа карточками", spec.get("topic"))
         return _as_cards(spec, kpis)
     chart_type = data.get("chart_type") if data.get("chart_type") in CHART_TYPES else "bar"
+    key = _shorten(data.get("key"), 4)  # подписи категорий укорочены так же
     spec["data"] = {
         "caption": _shorten(data.get("caption"), 10),
         "unit": unit or None,
         "chart_type": chart_type,
         "categories": categories,
+        "key": key if key in categories else None,
         "series": series,
         "kpis": kpis or [{"value": str(row["values"][0]), "label": categories[0]} for row in series[:1]],
         # Таблица — те же числа: вариант «данные таблицей» не требует отдельного запроса.
         "table": {
             "columns": ["Показатель", *[row["name"] for row in series]],
-            "rows": [[category, *[str(row["values"][index]) for row in series]] for index, category in enumerate(categories)],
+            "rows": [
+                [category, *[cell_number(row["values"][index]) for row in series]] for index, category in enumerate(categories)
+            ],
         },
     }
     return True
@@ -338,7 +349,7 @@ def write_slides(
     if not llm_enabled():
         return CopyResult()
     if not any(spec.get("plan_kind") for spec in specs):
-        # План пришёл из сценария-заглушки (модель не ответила на предыдущей стадии) — тексты в нём уже есть.
+        # План собран без модели (она не ответила на предыдущей стадии) — на слайдах тезисы брифа.
         return CopyResult(reason="план построен без модели")
 
     skill = get_skill("slide_writer")
