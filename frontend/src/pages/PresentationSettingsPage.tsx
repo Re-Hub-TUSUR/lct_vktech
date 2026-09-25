@@ -106,6 +106,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const [files, setFiles] = useState<File[]>([])
   const [existingFiles, setExistingFiles] = useState(presentation?.files ?? [])
   const [step, setStep] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<unknown>(null)
 
   // Шаблон по умолчанию — первый готовый.
@@ -137,7 +138,9 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const selectedTemplate = templates.data?.find((template) => template.id === form.templateId) ?? presentation?.template ?? undefined
   const axis = options.data?.variant_axes.find((item) => item.value === form.settings.variant_axis)
   const canEdit = !presentation || presentation.access_role !== 'viewer'
-  const canSubmit = canEdit && form.title.trim().length > 0 && selectedTemplate?.status === 'ready' && !step
+  const isGenerating = presentation?.status === 'generating'
+  const isBusy = Boolean(step || isSubmitting || isGenerating)
+  const canSubmit = canEdit && form.title.trim().length > 0 && selectedTemplate?.status === 'ready' && !isBusy
 
   const removeExisting = async (fileId: string) => {
     if (!presentation) return
@@ -147,7 +150,8 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!canSubmit || !form.templateId) return
+    if (!canSubmit || isBusy || !form.templateId) return
+    setIsSubmitting(true)
     setError(null)
     const payload: PresentationInput = {
       title: form.title.trim(),
@@ -177,6 +181,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
       setError(err)
       notify(err instanceof Error ? err.message : 'Не удалось запустить генерацию', 'error')
       setStep(null)
+      setIsSubmitting(false)
     }
   }
 
@@ -477,9 +482,22 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               </div>
             </dl>
             {error ? <ErrorState error={error} /> : null}
-            <Button type="submit" size="lg" icon={<Sparkles size={18} />} loading={Boolean(step)} disabled={!canSubmit}>
-              {step ?? (presentation ? 'Перегенерировать' : 'Сгенерировать 3 варианта')}
+            <Button
+              type="submit"
+              size="lg"
+              icon={<Sparkles size={18} />}
+              loading={isBusy}
+              disabled={!canSubmit || isBusy}
+            >
+              {step ?? (isGenerating ? 'Идёт генерация…' : isSubmitting ? 'Запуск генерации…' : presentation ? 'Перегенерировать' : 'Сгенерировать 3 варианта')}
             </Button>
+            {isGenerating && presentation && (
+              <div style={{ marginTop: 8, fontSize: 13 }}>
+                <Link to={`/presentations/${presentation.id}/generation`} className="row text-info">
+                  <Spinner size={12} /> Генерация уже выполняется — открыть прогресс
+                </Link>
+              </div>
+            )}
             {!form.title.trim() && <small className="muted">Укажите название презентации</small>}
             <small className="muted">Генерация — до 5 минут по ТЗ: время каждой стадии видно на шаге «Генерация».</small>
           </Card>

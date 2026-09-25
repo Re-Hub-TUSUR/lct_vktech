@@ -24,6 +24,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.redis import generation_channel, publish_presentation_update, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
+from app.models.base import utcnow
 from app.pipeline.content.image_matcher import assign_content_images_to_drafts
 from app.pipeline.content.ingest import extract_text, sources_digest, split_sentences
 from app.pipeline.layout.composer import axis_config, compose_variants

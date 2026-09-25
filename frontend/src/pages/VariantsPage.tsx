@@ -28,6 +28,7 @@ function VariantCard({
   selecting,
   onReroll,
   rerolling,
+  disabled = false,
   canEdit,
 }: {
   variant: Variant
@@ -37,6 +38,7 @@ function VariantCard({
   selecting: boolean
   onReroll: () => void
   rerolling: boolean
+  disabled?: boolean
   canEdit: boolean
 }) {
   const preview = previewSlideIndex(variant)
@@ -68,10 +70,10 @@ function VariantCard({
             type="button"
             className="variant-card__reroll"
             aria-label="Перегенерировать этот вариант"
-            disabled={rerolling}
+            disabled={disabled || rerolling}
             onClick={(e) => {
               e.stopPropagation()
-              onReroll()
+              if (!disabled && !rerolling) onReroll()
             }}
           >
             <Dices size={22} className={clsx('variant-card__reroll-icon', rerolling && 'is-spinning')} />
@@ -118,7 +120,7 @@ function VariantCard({
             <Check size={14} /> Выбран
           </Badge>
         ) : canEdit ? (
-          <Button onClick={onSelect} loading={selecting}>
+          <Button onClick={onSelect} loading={selecting} disabled={disabled || selecting}>
             Выбрать
           </Button>
         ) : <Badge tone="neutral">Только просмотр</Badge>}
@@ -204,19 +206,29 @@ export function VariantsPage() {
         </span>
       </div>
       <div className="variants-grid">
-        {variants.data.variants.map((variant) => (
-          <VariantCard
-            key={variant.id}
-            variant={variant}
-            theme={theme}
-            onOpen={(index) => setViewer({ variant, index })}
-            onSelect={() => select.mutate(variant.id)}
-            selecting={select.isPending && select.variables === variant.id}
-            onReroll={() => reroll.mutate(variant.id)}
-            rerolling={reroll.isPending && reroll.variables === variant.id}
-            canEdit={canEdit}
-          />
-        ))}
+        {variants.data.variants.map((variant) => {
+          const isAnyActionPending = select.isPending || reroll.isPending
+          return (
+            <VariantCard
+              key={variant.id}
+              variant={variant}
+              theme={theme}
+              onOpen={(index) => setViewer({ variant, index })}
+              onSelect={() => {
+                if (isAnyActionPending) return
+                select.mutate(variant.id)
+              }}
+              selecting={select.isPending && select.variables === variant.id}
+              onReroll={() => {
+                if (isAnyActionPending) return
+                reroll.mutate(variant.id)
+              }}
+              rerolling={reroll.isPending && reroll.variables === variant.id}
+              disabled={isAnyActionPending}
+              canEdit={canEdit}
+            />
+          )
+        })}
       </div>
       {viewer && (
         <DeckViewer

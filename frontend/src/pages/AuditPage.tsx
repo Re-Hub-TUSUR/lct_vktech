@@ -932,10 +932,13 @@ function AuditWorkspace({
                 type="button"
                 className="audit-refresh-btn"
                 disabled={rerun.isPending}
-                onClick={() => rerun.mutate()}
+                onClick={() => {
+                  if (rerun.isPending) return
+                  rerun.mutate()
+                }}
               >
                 <RefreshCw size={15} className={clsx(rerun.isPending && 'spin')} />
-                <span>Перезапустить аудит</span>
+                <span>{rerun.isPending ? 'Запуск аудита…' : 'Перезапустить аудит'}</span>
               </button>
             )}
           </div>
@@ -1323,18 +1326,22 @@ function AuditWorkspace({
                                   {issue.fixable && canEdit && (
                                     <button
                                       type="button"
+                                      disabled={resolve.isPending}
                                       onClick={() => {
+                                        if (resolve.isPending) return
                                         resolve.mutate({ ids: [issue.id], action: 'fix' })
                                         setOpenMenuIssueId(null)
                                       }}
                                     >
-                                      Исправить автоматически
+                                      {resolve.isPending ? 'Исправляем…' : 'Исправить автоматически'}
                                     </button>
                                   )}
                                   {canEdit && (
                                     <button
                                       type="button"
+                                      disabled={resolve.isPending}
                                       onClick={() => {
+                                        if (resolve.isPending) return
                                         resolve.mutate({ ids: [issue.id], action: 'ignore' })
                                         setOpenMenuIssueId(null)
                                       }}
@@ -1393,8 +1400,11 @@ function AuditWorkspace({
                             <button
                               type="button"
                               className="audit-btn-hide"
-                              disabled={checkedIds.length === 0}
-                              onClick={() => resolve.mutate({ ids: checkedIds, action: 'ignore' })}
+                              disabled={checkedIds.length === 0 || resolve.isPending}
+                              onClick={() => {
+                                if (resolve.isPending || checkedIds.length === 0) return
+                                resolve.mutate({ ids: checkedIds, action: 'ignore' })
+                              }}
                             >
                               <Ban size={15} />
                               <span>Скрыть</span>
@@ -1402,11 +1412,14 @@ function AuditWorkspace({
                             <button
                               type="button"
                               className="audit-btn-fix"
-                              disabled={checkedIds.length === 0}
-                              onClick={() => resolve.mutate({ ids: checkedIds, action: 'fix' })}
+                              disabled={checkedIds.length === 0 || resolve.isPending}
+                              onClick={() => {
+                                if (resolve.isPending || checkedIds.length === 0) return
+                                resolve.mutate({ ids: checkedIds, action: 'fix' })
+                              }}
                             >
-                              <WandSparkles size={15} />
-                              <span>Исправить ({checkedIds.length})</span>
+                              <WandSparkles size={15} className={clsx(resolve.isPending && 'spin')} />
+                              <span>{resolve.isPending ? 'Исправляем…' : `Исправить (${checkedIds.length})`}</span>
                             </button>
                           </div>
                         </div>

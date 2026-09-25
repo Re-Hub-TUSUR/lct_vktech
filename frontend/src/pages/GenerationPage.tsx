@@ -104,7 +104,7 @@ export function GenerationPage() {
         {header}
         <EmptyState
           title="Генерация ещё не запускалась"
-          action={canEdit ? <Button onClick={() => restart.mutate()} loading={restart.isPending}>Запустить генерацию</Button> : undefined}
+          action={canEdit ? <Button onClick={() => restart.mutate()} loading={restart.isPending} disabled={restart.isPending}>Запустить генерацию</Button> : undefined}
         />
       </div>
     )
@@ -136,7 +136,16 @@ export function GenerationPage() {
               </Button>
             )}
             {status === 'failed' && canEdit && (
-              <Button variant="secondary" icon={<RefreshCw size={16} />} loading={restart.isPending} onClick={() => restart.mutate()}>
+              <Button
+                variant="secondary"
+                icon={<RefreshCw size={16} />}
+                loading={restart.isPending}
+                disabled={restart.isPending}
+                onClick={() => {
+                  if (restart.isPending) return
+                  restart.mutate()
+                }}
+              >
                 Повторить
               </Button>
             )}
