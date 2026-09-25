@@ -30,6 +30,8 @@ import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
 import { PROJECT_COLOR_CONFIGS } from '../lib/projects'
 import { presentationLink } from '../lib/routes'
 
+type SortMode = 'updated' | 'title' | 'status'
+
 function FolderCardItem({
   project,
   isActive,
@@ -307,6 +309,7 @@ export function MyPresentationsPage() {
   // Активный фильтр по папкам
   const activeProjectId = searchParams.get('project') || 'all'
   const [searchQuery, setSearchQuery] = useState('')
+  const [sortMode, setSortMode] = useState<SortMode>('updated')
 
   // Модальные окна
   const [editingProject, setEditingProject] = useState<Project | null | 'new'>(null)
@@ -353,8 +356,12 @@ export function MyPresentationsPage() {
       )
     }
 
-    return list
-  }, [presentations.data, activeProjectId, searchQuery])
+    return [...list].sort((left, right) => {
+      if (sortMode === 'title') return left.title.localeCompare(right.title, 'ru')
+      if (sortMode === 'status') return left.status.localeCompare(right.status, 'ru')
+      return right.updated_at.localeCompare(left.updated_at)
+    })
+  }, [presentations.data, activeProjectId, searchQuery, sortMode])
 
   const totalCount = presentations.data?.length ?? 0
   const unassignedCount = useMemo(
@@ -438,6 +445,14 @@ export function MyPresentationsPage() {
             {/* Карточка «Все презентации» */}
             <div
               className={clsx('mac-folder-card mac-folder-card--meta', activeProjectId === 'all' && 'is-active')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  selectFolder('all')
+                }
+              }}
               onClick={() => selectFolder('all')}
             >
               <div className="mac-folder-card__main">
@@ -457,6 +472,14 @@ export function MyPresentationsPage() {
                 'mac-folder-card mac-folder-card--meta',
                 activeProjectId === 'unassigned' && 'is-active'
               )}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  selectFolder('unassigned')
+                }
+              }}
               onClick={() => selectFolder('unassigned')}
             >
               <div className="mac-folder-card__main">
@@ -493,7 +516,7 @@ export function MyPresentationsPage() {
                 <FolderPlus size={24} />
               </span>
               <strong>Новая папка</strong>
-              <small>VK лекторий, МЛщина...</small>
+              <small>Например, Продуктовый отдел</small>
             </button>
           </div>
         )}
@@ -514,25 +537,37 @@ export function MyPresentationsPage() {
           </div>
 
           {/* Поиск по названию */}
-          <div className="search-box">
-            <Search size={16} className="search-box__icon" />
-            <input
-              type="text"
-              placeholder="Поиск презентации..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="search-box__input"
+          <div className="library-controls">
+            <div className="search-box">
+              <Search size={16} className="search-box__icon" />
+              <input
+                type="text"
+                placeholder="Поиск презентации..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-box__input"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="icon-btn icon-btn--sm search-box__clear"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Очистить поиск"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <Select
+              size="sm"
+              value={sortMode}
+              options={[
+                { value: 'updated', label: 'Сначала новые' },
+                { value: 'title', label: 'По названию' },
+                { value: 'status', label: 'По статусу' },
+              ]}
+              onChange={(value) => setSortMode(value as SortMode)}
             />
-            {searchQuery && (
-              <button
-                type="button"
-                className="icon-btn icon-btn--sm search-box__clear"
-                onClick={() => setSearchQuery('')}
-                aria-label="Очистить поиск"
-              >
-                <X size={14} />
-              </button>
-            )}
           </div>
         </div>
 

@@ -107,7 +107,7 @@ export function DashboardPage() {
         </ol>
       </section>
 
-      <section className="section">
+      <section className="section dashboard-section dashboard-section--recent">
         <div className="section__header">
           <div className="row" style={{ alignItems: 'center', gap: 10 }}>
             <h2>Последние презентации</h2>
@@ -139,7 +139,7 @@ export function DashboardPage() {
         )}
       </section>
 
-      <section className="section">
+      <section className="section dashboard-section dashboard-section--templates">
         <div className="section__header">
           <h2>Шаблоны</h2>
           <Link to="/templates">Все шаблоны</Link>
