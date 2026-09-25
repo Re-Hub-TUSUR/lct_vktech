@@ -8,6 +8,12 @@ function fmt(value: number): string {
   return value.toLocaleString('ru-RU', { maximumFractionDigits: 1 })
 }
 
+// Ключевая категория (highlight) — цветом ряда, остальные столбцы приглушены, как в собранном .pptx.
+function barOpacity(chart: ChartData, category: number): number {
+  const key = chart.highlight
+  return key != null && chart.series.length === 1 && category !== key ? 0.38 : 1
+}
+
 export function SlideChart({ chart, colors: defaultColors }: { chart: ChartData; colors: string[] }) {
   const colors = chart.colors && chart.colors.length > 0 ? chart.colors : defaultColors
   const showValues = chart.show_values !== false
@@ -98,7 +104,15 @@ export function SlideChart({ chart, colors: defaultColors }: { chart: ChartData;
               const x = PAD.left + groupW * ci + groupW * 0.15 + barW * si
               return (
                 <g key={`${si}-${ci}`}>
-                  <rect x={x} y={baseY - h} width={barW} height={h} rx={4} fill={colors[si % colors.length]} />
+                  <rect
+                    x={x}
+                    y={baseY - h}
+                    width={barW}
+                    height={h}
+                    rx={4}
+                    fill={colors[si % colors.length]}
+                    fillOpacity={barOpacity(chart, ci)}
+                  />
                   {showValues && (
                     <text x={x + barW / 2} y={baseY - h - 8} textAnchor="middle" className="slide-chart__value">
                       {fmt(v)}
@@ -184,7 +198,15 @@ function HorizontalBarChart({
           const y = hPad.top + rowH * ci + rowH * 0.15 + barH * si
           return (
             <g key={`${si}-${ci}`}>
-              <rect x={hPad.left} y={y} width={Math.max(w, 2)} height={barH} rx={4} fill={colors[si % colors.length]} />
+              <rect
+                x={hPad.left}
+                y={y}
+                width={Math.max(w, 2)}
+                height={barH}
+                rx={4}
+                fill={colors[si % colors.length]}
+                fillOpacity={barOpacity(chart, ci)}
+              />
               {showValues && (
                 <text x={hPad.left + w + 8} y={y + barH / 2 + 5} textAnchor="start" className="slide-chart__value">
                   {fmt(v)}

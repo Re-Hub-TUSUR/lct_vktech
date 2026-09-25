@@ -27,9 +27,6 @@ class Settings(BaseSettings):
     skills_dir: Path = BACKEND_DIR / "skills"
     max_upload_mb: int = 100
 
-    # Множитель длительности стадий-заглушек пайплайна: 0 — без задержек, 1 — «реалистичный» темп.
-    mock_speed: float = 1.0
-
     # Рендер .pptx → PDF через LibreOffice headless. Пусто — ищем soffice в PATH.
     soffice_path: str | None = None
     render_timeout_seconds: int = 420
@@ -37,7 +34,7 @@ class Settings(BaseSettings):
     render_concurrency: int = 2
 
     # LLM для текстовых стадий: план колоды и тексты слайдов. Любой OpenAI-совместимый API,
-    # модель с открытыми весами до 35B (по ТЗ). Пусто — работает сценарий-заглушка.
+    # модель с открытыми весами до 35B (по ТЗ). Пусто — колода собирается из тезисов брифа без модели.
     llm_base_url: str | None = None
     llm_api_key: str | None = None
     llm_model: str | None = None
@@ -53,6 +50,20 @@ class Settings(BaseSettings):
     # Сколько знаков материалов контент-пакета уходит в промпт (на файл и всего).
     llm_source_chars: int = 4000
     llm_sources_total_chars: int = 12000
+
+    # Модель аудита (судья): контекстуальные проверки по тексту колоды и по рендерам слайдов с картинками.
+    # Отдельная роль, чтобы судью можно было сменить, не трогая генерацию; пустые поля берутся из LLM_*.
+    # Модель должна понимать картинки (проверка «картинки относятся к теме» смотрит на рендер).
+    audit_base_url: str | None = None
+    audit_api_key: str | None = None
+    audit_model: str | None = None
+    audit_timeout_seconds: float = 180
+    # Разбор всей колоды — длинный ответ: по строке вердиктов на каждый слайд.
+    audit_max_tokens: int = 6000
+    audit_concurrency: int = 6
+    # Сколько стадия аудита генерации ждёт судью после рендера. Не успел — генерация завершается,
+    # контекстуальные проверки показаны как «ждут», вердикты догоняют в фоновой задаче.
+    audit_wait_seconds: float = 60
 
     # VLM для разметки паттернов слайдов: любой OpenAI-совместимый API (VK Inference с Qwen3.8-27B,
     # Yandex AI Studio, Cloud.ru Foundation Models, свой vLLM/SGLang). Пусто — только эвристики.

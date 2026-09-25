@@ -24,7 +24,6 @@ from app.schemas.slide import (
     Slide,
     TableData,
     TimelineItem,
-    new_slide_id,
 )
 
 DEFAULT_PROFILE: dict[str, Any] = {
@@ -43,22 +42,6 @@ ROLE_BY_KIND = {
     "image_text": "image",
 }
 NO_INSIGHT_TITLE = {"title", "section", "agenda", "closing"}
-
-# Материал для демо-дефектов (см. demo_defects в layout_composer.yaml).
-EXTRA_BULLETS = [
-    "Шаблоны обновляются чаще, чем обучаются сотрудники",
-    "Правки согласуются в переписке и теряются",
-    "Нет контроля качества до показа",
-    "Удачные слайды сложно переиспользовать",
-    "Иконки и иллюстрации ищут вручную",
-    "Диаграммы перекрашивают в корпоративные цвета",
-    "Сроки подготовки срываются перед важными встречами",
-    "Новички не знают правил шаблона",
-]
-LONG_BULLET = (
-    "Подготовка одной презентации в фирменном стиле занимает у команды от четырёх до восьми "
-    "часов рабочего времени, и большая часть этого времени уходит на ручную вёрстку"
-)
 
 
 @dataclass
@@ -108,7 +91,6 @@ def compose_single_variant(
     groups: dict[str, str],
     seed: int | None = None,
     patterns: list[dict[str, Any]] | None = None,
-    demo_defects: bool = True,
 ) -> VariantDraft:
     axis_key, axis = axis_config(axis_key)
     layout_names = {layout["key"]: layout["name"] for layout in layouts}
@@ -137,9 +119,6 @@ def compose_single_variant(
     slides = [_to_slide(spec, profile, speaker_notes) for spec in fitted]
     _fill_agenda(slides, groups)
     slides = _apply_order(slides, profile["order"], groups)
-    # Демо-дефекты нужны только сценарию-заглушке: у текстов от модели дефекты настоящие.
-    if demo_defects:
-        slides = _inject_demo_defects(slides, cfg.get("demo_defects") or [])
     assign_layouts(slides, roles, layout_names)
     # Рерол (seed задан) берёт другой паттерн из равноценных — вёрстка меняется, а не только порядок тезисов.
     assign_patterns(slides, patterns, position=position, layout_names=layout_names, seed=seed)
@@ -165,7 +144,6 @@ def compose_variants(
     roles: dict[str, Any],
     groups: dict[str, str],
     patterns: list[dict[str, Any]] | None = None,
-    demo_defects: bool = True,
 ) -> list[VariantDraft]:
     axis_key, axis = axis_config(axis_key)
     drafts: list[VariantDraft] = []
@@ -182,7 +160,6 @@ def compose_variants(
                 roles=roles,
                 groups=groups,
                 patterns=patterns,
-                demo_defects=demo_defects,
             )
         )
     return drafts
@@ -276,12 +253,15 @@ def _fill_data(slide: Slide, data: dict[str, Any], view: str) -> None:
         slide.table = _table(data["table"])
     else:
         slide.kind = "chart"
+        key = data.get("key")
         slide.chart = ChartData(
             type=data.get("chart_type", "bar"),
             caption=data.get("caption"),
             unit=data.get("unit"),
             categories=categories,
             series=series,
+            # Ключевую категорию называет автор текстов: она доказывает вывод слайда.
+            highlight=categories.index(key) if key in categories else None,
         )
 
 
@@ -307,10 +287,17 @@ def _fill_agenda(slides: list[Slide], groups: dict[str, str]) -> None:
 
 def _apply_order(slides: list[Slide], order: str, groups: dict[str, str]) -> list[Slide]:
     if order == "summary_first":
-        summary = next((s for s in slides if s.ref == "summary"), None)
-        if summary is not None and len(slides) > 2:
-            slides = [s for s in slides if s is not summary]
-            slides.insert(1, summary)
+        # Итоги — слайд summary, иначе блок «Результаты» из плана модели, иначе последний
+        # содержательный слайд перед финалом: они встают сразу после обложки.
+        content = [s for s in slides if s.kind not in {"title", "closing", "section", "agenda"}]
+        summary = (
+            [s for s in slides if s.ref == "summary"]
+            or [s for s in content if s.group == "results"]
+            or content[-1:]
+        )
+        if summary and len(slides) > 2 and len(content) > len(summary):
+            rest = [s for s in slides if all(s is not item for item in summary)]
+            slides = rest[:1] + summary + rest[1:]
     elif order == "sections":
         result: list[Slide] = []
         seen: list[str] = []
@@ -328,47 +315,6 @@ def _apply_order(slides: list[Slide], order: str, groups: dict[str, str]) -> lis
                 )
             result.append(slide)
         slides = result
-    return slides
-
-
-def _first(slides: list[Slide], *kinds: str) -> Slide | None:
-    return next((s for s in slides if s.kind in kinds), None)
-
-
-def _inject_demo_defects(slides: list[Slide], defects: list[str]) -> list[Slide]:
-    """ТОЛЬКО ДЛЯ МАКЕТА: добавляет типовые ошибки генерации, чтобы аудиту было что найти."""
-    for defect in defects:
-        text_slide = _first(slides, "bullets", "image_text")
-        if defect == "too_many_bullets" and text_slide is not None:
-            text_slide.bullets = (text_slide.bullets + EXTRA_BULLETS)[: max(8, len(text_slide.bullets))]
-        elif defect == "long_bullet":
-            if text_slide is not None and text_slide.bullets:
-                text_slide.bullets[0] = LONG_BULLET
-            elif (columns_slide := _first(slides, "two_columns")) is not None and columns_slide.columns:
-                columns_slide.columns[0].bullets.insert(0, LONG_BULLET)
-        elif defect == "placeholder_todo":
-            target = next((s for s in slides if s.ref == "summary"), text_slide)
-            if target is not None:
-                target.bullets.append("TODO: вставьте цифры по рынку")
-        elif defect == "speaker_note":
-            target = next((s for s in slides if s.ref == "summary"), text_slide)
-            if target is not None:
-                target.bullets.append("Заметка для спикера: здесь рассказать про пилот")
-        elif defect == "big_table" and (table_slide := _first(slides, "table")) is not None and table_slide.table:
-            width = len(table_slide.table.columns)
-            extra = [[f"Показатель {i}"] + ["—"] * (width - 1) for i in range(1, 7)]
-            table_slide.table.rows = (table_slide.table.rows + extra)[:9]
-        elif defect == "chart_no_unit" and (chart_slide := _first(slides, "chart")) is not None and chart_slide.chart:
-            chart_slide.chart.unit = None
-            chart_slide.chart.caption = None
-        elif defect in {"duplicate", "empty_slide"} and len(slides) > 2:
-            if defect == "duplicate":
-                source = next((s for s in slides if s.ref == "solution"), slides[1])
-                extra_slide = copy.deepcopy(source)
-                extra_slide.id = new_slide_id()
-            else:
-                extra_slide = Slide(kind="bullets", ref="appendix", title="Дополнительные материалы")
-            slides.insert(len(slides) - 1, extra_slide)
     return slides
 
 

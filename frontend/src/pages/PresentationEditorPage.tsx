@@ -38,6 +38,7 @@ import type {
   ChartData,
   Column,
   Kpi,
+  RegenerateSlideResponse,
   ResolveResponse,
   Slide,
   SlideKind,
@@ -433,7 +434,7 @@ function GoogleSlidesEditor({
   // Перегенерация AI
   const regenerateMutation = useMutation({
     mutationFn: (instruction: string) =>
-      api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, { instruction }),
+      api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, { instruction }),
     onSuccess: (result) => {
       if ('variant' in result && result.variant.slides) {
         setSlides(result.variant.slides)
@@ -1702,9 +1703,7 @@ function GoogleSlidesEditor({
                 slide={currentSlide}
                 theme={theme}
                 slideIndex={currentIndex}
-                onRegenerate={async (instruction) => {
-                  await regenerateMutation.mutateAsync(instruction)
-                }}
+                onRegenerate={async (instruction) => (await regenerateMutation.mutateAsync(instruction)).reply}
                 onChangeKind={(k) => updateCurrentSlide({ kind: k })}
                 onSelectPattern={handleSelectPattern}
                 onOpenDesignModal={() => setShowDesignModal(true)}

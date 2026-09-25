@@ -62,6 +62,8 @@ export interface ChartData {
   colors?: string[] | null
   show_values?: boolean | null
   show_legend?: boolean | null
+  // Категория, которую диаграмма выделяет акцентом (ключевое значение); остальные — приглушённым цветом.
+  highlight?: number | null
 }
 
 export interface Column {
@@ -652,7 +654,10 @@ export interface VariantDetail {
 
 export type Severity = 'error' | 'warning' | 'info'
 export type CheckKind = 'deterministic' | 'contextual'
-export type CheckStatus = 'implemented' | 'heuristic' | 'stub' | 'planned' | 'export'
+// Чем выполняется проверка: данные слайда, рендер собранного .pptx, модель-судья по тексту, судья по картинке.
+export type CheckMethod = 'data' | 'render' | 'llm' | 'vlm'
+// Состояние проверки в отчёте: выполнена, запасным правилом, ждёт рендера или модели, недоступна.
+export type CheckStatus = 'done' | 'fallback' | 'pending' | 'unavailable'
 
 export interface AuditIssue {
   id: Uuid
@@ -679,7 +684,10 @@ export interface AuditCheck {
   category: string
   kind: CheckKind
   severity: Severity
+  method: CheckMethod
+  fallback: CheckMethod | null
   status: CheckStatus
+  note: string | null
   description: string
   fixable: boolean
   fix: string | null
@@ -698,15 +706,23 @@ export interface AuditReport {
     by_kind: Partial<Record<CheckKind, number>>
     checks_run: number
     checks_failed: number
+    checks_pending: number
   }
   issues: AuditIssue[]
   checks: AuditCheck[]
+  // Модель-судья контекстуальных проверок; null — не подключена.
+  judge: string | null
 }
 
 export interface ResolveResponse {
   applied: number
   report: AuditReport
   variant: Variant
+}
+
+// Правка слайда из чата: что сделала модель — для ответа ассистента.
+export interface RegenerateSlideResponse extends ResolveResponse {
+  reply: string
 }
 
 // --- Справочники ----------------------------------------------------------

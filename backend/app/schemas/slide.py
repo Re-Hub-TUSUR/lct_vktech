@@ -5,6 +5,8 @@
 а если подходящего паттерна нет — макет шаблона (layout_key).
 """
 
+import hashlib
+import json
 from typing import Literal
 from uuid import uuid4
 
@@ -72,6 +74,8 @@ class ChartData(BaseModel):
     colors: list[str] | None = None
     show_values: bool | None = True
     show_legend: bool | None = True
+    # Категория, которую диаграмма выделяет акцентом (ключевое значение); остальные — приглушённым цветом.
+    highlight: int | None = None
 
 
 class TableData(BaseModel):
@@ -189,6 +193,13 @@ class CreateSlideRequest(BaseModel):
 
 class ReorderSlidesRequest(BaseModel):
     slide_ids: list[str]
+
+
+def slide_key(slide: Slide, salt: str = "") -> str:
+    """Отпечаток содержимого слайда (без id): по нему кэшируются факты рендера и вердикты модели-судьи,
+    чтобы после правки одного слайда не проверять заново остальные."""
+    payload = json.dumps(slide.model_dump(mode="json", exclude={"id"}), sort_keys=True, ensure_ascii=False)
+    return hashlib.sha1(f"{salt}|{payload}".encode("utf-8")).hexdigest()[:16]
 
 
 class RegenerateSlideRequest(BaseModel):
