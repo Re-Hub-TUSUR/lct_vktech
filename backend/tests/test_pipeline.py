@@ -1,4 +1,4 @@
-"""Сквозной прогон без БД: план → три варианта → аудит → экспорт в три формата."""
+"""Сквозной прогон без БД: план → три варианта → визуализация → аудит → экспорт в три формата."""
 
 from io import BytesIO
 
@@ -16,6 +16,8 @@ from app.pipeline.layout.composer import axis_config, compose_single_variant, co
 from app.pipeline.parsing.renders import render_template
 from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.theme import slide_theme
+from app.pipeline.visuals.visualizer import VisualsReport, refine_variant
+from tests.plans import plan
 
 BRIEF = (
     "Сервис собирает презентации в фирменном стиле за минуты. "
@@ -24,12 +26,10 @@ BRIEF = (
     "AI-инструменты не соблюдают брендбук."
 )
 
-
 def compose(parsed, axis: str = "density"):
     _, result = parsed
-    specs = build_outline(title="Цифровой дизайнер презентаций", purpose="product", brief=BRIEF)
     return compose_variants(
-        specs,
+        plan(),
         axis_key=axis,
         slides_count=12,
         speaker_notes=True,
@@ -53,7 +53,9 @@ def test_three_distinct_variants(parsed, axis):
     assert axis_config(axis)[0] == axis
 
 
-def test_audit_finds_demo_defects(parsed):
+def test_audit_runs_on_composed_variants(parsed):
+    """Без рендера и без модели: проверки по данным выполняются, по рендеру недоступны,
+    контекстуальные — по запасным правилам там, где правило есть."""
     _, result = parsed
     ctx = AuditContext(
         theme=slide_theme(result.tokens),
@@ -62,9 +64,13 @@ def test_audit_finds_demo_defects(parsed):
         limits=limits(),
     )
     for draft in compose(parsed):
-        found = {r.finding.check_id for r in run_checks(draft.slides, ctx)}
-        assert found, f"в варианте {draft.letter} демо-дефекты должны находиться аудитом"
-        assert "template.layout_from_template" not in found
+        results, runs = run_checks(draft.slides, ctx)
+        assert "template.layout_from_template" not in {r.finding.check_id for r in results}
+        assert runs["density.max_bullets"].state == "done"
+        assert runs["layout.overlap"].state == "unavailable"
+        assert runs["layout.text_overflow"].state == "fallback", "без рендера — оценка по ёмкости рамки"
+        assert runs["content.title_is_insight"].state == "fallback"
+        assert runs["content.typos"].state == "unavailable"
 
 
 def test_exports(parsed):
@@ -84,9 +90,40 @@ def test_exports(parsed):
     assert pdf.page_count == len(slides)
 
 
-def test_compose_single_variant(parsed):
+def test_deck_without_model_uses_brief_only(parsed):
+    """Запасной путь без модели: колода из тезисов брифа, ничего не придумано."""
     _, result = parsed
     specs = build_outline(title="Цифровой дизайнер презентаций", purpose="product", brief=BRIEF)
+    assert specs[0]["kind"] == "title" and specs[-1]["kind"] == "closing"
+    assert specs[0]["subtitle"].rstrip(".") == "Сервис собирает презентации в фирменном стиле за минуты"
+    body = specs[1:-1]
+    assert body and all(spec["kind"] == "bullets" for spec in body)
+    text = " ".join(" ".join([spec["topic"], *spec["bullets"]]) for spec in body)
+    assert "Дизайнеры перегружены типовыми задачами" in text
+    drafts = compose_variants(
+        specs, axis_key="density", slides_count=12, speaker_notes=False,
+        layouts=result.layouts, roles=result.roles, groups=group_labels(),
+    )
+    assert all(draft.slides[0].kind == "title" for draft in drafts)
+
+
+def test_visuals_refine_composed_variants(parsed):
+    """Стадия визуализаций: ключевая категория, названная автором текстов, выделена на диаграмме."""
+    _, result = parsed
+    drafts = compose(parsed, "visualization")
+    names = {layout["key"]: layout["name"] for layout in result.layouts}
+    report = VisualsReport()
+    for draft in drafts:
+        report.merge(refine_variant(draft.slides, result.patterns, position=draft.position, layout_names=names))
+    charts = [slide.chart for draft in drafts for slide in draft.slides if slide.chart]
+    assert charts and report.charts == len(charts)
+    assert all(chart.categories[chart.highlight] == "С сервисом" for chart in charts if chart.type in {"bar", "horizontal_bar"})
+    assert "Диаграмм" in report.detail()
+
+
+def test_compose_single_variant(parsed):
+    _, result = parsed
+    specs = plan()
     draft1 = compose_single_variant(
         specs,
         axis_key="density",

@@ -156,11 +156,15 @@ export function useVariant(variantId: string | null | undefined) {
   })
 }
 
+// Пока часть проверок ждёт рендера или ответа модели-судьи, отчёт перечитывается (запасной путь к SSE).
+const AUDIT_POLL_MS = 4000
+
 export function useAudit(variantId: string | null | undefined) {
   return useQuery({
     queryKey: queryKeys.audit(variantId ?? ''),
     queryFn: () => api.get<AuditReport>(`/variants/${variantId}/audit`),
     enabled: Boolean(variantId),
+    refetchInterval: (query) => ((query.state.data?.summary.checks_pending ?? 0) > 0 ? AUDIT_POLL_MS : false),
   })
 }
 

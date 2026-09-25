@@ -12,11 +12,10 @@ from app.pipeline.export.pptx_export import build_deck
 from app.pipeline.layout.composer import compose_single_variant, compose_variants
 from app.pipeline.layout.matcher import assign_patterns, fits, pattern_score
 from app.pipeline.parsing.patterns import CATEGORIES, USABLE_TYPES, is_usable
-from app.pipeline.planning.outline import build_outline, group_labels
+from app.pipeline.planning.outline import group_labels
 from app.pipeline.theme import slide_theme
 from app.schemas.slide import Column, Slide, SlideShape, TableData
-
-BRIEF = "Сервис собирает презентации в фирменном стиле за минуты."
+from tests.plans import plan
 # Текст-заглушка слайдов-примеров, который не должен попадать в готовую колоду.
 LEFTOVER_RX = re.compile(r"^(заголовок|текст|пункт|описание|lorem ipsum|вставить|иллюстрация|кейс|заметка)\b", re.I)
 CONTENT_KINDS = {"bullets", "cards", "two_columns", "kpi", "timeline", "agenda", "table", "image_text"}
@@ -24,9 +23,8 @@ CONTENT_KINDS = {"bullets", "cards", "two_columns", "kpi", "timeline", "agenda",
 
 def compose(parsed, axis: str = "density"):
     _, result = parsed
-    specs = build_outline(title="Цифровой дизайнер презентаций", purpose="product", brief=BRIEF)
     return compose_variants(
-        specs,
+        plan(),
         axis_key=axis,
         slides_count=12,
         speaker_notes=True,
@@ -84,7 +82,7 @@ def test_variants_differ_in_patterns(parsed):
 
 def test_reroll_changes_patterns(parsed):
     _, result = parsed
-    specs = build_outline(title="Цифровой дизайнер презентаций", purpose="product", brief=BRIEF)
+    specs = plan()
 
     def reroll(seed: int):
         draft = compose_single_variant(
@@ -153,6 +151,11 @@ def test_template_shapes_follow_pattern(parsed):
     assert user in slide.shapes
 
 
+def shape_xml(shape) -> str:
+    """Оформление фигуры без объявлений пространств имён: при сохранении клона они переставляются."""
+    return re.sub(r'\sxmlns(:\w+)?="[^"]+"', "", etree.tostring(shape._element.spPr).decode())
+
+
 def test_untouched_template_shapes_keep_their_look(parsed):
     """Сборка переносит в клон только правки пользователя: нетронутые фигуры шаблона не перекрашиваются
     и не сдвигаются (цвет парсер знает без прозрачности и оттенков темы)."""
@@ -166,14 +169,14 @@ def test_untouched_template_shapes_keep_their_look(parsed):
     theme = slide_theme(result.tokens, result.layouts, result.roles)
     source = Presentation(str(path)).slides[by_id[slide.pattern_id]["slide_index"]]
     colored = {shape.template_shape_id for shape in slide.shapes if shape.color}
-    before = {sp.shape_id: etree.tostring(sp._element.spPr) for sp in source.shapes if sp.shape_id in colored}
+    before = {sp.shape_id: shape_xml(sp) for sp in source.shapes if sp.shape_id in colored}
 
     def build(spec: Slide) -> Presentation:
         deck = build_deck(path, [spec], roles=result.roles, theme=theme, patterns=result.patterns)
         return Presentation(BytesIO(deck.data))
 
     built = build(slide).slides[0]
-    after = {sp.shape_id: etree.tostring(sp._element.spPr) for sp in built.shapes if sp.shape_id in before}
+    after = {sp.shape_id: shape_xml(sp) for sp in built.shapes if sp.shape_id in before}
     if not after:
         pytest.skip("цветные фигуры паттерна лежат внутри групп или уходят вместе с лишними элементами")
     assert after == {shape_id: before[shape_id] for shape_id in after}, "нетронутые фигуры шаблона изменились"

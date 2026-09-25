@@ -385,7 +385,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               {step ?? (presentation ? 'Перегенерировать' : 'Сгенерировать 3 варианта')}
             </Button>
             {!form.title.trim() && <small className="muted">Укажите название презентации</small>}
-            <small className="muted">Генерация — до 5 минут по ТЗ; в макете стадии-заглушки занимают ~15 секунд.</small>
+            <small className="muted">Генерация — до 5 минут по ТЗ: время каждой стадии видно на шаге «Генерация».</small>
           </Card>
         </aside>
       </div>

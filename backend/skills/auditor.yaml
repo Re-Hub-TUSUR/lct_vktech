@@ -1,22 +1,61 @@
 name: auditor
 title: Аудит слайдов
-version: 0.1.0
+version: 0.2.0
 kind: agent
-runtime: code
+runtime: llm
 stage: audit
-model: VLM ≤ 35B (не подключена)
+model: qwen3.8-27b (AUDIT_MODEL, по умолчанию LLM_MODEL)
 description: >
-  Ищет артефакты и неточности в сгенерированных слайдах. Детерминированные проверки
-  опираются на данные слайда и шаблона и всегда дают одинаковый результат. Контекстуальные
-  оценивают смысл: в продукте их выполняет VLM по картинке слайда, в макете часть из них
-  заменена эвристиками, остальные — заглушки.
+  Ищет артефакты и неточности в сгенерированных слайдах. Проверки по данным опираются на
+  слайд и шаблон; проверки по рендеру — на собранный .pptx и его PDF (где легли строки текста,
+  какие шрифты, цвета и кегли стоят в файле, где логотипы); контекстуальные выполняет
+  модель-судья: одним запросом по тексту всей колоды и отдельно по картинкам слайдов с
+  иллюстрациями. Вердикты кэшируются по отпечатку слайда — после правки проверяется только
+  изменённое. Без модели часть контекстуальных проверок идёт по запасным правилам (fallback).
 prompt:
+  # Разбор колоды по тексту: один запрос на вариант, по строке вердиктов на слайд.
   system: |
-    Ты — редактор презентаций. Посмотри на слайд и ответь «да» или «нет» на вопрос.
-    Если ответ «нет», коротко объясни, что не так и как исправить.
+    Ты — строгий редактор деловых презентаций. Проверь указанные слайды и верни JSON строго по схеме.
+    Язык колоды: {language}.
+    Поля для каждого слайда:
+    - n — номер слайда;
+    - title_is_topic: true, если заголовок лишь называет тему («Проблема», «Решение», «Итоги»,
+      «Как устроен аудит»), а не утверждает вывод. У обложки, разделителя, содержания и финала — false;
+    - content_mismatch: true, если содержимое слайда не подтверждает и не раскрывает его заголовок;
+    - better_title: если title_is_topic или content_mismatch — заголовок-вывод до 10 слов, который
+      следует из содержимого; иначе "";
+    - summary: главная мысль слайда одним предложением; "" — если её нельзя сформулировать одним
+      предложением. У обложки, разделителя, содержания и финала — их назначение;
+    - unsupported: цифры и конкретные факты со слайда, которых нет в исходных материалах
+      (выводимое арифметикой из них — не ошибка); пиши их дословно, как на слайде;
+    - typos: орфографические ошибки [{wrong, right}]; wrong — слово дословно, как на слайде;
+    - service: реплики и заметки спикера, пометки, куски промпта, попавшие на слайд, — дословно;
+    - foreign: фразы не на языке колоды — дословно. Названия продуктов, брендов, аббревиатуры
+      и форматы файлов — не ошибка;
+    - irrelevant: строки таблицы (по первой ячейке), категории или ряды диаграммы, которые не
+      работают на мысль слайда, — дословно;
+    - flow_break: true, если слайд не связан по смыслу с предыдущим и с темой колоды
+      (у первого слайда и у разделителей — false).
+    Не придумывай проблем: пустые списки и false — нормальный ответ для хорошего слайда.
   user: |
-    Вопрос: {question}
-    Исходные материалы: {sources}
+    Презентация: «{title}»
+
+    Исходные материалы (бриф и контент-пакет):
+    {sources}
+
+    Слайды колоды:
+    {deck}
+
+    Проверь слайды: {targets}. Верни JSON строго по схеме ответа.
+  # Картинки на слайдах: модель видит рендер слайда (по несколько слайдов в запросе).
+  image_system: |
+    Ты проверяешь иллюстрации в деловой презентации. Для каждого слайда на картинке ответь,
+    относятся ли фотографии, иллюстрации и иконки к теме слайда. Логотипы, фоновые текстуры
+    и декоративные фигуры шаблона не оценивай. reason — одно короткое предложение по-русски.
+  image_user: |
+    Презентация: «{title}». Картинки идут в том же порядке, что и слайды:
+    {slides}
+    Верни JSON строго по схеме ответа.
 params:
   limits:
     max_bullets: 6
@@ -28,6 +67,32 @@ params:
     min_contrast: 4.5
     min_contrast_large: 3.0
 
+  # Пороги проверок по рендеру; координаты — доли ширины и высоты слайда.
+  render:
+    bounds_tolerance: 0.01       # выход блока за край слайда
+    overlap_share: 0.3           # доля меньшей строки, накрытая другой строкой
+    overflow_tolerance: 0.015    # текст ниже рамки
+    clip_tolerance: 0.005        # строка за краем страницы
+    align_near: [0.006, 0.015]   # «почти выровнены» — промах, заметный глазу (8–19 px на 1280), но не задуманный отступ
+    margin_default: 0.04         # поле, если шаблон не задаёт своё
+    margin_floor: 0.012          # ближе к краю контент не ставят ни в одном шаблоне
+    stretch_tolerance: 0.03      # искажение пропорций картинки
+    size_tolerance_pt: 0.6       # кегль «со шкалы шаблона»: ±0.6 pt
+    size_tolerance_share: 0.06   # или ±6% — подгонка крупного числа под рамку на глаз не видна
+    color_tolerance: 10          # цвет «из палитры» (разница по каналу из 255)
+    chrome_overlap: 0.15         # доля логотипа или номера слайда, закрытая контентом
+    fill_min: 0.25
+    fill_max: 0.75
+    fill_grid: [160, 90]
+
+  # Модель-судья.
+  review:
+    sources_chars: 8000          # бриф и материалы в промпте разбора колоды
+    slide_chars: 900             # содержимое одного слайда в промпте
+    images_per_request: 4        # слайдов с картинками в одном запросе
+    image_width: 960             # ширина рендера слайда для модели, px
+    picture_min_area: 0.04       # картинка меньше — иконка или логотип, судье не показываем
+
   categories:
     layout: Вёрстка
     template: Шаблон
@@ -35,12 +100,14 @@ params:
     integrity: Целостность
     content: Содержание
 
-  # status:
-  #   implemented — работает;
-  #   heuristic   — контекстуальная проверка заменена правилом до подключения VLM;
-  #   stub        — нужна LLM/VLM, сейчас не выполняется;
-  #   planned     — нужна геометрия отрендеренного слайда, сейчас не выполняется;
-  #   export      — выполняется при экспорте в .pptx.
+  # method — чем выполняется проверка:
+  #   data   — данные слайда и шаблона;
+  #   render — собранный .pptx и его рендер (LibreOffice → PDF);
+  #   llm    — модель-судья по тексту всей колоды;
+  #   vlm    — модель-судья по картинке слайда.
+  # fallback — правило, которое работает, пока нет рендера или модели.
+  # editor: true — исправление пишет модель (pipeline/planning/editor.py) по инструкции fix_prompt;
+  # без модели срабатывает правило, если оно есть.
   checks:
     # --- Вёрстка ---
     - id: layout.out_of_bounds
@@ -48,52 +115,57 @@ params:
       category: layout
       kind: deterministic
       severity: error
-      status: planned
-      description: Координаты фигур в .pptx сравниваются с размером слайда.
+      method: render
+      description: Диаграммы, таблицы и картинки собранного .pptx сравниваются с размером слайда (текст за краем — проверка «Текст обрезан»).
     - id: layout.overlap
       title: Два блока наложились друг на друга
       category: layout
       kind: deterministic
       severity: error
-      status: planned
-      description: Пересечение прямоугольников текстовых и графических фигур.
+      method: render
+      description: Пересечение строк текста в PDF-рендере и заход текста на картинку.
     - id: layout.text_overflow
       title: Текст не поместился в свою рамку
       category: layout
       kind: deterministic
       severity: warning
-      status: heuristic
-      description: Объём текста сравнивается с ёмкостью рамки макета. После подключения рендера — по реальным метрикам шрифта.
+      method: render
+      fallback: data
+      description: >
+        Строки текста в PDF-рендере сравниваются с рамкой блока. Без рендера — оценка объёма
+        текста по ёмкости слотов паттерна.
       fixable: true
-      fix: Сократить тезисы до ёмкости рамки
+      editor: true
+      fix: Сократить текст до ёмкости рамки
+      fix_prompt: "Текст не помещается в рамку ({message}). Сократи его примерно на треть, сохранив смысл и все числа."
     - id: layout.text_clipped
       title: Текст обрезан краем слайда
       category: layout
       kind: deterministic
       severity: error
-      status: planned
-      description: Рамка текста выходит за край слайда после автоподбора размера.
+      method: render
+      description: Строки текста PDF-рендера, вышедшие за край страницы.
     - id: layout.alignment
       title: Блоки не выровнены по направляющим макета
       category: layout
       kind: deterministic
       severity: info
-      status: planned
-      description: Сравнение левых и верхних краёв блоков с сеткой макета.
+      method: render
+      description: Левые края заголовка и основного блока, верхние края карточек — промах в несколько пикселей.
     - id: layout.margins
       title: Контент заходит в поля у краёв
       category: layout
       kind: deterministic
       severity: warning
-      status: planned
-      description: Поля берутся из плейсхолдеров макета шаблона.
+      method: render
+      description: Поля берутся из плейсхолдеров контентных макетов шаблона (токен grid).
     - id: layout.image_aspect
       title: Картинка растянута, пропорции нарушены
       category: layout
       kind: deterministic
       severity: warning
-      status: planned
-      description: Соотношение сторон рамки сравнивается с исходным изображением.
+      method: render
+      description: Соотношение сторон рамки сравнивается с видимой частью исходного изображения.
 
     # --- Шаблон ---
     - id: template.fonts
@@ -101,28 +173,28 @@ params:
       category: template
       kind: deterministic
       severity: warning
-      status: planned
-      description: Гарнитуры в .pptx сравниваются со шрифтами дизайн-токенов шаблона.
+      method: render
+      description: Гарнитуры, заданные в собранном .pptx, сравниваются со шрифтами файла шаблона.
     - id: template.font_sizes
       title: Кегль не из типографической шкалы шаблона
       category: template
       kind: deterministic
       severity: info
-      status: planned
-      description: Размеры шрифтов сравниваются с типографической шкалой шаблона.
+      method: render
+      description: Кегли, заданные в собранном .pptx, сравниваются с кеглями шаблона.
     - id: template.palette
       title: Цвет не из палитры шаблона
       category: template
       kind: deterministic
       severity: warning
-      status: planned
-      description: Цвета заливок и текста сравниваются с палитрой шаблона.
+      method: render
+      description: Цвета заливок и текста сравниваются с цветами шаблона и их смесями (оттенками).
     - id: template.layout_from_template
       title: Слайд собран не на макете из шаблона
       category: template
       kind: deterministic
       severity: error
-      status: implemented
+      method: data
       description: У каждого слайда должен быть макет, найденный при декомпозиции шаблона.
       fixable: true
       fix: Назначить основной контентный макет шаблона
@@ -131,14 +203,14 @@ params:
       category: template
       kind: deterministic
       severity: warning
-      status: planned
-      description: Положение логотипа и колонтитулов сравнивается с мастер-слайдом.
+      method: render
+      description: Логотипы мастера и макета, номер слайда и колонтитул не должны перекрываться контентом.
     - id: template.contrast
       title: Контраст текста к фону ниже 4.5:1
       category: template
       kind: deterministic
       severity: error
-      status: implemented
+      method: data
       description: Контраст по WCAG 2.1 для пар «текст — фон» из цветов темы; для крупного текста порог 3:1.
 
     # --- Плотность ---
@@ -147,7 +219,7 @@ params:
       category: density
       kind: deterministic
       severity: warning
-      status: implemented
+      method: data
       description: Считаются тезисы списка и колонок.
       fixable: true
       fix: Разбить слайд на два
@@ -156,16 +228,18 @@ params:
       category: density
       kind: deterministic
       severity: warning
-      status: implemented
+      method: data
       description: Считаются слова в каждом тезисе.
       fixable: true
+      editor: true
       fix: Сократить формулировку
+      fix_prompt: "Тезис «{evidence}» длиннее {max_bullet_words} слов. Сократи его, сохранив смысл и числа."
     - id: density.table_size
       title: Таблица больше 7 строк или 5 колонок
       category: density
       kind: deterministic
       severity: warning
-      status: implemented
+      method: data
       description: Размер таблицы без строки заголовка.
       fixable: true
       fix: Оставить первые 7 строк и 5 колонок
@@ -174,7 +248,7 @@ params:
       category: density
       kind: deterministic
       severity: warning
-      status: implemented
+      method: data
       description: Число рядов данных на одной диаграмме.
       fixable: true
       fix: Оставить 5 серий
@@ -183,8 +257,8 @@ params:
       category: density
       kind: deterministic
       severity: info
-      status: planned
-      description: Доля площади слайда, занятая контентом, по отрендеренному изображению.
+      method: render
+      description: Доля площади слайда под текстом, диаграммами, таблицами и картинками по рендеру.
 
     # --- Целостность ---
     - id: integrity.file_opens
@@ -192,14 +266,14 @@ params:
       category: integrity
       kind: deterministic
       severity: error
-      status: export
-      description: Собранный .pptx повторно открывается перед отдачей пользователю.
+      method: render
+      description: Собранный .pptx повторно открывается перед рендером и перед отдачей пользователю.
     - id: integrity.placeholder_text
       title: Остался текст-заглушка
       category: integrity
       kind: deterministic
       severity: error
-      status: implemented
+      method: data
       description: lorem ipsum, XXX, TODO, «вставьте текст» и подобное.
       fixable: true
       fix: Удалить текст-заглушку
@@ -208,7 +282,7 @@ params:
       category: integrity
       kind: deterministic
       severity: error
-      status: implemented
+      method: data
       description: У контентного слайда нет ни тезисов, ни визуализации.
       fixable: true
       fix: Удалить слайд
@@ -217,14 +291,14 @@ params:
       category: integrity
       kind: deterministic
       severity: error
-      status: export
+      method: render
       description: В каждом слайде .pptx должны быть редактируемые объекты, а не одна картинка.
     - id: integrity.chart_labels
       title: У диаграммы нет подписей, единиц или легенды
       category: integrity
       kind: deterministic
       severity: warning
-      status: implemented
+      method: data
       description: Проверяются единицы измерения, подписи категорий и названия серий.
       fixable: true
       fix: Добавить единицы и названия серий
@@ -233,56 +307,75 @@ params:
       category: integrity
       kind: deterministic
       severity: warning
-      status: implemented
+      method: data
       description: Совпадение заголовка и содержания после нормализации.
       fixable: true
       fix: Удалить дубликат
 
-    # --- Содержание (вопросы с ответом «да/нет», на вход — картинка слайда) ---
+    # --- Содержание (модель-судья) ---
     - id: content.title_is_insight
       title: Заголовок называет тему, а не вывод
       category: content
       kind: contextual
       severity: warning
-      status: heuristic
-      description: "Вопрос 1. Эвристика: заголовок из 1–3 слов считается темой."
+      method: llm
+      fallback: data
+      description: Судья отличает тему от вывода и предлагает заголовок-вывод. Без модели — заголовок из 1–3 слов считается темой.
       fixable: true
-      fix: Переписать заголовок как вывод
+      editor: true
+      fix: Заменить заголовок выводом, который предложил судья
+      fix_prompt: "Заголовок «{title}» называет тему. Перепиши его как вывод до 10 слов, который следует из содержимого слайда."
     - id: content.matches_title
       title: Содержимое не соответствует заголовку
       category: content
       kind: contextual
       severity: warning
-      status: stub
-      description: Вопрос 2. Требует LLM.
+      method: llm
+      description: Судья сверяет заголовок с тем, что на слайде.
+      fixable: true
+      editor: true
+      fix: Заменить заголовок выводом из содержимого
+      fix_prompt: "Содержимое слайда не подтверждает заголовок «{title}». Перепиши заголовок так, чтобы он следовал из содержимого."
     - id: content.one_sentence
       title: Слайд не пересказывается одним предложением
       category: content
       kind: contextual
       severity: info
-      status: stub
-      description: Вопрос 3. Требует LLM.
+      method: llm
+      description: Судья формулирует главную мысль слайда; не получилось — у слайда нет одной мысли.
+      fixable: true
+      editor: true
+      fix: Сфокусировать слайд на одной мысли
+      fix_prompt: "У слайда нет одной главной мысли. Сфокусируй его на самой важной: убери лишнее, заголовок — вывод."
     - id: content.facts_grounded
       title: Цифры и факты не найдены в исходных материалах
       category: content
       kind: contextual
       severity: warning
-      status: heuristic
-      description: "Вопрос 4. Эвристика: числа со слайда ищутся в брифе и тексте контент-пакета."
+      method: llm
+      fallback: data
+      description: >
+        Судья сверяет факты слайда с брифом и контент-пакетом. Числа дополнительно ищутся
+        в полном тексте материалов — это работает и без модели.
+      fixable: true
+      editor: true
+      fix: Убрать или переформулировать неподтверждённые факты
+      fix_prompt: "На слайде есть факты, которых нет в материалах: {evidence}. Убери их или перепиши без выдуманных чисел, опираясь только на бриф и материалы."
     - id: content.images_relevant
       title: Картинки и иконки не относятся к теме слайда
       category: content
       kind: contextual
       severity: warning
-      status: stub
-      description: Вопрос 6. Требует VLM.
+      method: vlm
+      description: Судья смотрит на рендер слайда с фотографиями и иллюстрациями (логотипы и декор не в счёт).
     - id: content.service_text
       title: Служебный мусор — реплики спикера, куски промпта
       category: content
       kind: contextual
       severity: error
-      status: heuristic
-      description: "Вопрос 7. Эвристика: поиск служебных маркеров в тексте."
+      method: llm
+      fallback: data
+      description: Судья находит реплики спикера и пометки; служебные маркеры ищутся и правилом.
       fixable: true
       fix: Удалить служебный текст
     - id: content.typos
@@ -290,26 +383,39 @@ params:
       category: content
       kind: contextual
       severity: info
-      status: stub
-      description: Вопрос 8. Требует орфографической модели или LLM.
+      method: llm
+      description: Судья находит орфографические ошибки и предлагает исправление.
+      fixable: true
+      fix: Исправить опечатку
     - id: content.single_language
       title: Колода не на одном языке
       category: content
       kind: contextual
       severity: info
-      status: heuristic
-      description: "Вопрос 9. Эвристика: доля слов на латинице или кириллице."
+      method: llm
+      fallback: data
+      description: Судья находит фразы не на языке колоды. Без модели — доля слов на латинице или кириллице.
+      fixable: true
+      editor: true
+      fix: Перевести фрагменты на язык колоды
+      fix_prompt: "На слайде есть фразы не на языке колоды: {evidence}. Переведи их; названия продуктов и брендов оставь."
     - id: content.table_relevance
       title: Строки таблицы или легенда не работают на мысль слайда
       category: content
       kind: contextual
       severity: info
-      status: stub
-      description: Вопрос 10. Требует LLM.
+      method: llm
+      description: Судья отмечает строки таблицы, категории и ряды диаграммы, которые не доказывают вывод.
+      fixable: true
+      fix: Убрать лишнюю строку или категорию
     - id: content.logical_flow
       title: Соседние слайды не связаны по логике
       category: content
       kind: contextual
       severity: info
-      status: stub
-      description: Вопрос 11. Требует LLM по всей колоде.
+      method: llm
+      description: Судья читает колоду целиком и отмечает слайды, выпадающие из повествования.
+      fixable: true
+      editor: true
+      fix: Связать слайд с соседними
+      fix_prompt: "Слайд выпадает из логики колоды: {message}. Перепиши его так, чтобы он продолжал мысль предыдущего слайда и работал на тему презентации."

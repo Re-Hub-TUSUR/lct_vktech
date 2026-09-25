@@ -1,18 +1,29 @@
 """Автоисправления найденных проблем.
 
-Сейчас это детерминированные правки данных слайда. Контекстуальные исправления
-(переписать заголовок как вывод, сократить тезис) в продукте делает LLM; здесь
-они заменены простыми правилами с тем же контрактом.
+Два пути. Правки, для которых нужен новый текст (сократить тезис, переписать без выдуманных
+фактов, сфокусировать слайд, связать с соседними), пишет модель: планировщик правки
+(planning/editor.py) получает слайд, инструкцию из каталога (fix_prompt) и ёмкость слотов
+паттерна — apply_editor_fixes. Остальное — детерминированные правки данных слайда: удалить
+заглушку или служебную фразу, поставить заголовок, который предложил судья, исправить опечатку,
+убрать лишнюю строку таблицы, разбить слайд — apply_fixes. Без модели правки текста делают
+простые правила с тем же контрактом.
 """
 
 import copy
+import logging
 import re
+from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from app.pipeline.audit.checks import PLACEHOLDER_RX, SERVICE_RX, WORD_RX, bullet_items
+from app.pipeline.ai.llm import in_parallel, llm_enabled
+from app.pipeline.audit.catalog import CheckInfo
+from app.pipeline.audit.checks import PLACEHOLDER_RX, SERVICE_RX, WORD_RX, bullet_items, normalize
+from app.pipeline.planning.editor import EditError, edit_slide
 from app.schemas.slide import Slide, new_slide_id
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -24,6 +35,7 @@ class IssueRef:
     slide_id: str | None
     target: str | None
     evidence: str | None
+    message: str | None = None
 
 
 @dataclass
@@ -33,14 +45,31 @@ class FixContext:
     content_layout_name: str | None = None
 
 
+@dataclass
+class EditorContext:
+    """Контекст колоды для правок моделью."""
+
+    title: str
+    purpose: str
+    brief: str
+    sources: str
+    language: str = "ru"
+    tone: str = "business"
+    audience: str = ""
+    patterns: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
 FixFn = Callable[[list[Slide], int, IssueRef, FixContext], list[Slide] | None]
 FIXES: dict[str, FixFn] = {}
 # Порядок применения: сначала правки текста, потом структура, в конце удаление слайдов.
 FIX_ORDER = [
     "integrity.placeholder_text",
     "content.service_text",
+    "content.typos",
     "density.bullet_words",
     "content.title_is_insight",
+    "content.matches_title",
+    "content.table_relevance",
     "integrity.chart_labels",
     "density.table_size",
     "density.chart_series",
@@ -99,7 +128,11 @@ def remove_placeholder(slides, index, issue, ctx):
 
 @fix("content.service_text")
 def remove_service_text(slides, index, issue, ctx):
-    return slides if _remove_text(slides[index], issue.evidence, SERVICE_RX) else None
+    slide = slides[index]
+    if _remove_text(slide, issue.evidence, SERVICE_RX):
+        return slides
+    # Фраза, которую нашёл судья, — часть тезиса: вырезается только она.
+    return slides if issue.evidence and _remove_fragment(slide, issue.evidence) else None
 
 
 @fix("density.bullet_words")
@@ -113,9 +146,113 @@ def shorten_bullet(slides, index, issue, ctx):
     return None
 
 
+def _replace_everywhere(slide: Slide, pattern: re.Pattern[str], replace: Callable[[re.Match[str]], str]) -> bool:
+    """Замена во всех текстах слайда. True — что-то заменилось."""
+    changed = False
+
+    def apply(text: str | None) -> str | None:
+        nonlocal changed
+        if not text:
+            return text
+        result = pattern.sub(replace, text)
+        changed = changed or result != text
+        return result
+
+    slide.title = apply(slide.title) or slide.title
+    slide.subtitle = apply(slide.subtitle)
+    slide.bullets = [apply(b) or b for b in slide.bullets]
+    for column in slide.columns:
+        column.title = apply(column.title) or column.title
+        column.bullets = [apply(b) or b for b in column.bullets]
+    for kpi in slide.kpis:
+        kpi.label = apply(kpi.label) or kpi.label
+    for item in slide.timeline:
+        item.title = apply(item.title) or item.title
+        item.text = apply(item.text)
+    if slide.table:
+        slide.table.columns = [apply(c) or c for c in slide.table.columns]
+        slide.table.rows = [[apply(c) or c for c in row] for row in slide.table.rows]
+    if slide.chart:
+        slide.chart.caption = apply(slide.chart.caption)
+        slide.chart.categories = [apply(c) or c for c in slide.chart.categories]
+    if slide.quote:
+        slide.quote.text = apply(slide.quote.text) or slide.quote.text
+    return changed
+
+
+@fix("content.typos")
+def fix_typo(slides, index, issue, ctx):
+    wrong, _, right = (issue.evidence or "").partition(" → ")
+    if not wrong or not right:
+        return None
+
+    def keep_case(match: re.Match[str]) -> str:
+        found = match.group(0)
+        return right[:1].upper() + right[1:] if found[:1].isupper() else right
+
+    pattern = re.compile(rf"(?<!\w){re.escape(wrong)}(?!\w)", re.IGNORECASE)
+    return slides if _replace_everywhere(slides[index], pattern, keep_case) else None
+
+
+def _remove_fragment(slide: Slide, fragment: str) -> bool:
+    """Вырезает фразу из текстов слайда; тезис, от которого ничего не осталось, удаляется."""
+    pattern = re.compile(r"\s*" + r"\s+".join(re.escape(word) for word in fragment.split()) + r"[\s.,;:—-]*", re.IGNORECASE)
+    if not fragment.strip() or not _replace_everywhere(slide, pattern, lambda _: " "):
+        return False
+    for bullets in _bullet_lists(slide):
+        bullets[:] = [" ".join(b.split()).strip(" ,;:—-") for b in bullets if len(normalize(b)) >= 3]
+    slide.title = " ".join(slide.title.split()).strip(" ,;:—-") or slide.summary or slide.title
+    return True
+
+
+@fix("content.table_relevance")
+def drop_irrelevant(slides, index, issue, ctx):
+    slide, key = slides[index], normalize(issue.evidence or "")
+    if not key:
+        return None
+    if slide.table and issue.target == "table":
+        rows = [row for row in slide.table.rows if not (row and normalize(row[0]) == key)]
+        if len(rows) != len(slide.table.rows) and rows:
+            slide.table.rows = rows
+            return slides
+    chart = slide.chart
+    if chart and issue.target == "chart":
+        if key in [normalize(c) for c in chart.categories] and len(chart.categories) > 2:
+            position = [normalize(c) for c in chart.categories].index(key)
+            del chart.categories[position]
+            for series in chart.series:
+                if position < len(series.values):
+                    del series.values[position]
+            if chart.highlight is not None:
+                chart.highlight = None if chart.highlight == position else chart.highlight - (chart.highlight > position)
+            return slides
+        series = [s for s in chart.series if normalize(s.name) != key]
+        if series and len(series) != len(chart.series):
+            chart.series = series
+            return slides
+    return None
+
+
+def _set_title(slide: Slide, title: str) -> None:
+    slide.title = title
+    slide.summary = title  # заголовок-вывод — и есть главная мысль слайда
+
+
+@fix("content.matches_title")
+def retitle(slides, index, issue, ctx):
+    if not issue.evidence:
+        return None
+    _set_title(slides[index], issue.evidence)
+    return slides
+
+
 @fix("content.title_is_insight")
 def rewrite_title(slides, index, issue, ctx):
     slide = slides[index]
+    if issue.evidence:
+        # Заголовок-вывод, который предложил судья по содержимому слайда.
+        _set_title(slide, issue.evidence)
+        return slides
     if slide.summary and slide.summary != slide.title:
         slide.title = slide.summary
         return slides
@@ -217,6 +354,85 @@ def drop_empty_slide(slides, index, issue, ctx):
 def drop_duplicate(slides, index, issue, ctx):
     del slides[index]
     return slides
+
+
+def editor_issues(issues: list[IssueRef], catalog: dict[str, CheckInfo]) -> list[IssueRef]:
+    """Проблемы, которые исправляет модель: у проверки editor: true, а готового ответа (заголовка от
+    судьи) нет. Без модели — ни одной: работают правила."""
+    if not llm_enabled():
+        return []
+    ready = {"content.title_is_insight", "content.matches_title"}
+    return [
+        issue
+        for issue in issues
+        if (check := catalog.get(issue.check_id)) is not None
+        and check.editor
+        and check.fix_prompt
+        and not (issue.check_id in ready and issue.evidence)
+    ]
+
+
+def instruction_for(issues: list[IssueRef], slide: Slide, catalog: dict[str, CheckInfo], limits: dict[str, Any]) -> str:
+    lines = []
+    for issue in issues:
+        template = catalog[issue.check_id].fix_prompt or ""
+        values = {
+            "message": issue.message or "",
+            "evidence": issue.evidence or "",
+            "title": slide.title,
+            "max_bullet_words": str(limits.get("max_bullet_words", 15)),
+        }
+        for key, value in values.items():
+            template = template.replace("{" + key + "}", value)
+        if template not in lines:
+            lines.append(template)
+    if len(lines) == 1:
+        return lines[0]
+    return "Исправь на слайде:\n" + "\n".join(f"{number}. {line}" for number, line in enumerate(lines, start=1))
+
+
+def apply_editor_fixes(
+    slides: list[Slide],
+    issues: list[IssueRef],
+    catalog: dict[str, CheckInfo],
+    ctx: EditorContext,
+    limits: dict[str, Any],
+) -> tuple[list[Slide], list[str]]:
+    """Правки моделью: по одному запросу на слайд со всеми его проблемами. Вызывать в потоке."""
+    slides = [slide.model_copy(deep=True) for slide in slides]
+    by_slide: dict[str, list[IssueRef]] = defaultdict(list)
+    for issue in issues:
+        if issue.slide_id:
+            by_slide[issue.slide_id].append(issue)
+    targets = [slide for slide in slides if slide.id in by_slide]
+
+    def work(slide: Slide) -> Slide | None:
+        try:
+            result = edit_slide(
+                slide,
+                instruction_for(by_slide[slide.id], slide, catalog, limits),
+                deck=slides,
+                title=ctx.title,
+                purpose=ctx.purpose,
+                brief=ctx.brief,
+                sources=ctx.sources,
+                language=ctx.language,
+                tone=ctx.tone,
+                audience=ctx.audience,
+                pattern=ctx.patterns.get(slide.pattern_id or ""),
+            )
+        except EditError as exc:
+            logger.warning("Правка слайда %s моделью не удалась: %s", slide.id, exc)
+            return None
+        return result.slide
+
+    applied: list[str] = []
+    edited = dict(zip((slide.id for slide in targets), in_parallel(targets, work)))
+    for position, slide in enumerate(slides):
+        if (new := edited.get(slide.id)) is not None:
+            slides[position] = new
+            applied += [issue.id for issue in by_slide[slide.id]]
+    return slides, applied
 
 
 def apply_fixes(slides: list[Slide], issues: list[IssueRef], ctx: FixContext) -> tuple[list[Slide], list[str]]:

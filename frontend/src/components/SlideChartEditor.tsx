@@ -81,6 +81,8 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
     colors: chart.colors || null,
     show_values: chart.show_values !== false,
     show_legend: chart.show_legend !== false,
+    // Выделенная категория (её выбрала стадия визуализаций) сохраняется, пока жива сама категория.
+    highlight: chart.highlight ?? null,
   })
 
   const update = (next: ChartData) => {
@@ -102,6 +104,7 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
       series: preset.series
         ? preset.series.map((s) => ({ name: s.name, values: [...s.values] }))
         : localChart.series,
+      highlight: preset.categories ? null : localChart.highlight,
     }
     update(next)
   }
@@ -149,7 +152,9 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
       ...s,
       values: s.values.filter((_, i) => i !== index),
     }))
-    update({ ...localChart, categories: nextCategories, series: nextSeries })
+    const key = localChart.highlight
+    const highlight = key == null || key === index ? null : key > index ? key - 1 : key
+    update({ ...localChart, categories: nextCategories, series: nextSeries, highlight })
   }
 
   const handleSeriesNameChange = (seriesIndex: number, name: string) => {
