@@ -95,3 +95,22 @@ export function getCategoryInfo(category: ContentCategory): CategoryInfo {
       return { category: 'document', label: 'Документ', badgeClass: 'badge-info', badgeTone: 'info' }
   }
 }
+
+export function getImageKindLabel(category?: string | null): string {
+  switch (category) {
+    case 'photo':
+      return 'Фотография'
+    case 'illustration':
+      return 'Иллюстрация'
+    case 'logo':
+      return 'Логотип'
+    case 'screenshot':
+      return 'Скриншот'
+    case 'diagram':
+      return 'Схема'
+    case 'document':
+      return 'Документ'
+    default:
+      return 'Изображение'
+  }
+}

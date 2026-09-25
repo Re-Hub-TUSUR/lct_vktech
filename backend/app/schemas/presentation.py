@@ -60,6 +60,10 @@ class ContentFileOut(BaseModel):
     size: int
     has_text: bool
     created_at: datetime
+    category: str | None = None
+    is_visual: bool | None = None
+    visual_description: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 class PresentationUserOut(BaseModel):

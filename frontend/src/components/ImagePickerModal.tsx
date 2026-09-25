@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 import { contentFileUrl } from '../api/client'
 import type { ContentFile } from '../api/types'
-import { formatSize, getContentCategory } from '../lib/format'
+import { formatSize, getContentCategory, getImageKindLabel } from '../lib/format'
 import { FileDrop } from './FileDrop'
 import { Modal } from './Modal'
 import { Button, Spinner } from './ui'
@@ -122,6 +122,27 @@ export function ImagePickerModal({
                   </div>
                   <div className="image-picker-caption">
                     <strong title={file.filename}>{file.filename}</strong>
+                    {file.category && (
+                      <span className="badge badge-purple" style={{ fontSize: 10, padding: '1px 5px', width: 'fit-content' }}>
+                        {getImageKindLabel(file.category)}
+                      </span>
+                    )}
+                    {file.visual_description && (
+                      <span
+                        className="muted"
+                        title={file.visual_description}
+                        style={{
+                          fontSize: 11,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {file.visual_description}
+                      </span>
+                    )}
                     <small>{formatSize(file.size)}</small>
                   </div>
                 </button>

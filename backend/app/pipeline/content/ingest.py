@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True)
 
+from app.pipeline.content.image_analyzer import analyze_image_content
+
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 _DATA_EXTENSIONS = {".json", ".yaml", ".yml"}
 
@@ -37,7 +39,7 @@ def extract_text(path: Path, filename: str) -> str | None:
         if ext in {".yaml", ".yml"}:
             return _yaml_text(path)
         if ext in _IMAGE_EXTENSIONS:
-            return _image_description(path, filename)
+            return analyze_image_content(path, filename)
     except Exception:
         logger.exception("Не удалось извлечь текст из %s", filename)
     return None
@@ -126,22 +128,6 @@ def _yaml_text(path: Path) -> str:
         return _read_text(path)
 
 
-def _image_description(path: Path, filename: str) -> str:
-    """Метаданные картинки: размер, формат. Если Pillow доступен — добавляем точные размеры."""
-    ext = path.suffix.lower()
-    meta_parts = [f"Изображение: {filename}", f"Формат: {ext.lstrip('.').upper()}"]
-    try:
-        from PIL import Image  # type: ignore[import-untyped]
-
-        with Image.open(path) as img:
-            w, h = img.size
-            mode = img.mode
-            meta_parts.append(f"Размер: {w}×{h} пикселей")
-            meta_parts.append(f"Цветовое пространство: {mode}")
-    except Exception:
-        size_bytes = path.stat().st_size if path.exists() else 0
-        meta_parts.append(f"Размер файла: {size_bytes} байт")
-    return "\n".join(meta_parts)
 
 
 def sources_digest(files: list[tuple[str, str]], *, per_file: int, total: int) -> str:

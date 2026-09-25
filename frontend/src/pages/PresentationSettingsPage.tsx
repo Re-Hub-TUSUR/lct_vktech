@@ -14,7 +14,7 @@ import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
 import { Button, Card, ErrorState, Field, FullPageSpinner, Segmented, Select, Spinner, Toggle } from '../components/ui'
-import { ALL_CONTENT_EXTENSIONS, countLabel, formatSize, getCategoryInfo, getContentCategory } from '../lib/format'
+import { ALL_CONTENT_EXTENSIONS, countLabel, formatSize, getCategoryInfo, getContentCategory, getImageKindLabel } from '../lib/format'
 
 const DEFAULT_SETTINGS: GenerationSettings = {
   slides_count: 12,
@@ -308,9 +308,18 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                           {file.filename}
                         </span>
                         <div className="file-meta">
-                          <span className={clsx('badge', catInfo.badgeClass)}>{catInfo.label}</span>
+                          <span className={clsx('badge', catInfo.badgeClass)}>
+                            {isImg && file.category ? getImageKindLabel(file.category) : catInfo.label}
+                          </span>
+                          {isImg && file.is_visual && (
+                            <span className="badge badge-purple" title="Подходит для вставки на слайд вместо генерации">
+                              Для слайдов
+                            </span>
+                          )}
                           {file.has_text ? (
-                            <span className="badge badge-success">Текст извлечён</span>
+                            <span className="badge badge-success" title={isImg ? 'Текст с фото извлечён (OCR)' : 'Текст извлечён'}>
+                              {isImg ? 'OCR текст' : 'Текст извлечён'}
+                            </span>
                           ) : presentation?.status === 'generating' ? (
                             <span className="badge badge-info">
                               <Spinner size={10} /> Обработка…
@@ -320,6 +329,11 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                           )}
                           <small>{formatSize(file.size)}</small>
                         </div>
+                        {isImg && file.visual_description && (
+                          <div className="file-caption muted" style={{ fontSize: 12, marginTop: 2 }}>
+                            {file.visual_description}
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"

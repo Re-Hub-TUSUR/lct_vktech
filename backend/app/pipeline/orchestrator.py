@@ -24,7 +24,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.redis import generation_channel, publish_presentation_update, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
-from app.models.base import utcnow
+from app.pipeline.content.image_matcher import assign_content_images_to_drafts
 from app.pipeline.content.ingest import extract_text, sources_digest, split_sentences
 from app.pipeline.layout.composer import axis_config, compose_variants
 from app.pipeline.planning.outline import group_labels, purpose_label
@@ -271,12 +271,19 @@ async def _run_stages(
 
     async with tracker.stage("images") as stage:
         if not stage.skipped:
-            prompts = sum(1 for draft in drafts for slide in draft.slides if slide.image)
-            stage.detail = (
-                f"Подготовлено промптов: {prompts}; модель text-to-image не подключена — на слайдах заглушки"
-                if prompts
-                else "В вариантах нет слайдов с изображениями (их даёт ось «Выбор макетов»)"
-            )
+            image_stats = assign_content_images_to_drafts(drafts, presentation.files, presentation.id)
+            matched = image_stats.get("matched", 0)
+            with_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and slide.image.url)
+            without_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and not slide.image.url)
+
+            parts = []
+            if with_url:
+                parts.append(f"Подобрано фото из материалов: {with_url} (вставлены вместо генерации)")
+            if without_url:
+                parts.append(f"подготовлено промптов для генерации: {without_url}")
+            if not parts:
+                parts.append("В вариантах нет слайдов с изображениями (их даёт ось «Выбор макетов»)")
+            stage.detail = " · ".join(parts)
 
     variants = [
         Variant(

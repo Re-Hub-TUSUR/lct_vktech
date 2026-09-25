@@ -378,6 +378,10 @@ export interface ContentFile {
   size: number
   has_text: boolean
   created_at: string
+  category?: 'photo' | 'illustration' | 'logo' | 'screenshot' | 'diagram' | 'document' | null
+  is_visual?: boolean | null
+  visual_description?: string | null
+  tags?: string[]
 }
 
 export interface ProjectSummary {
