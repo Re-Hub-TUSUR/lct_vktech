@@ -1054,7 +1054,11 @@ function AuditWorkspace({
                       className="btn btn-ghost btn-xs"
                       style={{ fontSize: 11 }}
                       title="Скрыть замечание"
-                      onClick={() => resolve.mutate({ ids: [currentTourIssue.id], action: 'ignore' })}
+                      disabled={resolve.isPending}
+                      onClick={() => {
+                        if (resolve.isPending) return
+                        resolve.mutate({ ids: [currentTourIssue.id], action: 'ignore' })
+                      }}
                     >
                       Скрыть
                     </button>

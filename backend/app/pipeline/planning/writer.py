@@ -349,8 +349,11 @@ def write_slides(
     if not llm_enabled():
         return CopyResult()
     if not any(spec.get("plan_kind") for spec in specs):
-        # План собран без модели (она не ответила на предыдущей стадии) — на слайдах тезисы брифа.
-        return CopyResult(reason="план построен без модели")
+        # Если план собран без модели, но LLM подключена — проставляем plan_kind по типу слайда,
+        # чтобы автор текстов мог наполнить слайды качественным контентом.
+        for spec in specs:
+            k = spec.get("kind", "text")
+            spec["plan_kind"] = "text" if k == "bullets" else k
 
     skill = get_skill("slide_writer")
     params = skill.params or {}

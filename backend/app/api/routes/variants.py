@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import random
 import re
 import uuid
@@ -8,18 +9,25 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from sqlalchemy import select
 
 from app.api.deps import Arq, CurrentUser, DbSession, OptionalUser, get_variant_for_user
 from app.api.serializers import variant_out
+from app.core.config import settings
 from app.core.redis import publish_presentation_update, redis_client
 from app.core.storage import save_upload, storage_path
-from app.models import Generation
+from app.models import ContentFile, Generation
+from app.pipeline.ai.llm import llm_enabled
+from app.pipeline.content.image_matcher import assign_content_images_to_drafts
+from app.pipeline.content.ingest import sources_digest
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
 from app.pipeline.layout.composer import assign_layouts, compose_single_variant
 from app.pipeline.layout.matcher import assign_patterns
 from app.pipeline.planning.editor import EditError, edit_slide
 from app.pipeline.planning.outline import build_outline, group_labels
+from app.pipeline.planning.planner import plan_outline
+from app.pipeline.planning.writer import write_slides
 from app.pipeline.visuals.visualizer import refine_variant
 from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
@@ -155,11 +163,50 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     options = GenerationSettings.model_validate(presentation.settings or {})
-    # План прогона: тексты уже написаны моделью, рерол только меняет вёрстку и порядок.
+    files = list(await db.scalars(select(ContentFile).where(ContentFile.presentation_id == presentation.id)))
+
+    # План прогона: если тексты уже написаны моделью, рерол меняет вёрстку и порядок.
+    # Если план был из fallback (модель не ответила на стадии генерации), рерол привлекает LLM!
     generation = await db.get(Generation, variant.generation_id)
-    specs = (generation.plan if generation else None) or build_outline(
-        title=presentation.title, purpose=presentation.purpose, brief=presentation.brief
-    )
+    specs = list(generation.plan if generation and generation.plan else [])
+
+    if (not specs or not any(s.get("plan_kind") for s in specs)) and llm_enabled():
+        sources = sources_digest(
+            [(f.filename, f.extracted_text or "") for f in files],
+            per_file=settings.llm_source_chars,
+            total=settings.llm_sources_total_chars,
+        )
+        plan = await asyncio.to_thread(
+            plan_outline,
+            title=presentation.title,
+            purpose=presentation.purpose,
+            brief=presentation.brief,
+            sources=sources,
+            slides_count=options.slides_count,
+            language=options.language,
+            tone=options.tone,
+            audience=options.audience,
+            patterns=template.patterns if template else None,
+        )
+        specs = plan.specs
+        await asyncio.to_thread(
+            write_slides,
+            specs,
+            title=presentation.title,
+            purpose=presentation.purpose,
+            sources=sources,
+            language=options.language,
+            tone=options.tone,
+            audience=options.audience,
+        )
+        if generation is not None:
+            generation.plan = copy.deepcopy(specs)
+
+    if not specs:
+        specs = build_outline(
+            title=presentation.title, purpose=presentation.purpose, brief=presentation.brief
+        )
+
     seed = random.randint(1, 1_000_000)
     draft = compose_single_variant(
         specs,
@@ -177,6 +224,10 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         # Те же правила визуализации, что и при генерации (стадия «Графики, таблицы, инфографика»).
         names = {layout["key"]: layout["name"] for layout in template.layouts or []}
         refine_variant(draft.slides, template.patterns, position=variant.position, layout_names=names)
+
+    # Привязка графических ассетов контент-пакета к рерольнутому варианту
+    assign_content_images_to_drafts([draft], files, presentation.id)
+
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)
     await refresh_audit(db, variant, ctx)

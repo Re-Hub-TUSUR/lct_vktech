@@ -85,8 +85,20 @@ def extract_image_assets(files: list[ContentFile], presentation_id: UUID | str) 
 
 def _tokenize(text: str) -> set[str]:
     """Токенизация текста с удалением стоп-слов и пунктуации."""
-    words = re.findall(r"[a-zA-Zа-яА-Я0-9]{3,}", text.lower())
+    words = re.findall(r"[a-zA-Zа-яА-Я0-9]{2,}", text.lower())
     return {w for w in words if w not in _STOP_WORDS}
+
+
+def _tokens_match(t1: str, t2: str) -> bool:
+    if t1 == t2:
+        return True
+    if len(t1) >= 4 and len(t2) >= 4:
+        return t1[:4] == t2[:4]
+    return False
+
+
+def _overlap_count(tokens1: set[str], tokens2: set[str]) -> int:
+    return sum(1 for t1 in tokens1 if any(_tokens_match(t1, t2) for t2 in tokens2))
 
 
 def _score_slide_asset_match(slide: Slide, asset: ImageAsset) -> float:
@@ -111,19 +123,25 @@ def _score_slide_asset_match(slide: Slide, asset: ImageAsset) -> float:
     # 1. Совпадение с тегами изображения (высокий вес)
     for tag in asset.tags:
         tag_tokens = _tokenize(tag)
-        if tag_tokens and tag_tokens.issubset(slide_tokens):
+        if tag_tokens and all(any(_tokens_match(tt, st) for st in slide_tokens) for tt in tag_tokens):
             score += 3.5
-        elif any(t in slide_tokens for t in tag_tokens):
+        elif any(_tokens_match(tt, st) for tt in tag_tokens for st in slide_tokens):
             score += 1.5
 
     # 2. Совпадение с визуальным описанием
     desc_tokens = _tokenize(asset.visual_description)
-    overlap = slide_tokens.intersection(desc_tokens)
-    score += len(overlap) * 1.2
+    overlap = _overlap_count(slide_tokens, desc_tokens)
+    score += overlap * 1.2
 
     # 3. Совпадение с именем файла (очищенным от расширения)
     name_tokens = _tokenize(re.sub(r"\.[a-zA-Z0-9]+$", "", asset.filename))
-    score += len(slide_tokens.intersection(name_tokens)) * 2.0
+    name_overlap = _overlap_count(slide_tokens, name_tokens)
+    score += name_overlap * 2.0
+
+    # Если нет смысловой связи (ни тегов, ни совпадений в описании или имени),
+    # изображение не должно получать очки только за то, что это красивая картинка.
+    if score == 0.0:
+        return 0.0
 
     # 4. Бонус за визуальность (если нет тяжелого текста, фото идеально для слайда)
     if asset.is_visual:
@@ -214,20 +232,30 @@ def match_images_to_slides(slides: list[Slide], assets: list[ImageAsset]) -> int
         if a.id not in used_asset_ids and a.is_visual and a.category in ("photo", "screenshot", "illustration")
     ]
     if remaining_visuals:
-        eligible_bullet_slides = [
+        eligible_slides = [
             s for s in slides
-            if s.kind == "bullets" and not s.image and 1 <= len(s.bullets or []) <= 4
+            if s.kind in ("bullets", "cards", "two_columns") and not s.image
         ]
-        for slide in eligible_bullet_slides:
+        for slide in eligible_slides:
             if not remaining_visuals:
                 break
             scored = [(a, _score_slide_asset_match(slide, a)) for a in remaining_visuals]
             scored.sort(key=lambda pair: pair[1], reverse=True)
             best_asset, best_score = scored[0]
 
-            # Высокий порог соответствия для смены типа макета на image_text
-            if best_score >= 4.0:
+            # Порог соответствия для смены типа макета на image_text:
+            # Требуется подтверждённая смысловая связь (теги VLM, описание или имя файла, score >= 3.0).
+            # Фотографии без контекстной связи со слайдом не навязываются.
+            if best_score >= 3.0:
                 slide.kind = "image_text"
+                if not slide.bullets or len(slide.bullets) == 0:
+                    if slide.columns:
+                        slide.bullets = [
+                            f"{c.title}: {c.bullets[0]}" if c.bullets and c.title else (c.title or (c.bullets[0] if c.bullets else ""))
+                            for c in slide.columns
+                        ][:4]
+                    if not slide.bullets:
+                        slide.bullets = [slide.summary or slide.title or "Ключевой тезис"]
                 slide.image = ImageSpec(
                     url=best_asset.url,
                     prompt=best_asset.visual_description or best_asset.filename,

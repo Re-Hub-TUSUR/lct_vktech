@@ -25,6 +25,8 @@ from app.core.db import SessionLocal
 from app.core.redis import generation_channel, publish_presentation_update, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
+from app.pipeline.ai.vlm import vlm_enabled
+from app.pipeline.content.image_analyzer import parse_image_meta
 from app.pipeline.content.image_matcher import assign_content_images_to_drafts
 from app.pipeline.content.ingest import extract_text, sources_digest, split_sentences
 from app.pipeline.layout.composer import axis_config, compose_variants
@@ -188,7 +190,14 @@ async def _run_stages(
     async with tracker.stage("content") as stage:
         chars = 0
         for file in presentation.files:
-            if file.extracted_text is None:
+            needs_extract = file.extracted_text is None
+            if not needs_extract:
+                ext = Path(file.filename).suffix.lower()
+                if ext in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+                    meta = parse_image_meta(file.extracted_text)
+                    if meta and (meta.get("source") == "fallback" or "source" not in meta) and (vlm_enabled() or settings.llm_base_url):
+                        needs_extract = True
+            if needs_extract:
                 file.extracted_text = await asyncio.to_thread(extract_text, Path(file.path), file.filename) or ""
             chars += len(file.extracted_text)
         theses = split_sentences(presentation.brief)
@@ -271,19 +280,23 @@ async def _run_stages(
         stage.detail = visuals.detail()
 
     async with tracker.stage("images") as stage:
-        if not stage.skipped:
-            image_stats = assign_content_images_to_drafts(drafts, presentation.files, presentation.id)
-            matched = image_stats.get("matched", 0)
-            with_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and slide.image.url)
-            without_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and not slide.image.url)
+        image_stats = assign_content_images_to_drafts(drafts, presentation.files, presentation.id)
+        matched = image_stats.get("matched", 0)
+        with_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and slide.image.url)
+        without_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and not slide.image.url)
 
+        if not options.generate_images and not with_url:
+            stage.skipped = True
+            stage.detail = "Генерация новых изображений отключена в настройках"
+        else:
+            stage.skipped = False
             parts = []
             if with_url:
                 parts.append(f"Подобрано фото из материалов: {with_url} (вставлены вместо генерации)")
-            if without_url:
+            if without_url and options.generate_images:
                 parts.append(f"подготовлено промптов для генерации: {without_url}")
             if not parts:
-                parts.append("В вариантах нет слайдов с изображениями (их даёт ось «Выбор макетов»)")
+                parts.append("В вариантах нет слайдов с изображениями")
             stage.detail = " · ".join(parts)
 
     variants = [

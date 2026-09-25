@@ -17,6 +17,7 @@ import base64
 import json
 import logging
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ class ImageAnalysis:
     category: str = "photo"
     tags: list[str] = field(default_factory=list)
     recommended_placement: str = "slide_illustration"
+    source: str = "vlm"
 
     def to_meta_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -113,8 +115,8 @@ def _image_to_jpeg_bytes(path: Path) -> bytes | None:
         from PIL import Image
         with Image.open(path) as img:
             w, h = img.size
-            if max(w, h) > 2048:
-                ratio = 2048 / max(w, h)
+            if max(w, h) > 1536:
+                ratio = 1536 / max(w, h)
                 img = img.resize((int(w * ratio), int(h * ratio)), Image.Resampling.LANCZOS)
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
@@ -218,25 +220,45 @@ def _analyze_with_vlm(image_bytes: bytes, filename: str) -> ImageAnalysis | None
         schema=_vlm_schema(),
     )
 
-    try:
-        with httpx.Client(base_url=base_url, headers=headers, timeout=settings.vlm_timeout_seconds) as client:
-            answer = api.ask_json(client, payload, options, label=f"vlm_image_{filename}")
-            if answer.data:
-                data = answer.data
-                cat = data.get("category", "photo")
-                if cat not in IMAGE_CATEGORIES:
-                    cat = "photo"
-                return ImageAnalysis(
-                    has_text=bool(data.get("has_text")),
-                    ocr_text=str(data.get("ocr_text", "")),
-                    visual_description=str(data.get("visual_description", "")),
-                    is_visual=bool(data.get("is_visual", True)),
-                    category=cat,
-                    tags=[str(t) for t in data.get("tags", []) if str(t).strip()],
-                    recommended_placement=str(data.get("recommended_placement", "slide_illustration")),
+    vlm_delays = [1.5, 3.0, 5.0]
+    for attempt_idx, delay in enumerate(vlm_delays):
+        try:
+            with httpx.Client(base_url=base_url, headers=headers, timeout=settings.vlm_timeout_seconds) as client:
+                answer = api.ask_json(client, payload, options, label=f"vlm_image_{filename}")
+                if answer.data:
+                    data = answer.data
+                    fn_lower = filename.lower()
+                    cat = data.get("category", "photo")
+                    if any(k in fn_lower for k in ("logo", "лого", "brand", "эмблема")):
+                        cat = "logo"
+                    elif any(k in fn_lower for k in ("diagram", "scheme", "схема", "архитектур", "arch")):
+                        cat = "diagram"
+                    elif cat not in IMAGE_CATEGORIES:
+                        cat = "photo"
+
+                    rec_placement = str(data.get("recommended_placement", "slide_illustration"))
+                    if cat == "logo":
+                        rec_placement = "logo"
+
+                    return ImageAnalysis(
+                        has_text=bool(data.get("has_text")),
+                        ocr_text=str(data.get("ocr_text", "")),
+                        visual_description=str(data.get("visual_description", "")),
+                        is_visual=bool(data.get("is_visual", True)),
+                        category=cat,
+                        tags=[str(t) for t in data.get("tags", []) if str(t).strip()],
+                        recommended_placement=rec_placement,
+                        source="vlm",
+                    )
+        except Exception as exc:
+            if attempt_idx < len(vlm_delays) - 1:
+                logger.warning(
+                    "VLM-анализ изображения %s (попытка %d/%d) прервался: %s — повторяю через %.1fс",
+                    filename, attempt_idx + 1, len(vlm_delays), exc, delay
                 )
-    except Exception as exc:
-        logger.warning("VLM-анализ изображения %s не удался: %s — использую fallback", filename, exc)
+                time.sleep(delay)
+                continue
+            logger.warning("VLM-анализ изображения %s не удался: %s — использую fallback", filename, exc)
 
     return None
 
@@ -337,6 +359,7 @@ def _fallback_analysis(path: Path, filename: str) -> ImageAnalysis:
         category=category,
         tags=list(dict.fromkeys(tags))[:7],
         recommended_placement=placement,
+        source="fallback",
     )
 
 
@@ -357,5 +380,19 @@ def analyze_image_content(path: Path, filename: str) -> str:
     # 2. Если VLM недоступна или дала сбой — fallback
     if analysis is None:
         analysis = _fallback_analysis(path, filename)
+    elif path.suffix.lower() == ".svg" and path.exists():
+        try:
+            svg_content = path.read_text(encoding="utf-8", errors="replace")
+            svg_texts = re.findall(r"<text[^>]*>([^<]+)</text>", svg_content, re.IGNORECASE)
+            clean_texts = [t.strip() for t in svg_texts if t.strip()]
+            if clean_texts:
+                svg_ocr = "\n".join(clean_texts)
+                if not analysis.ocr_text or len(analysis.ocr_text.strip()) < len(svg_ocr):
+                    analysis.ocr_text = svg_ocr
+                    analysis.has_text = True
+                if analysis.category in ("document", "photo"):
+                    analysis.category = "diagram" if any(k in filename.lower() for k in ("diagram", "scheme", "схема", "архитектур")) else "illustration"
+        except Exception:
+            pass
 
     return format_extracted_text(analysis, filename)

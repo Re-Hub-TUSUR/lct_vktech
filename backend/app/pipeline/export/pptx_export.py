@@ -280,7 +280,7 @@ _user_image = _slide_image
 
 def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
     """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
-    path = _slide_image(spec) if spec.kind in {"image_text", "title"} else None
+    path = _slide_image(spec) if (spec.kind in {"image_text", "title"} or (spec.image and spec.image.url)) else None
     placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
     if placeholders:
         idx = placeholders[0]["id"] - PH_BASE
@@ -477,10 +477,13 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                         logo_h,
                     )
     elif kind in {"bullets", "agenda"}:
-        items = spec.bullets
-        if kind == "agenda":
-            items = [f"{i:02d}   {item}" for i, item in enumerate(items, start=1)]
-        _bullets_box(slide, area, items, ctx, bullets=kind == "bullets", size=ctx.role_size("body", 20))
+        if kind == "bullets" and spec.image and spec.image.url:
+            _image_text(slide, spec, area, ctx)
+        else:
+            items = spec.bullets
+            if kind == "agenda":
+                items = [f"{i:02d}   {item}" for i, item in enumerate(items, start=1)]
+            _bullets_box(slide, area, items, ctx, bullets=kind == "bullets", size=ctx.role_size("body", 20))
     elif kind == "two_columns":
         _two_columns(slide, spec, area, ctx)
     elif kind == "cards":
