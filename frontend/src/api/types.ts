@@ -39,7 +39,7 @@ export interface ChartSeries {
 export interface SlideShape {
   id: string
   template_shape_id?: number | null
-  kind: 'circle' | 'rect' | 'badge' | 'pill' | 'line'
+  kind: 'circle' | 'rect' | 'badge' | 'pill' | 'line' | 'image'
   x: number // fraction 0..1
   y: number // fraction 0..1
   width: number // fraction 0..1
@@ -50,6 +50,8 @@ export interface SlideShape {
   border?: boolean | null
   font_family?: string | null
   font_size?: number | null
+  image_url?: string | null
+  crop?: [number, number, number, number] | null // [top, right, bottom, left]
 }
 
 export interface ChartData {
@@ -112,6 +114,8 @@ export interface Slide {
   font_size_scale?: number | null
   element_fonts?: Record<string, string> | null
   element_scales?: Record<string, number> | null
+  element_boxes?: Record<string, [number, number, number, number]> | null
+  element_crops?: Record<string, [number, number, number, number]> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
 }
 
@@ -133,6 +137,8 @@ export interface SlideUpdate {
   font_size_scale?: number | null
   element_fonts?: Record<string, string> | null
   element_scales?: Record<string, number> | null
+  element_boxes?: Record<string, [number, number, number, number]> | null
+  element_crops?: Record<string, [number, number, number, number]> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
   image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
   layout_key?: string | null

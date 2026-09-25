@@ -146,7 +146,7 @@ export function DesignSystemCard({ template }: { template: TemplateDetail }) {
               <img
                 key={icon.id}
                 src={`/api/templates/${template.id}/icons/${icon.file}`}
-                alt=""
+                alt={`Пиктограмма со слайда ${icon.slide_index + 1}`}
                 loading="lazy"
                 title={`Слайд ${icon.slide_index + 1}`}
               />

@@ -23,7 +23,7 @@ Thumbs.db
 
 # Claude
 .claude/
-
+.codex/
 # Teamwork / AI agents
 .agents/
 ORIGINAL_REQUEST.md

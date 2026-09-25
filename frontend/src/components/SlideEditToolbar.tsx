@@ -1,4 +1,4 @@
-import { BarChart3, Check, ChevronDown, Copy, ImagePlus, LayoutTemplate, Minus, Plus, Trash2, Type, X } from 'lucide-react'
+import { BarChart3, Check, ChevronDown, Copy, ImagePlus, LayoutTemplate, Minus, Plus, Redo2, RotateCcw, Trash2, Type, Undo2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import type { ChartData, Column, Kpi, Slide, SlideKind, SlideShape, SlideTheme, SlideUpdate, TableData, TimelineItem } from '../api/types'
@@ -16,6 +16,12 @@ interface SlideEditToolbarProps {
   onSave: () => Promise<void>
   onTriggerImageUpload?: () => void
   onOpenImagePicker?: () => void
+  onAddFloatingImage?: () => void
+  onResetElementBox?: (target: string) => void
+  onUndo?: () => void
+  onRedo?: () => void
+  canUndo?: boolean
+  canRedo?: boolean
   onOpenDesignModal: () => void
   onClose: () => void
   isSaving: boolean
@@ -33,6 +39,12 @@ export function SlideEditToolbar({
   onSave,
   onTriggerImageUpload,
   onOpenImagePicker,
+  onAddFloatingImage,
+  onResetElementBox,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
   onOpenDesignModal,
   onClose,
   isSaving,
@@ -414,6 +426,7 @@ export function SlideEditToolbar({
 
   const getBadgeLabel = () => {
     if (selectedShape) {
+      if (selectedShape.kind === 'image') return 'Плавающее фото'
       if (selectedShape.kind === 'circle') return 'Фигура: Круг'
       if (selectedShape.kind === 'badge') return 'Фигура: Плашка'
       if (selectedShape.kind === 'line') return 'Фигура: Линия'
@@ -472,6 +485,29 @@ export function SlideEditToolbar({
             <Type size={15} />
             {getBadgeLabel()}
           </span>
+
+          <div className="slide-edit-history" role="group" aria-label="История изменений">
+            <button
+              type="button"
+              className="icon-btn-tiny"
+              disabled={!canUndo}
+              onClick={onUndo}
+              title="Отменить действие (Ctrl/Cmd+Z)"
+              aria-label="Отменить действие"
+            >
+              <Undo2 size={14} />
+            </button>
+            <button
+              type="button"
+              className="icon-btn-tiny"
+              disabled={!canRedo}
+              onClick={onRedo}
+              title="Повторить действие (Ctrl/Cmd+Shift+Z)"
+              aria-label="Повторить действие"
+            >
+              <Redo2 size={14} />
+            </button>
+          </div>
 
           {/* Выбор типа слайда */}
           <div className="slide-edit-topbar__item">
@@ -607,6 +643,21 @@ export function SlideEditToolbar({
                   {isUploading ? 'Загрузка…' : slide.image?.url ? 'Заменить картинку' : 'Изображение'}
                 </button>
 
+                {onAddFloatingImage && (
+                  <button
+                    type="button"
+                    className="slide-edit-shape-menu__item"
+                    disabled={isUploading}
+                    onClick={() => {
+                      setShowInsertMenu(false)
+                      onAddFloatingImage()
+                    }}
+                  >
+                    <ImagePlus size={15} color="var(--color-primary)" />
+                    Плавающее фото
+                  </button>
+                )}
+
                 <div className="slide-edit-shape-menu__header">Фигуры</div>
                 <button
                   type="button"
@@ -666,41 +717,57 @@ export function SlideEditToolbar({
                 <option value="badge">Бейдж</option>
                 <option value="pill">Капсула</option>
                 <option value="line">Линия</option>
+                <option value="image">Изображение</option>
               </select>
 
+              {/* Для плавающего изображения: кнопка замены */}
+              {selectedShape.kind === 'image' && onOpenImagePicker && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<ImagePlus size={13} />}
+                  onClick={onOpenImagePicker}
+                  title="Заменить изображение"
+                >
+                  Заменить фото
+                </Button>
+              )}
+
               {/* Цветовые кружки */}
-              <div className="row row--xs" style={{ alignItems: 'center', gap: 4 }}>
-                {[
-                  theme.accent,
-                  ...(theme.accents || []),
-                  '#0077FF',
-                  '#10B981',
-                  '#F59E0B',
-                  '#EF4444',
-                  '#8B5CF6',
-                  '#1E293B',
-                  '#FFFFFF',
-                ]
-                  .filter((v, i, a) => a.indexOf(v) === i)
-                  .slice(0, 7)
-                  .map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      style={{
-                        width: 16,
-                        height: 16,
-                        borderRadius: '50%',
-                        backgroundColor: c,
-                        border: selectedShape.color === c ? '2px solid #0077ff' : '1px solid rgba(0,0,0,0.25)',
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                      title={`Цвет ${c}`}
-                      onClick={() => handleUpdateSelectedShape({ color: c })}
-                    />
-                  ))}
-              </div>
+              {selectedShape.kind !== 'image' && (
+                <div className="row row--xs" style={{ alignItems: 'center', gap: 4 }}>
+                  {[
+                    theme.accent,
+                    ...(theme.accents || []),
+                    '#0077FF',
+                    '#10B981',
+                    '#F59E0B',
+                    '#EF4444',
+                    '#8B5CF6',
+                    '#1E293B',
+                    '#FFFFFF',
+                  ]
+                    .filter((v, i, a) => a.indexOf(v) === i)
+                    .slice(0, 7)
+                    .map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: '50%',
+                          backgroundColor: c,
+                          border: selectedShape.color === c ? '2px solid #0077ff' : '1px solid rgba(0,0,0,0.25)',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                        title={`Цвет ${c}`}
+                        onClick={() => handleUpdateSelectedShape({ color: c })}
+                      />
+                    ))}
+                </div>
+              )}
 
               {/* Размер */}
               <div className="row row--xs" style={{ alignItems: 'center' }}>
@@ -726,7 +793,7 @@ export function SlideEditToolbar({
               </div>
 
               {/* Текст внутри фигуры */}
-              {selectedShape.kind !== 'line' && (
+              {selectedShape.kind !== 'line' && selectedShape.kind !== 'image' && (
                 <input
                   type="text"
                   placeholder="Текст"
@@ -744,14 +811,16 @@ export function SlideEditToolbar({
               )}
 
               {/* Чекбокс контура */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={!!selectedShape.border}
-                  onChange={(e) => handleUpdateSelectedShape({ border: e.target.checked })}
-                />
-                Контур
-              </label>
+              {selectedShape.kind !== 'image' && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!selectedShape.border}
+                    onChange={(e) => handleUpdateSelectedShape({ border: e.target.checked })}
+                  />
+                  Контур
+                </label>
+              )}
 
               {/* Кнопка дублирования */}
               <button
@@ -862,6 +931,28 @@ export function SlideEditToolbar({
               </Button>
             </div>
           )}
+
+          {/* Сброс кастомной позиции или обрезки блока */}
+          {activeElement && onResetElementBox && (
+            (() => {
+              const targetKey = activeElement
+              const hasCustomBox = !!(slide.element_boxes?.[targetKey] || slide.element_crops?.[targetKey])
+              if (!hasCustomBox) return null
+              return (
+                <div className="slide-edit-topbar__item">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<RotateCcw size={13} />}
+                    title="Вернуть блок на стандартную позицию в шаблоне"
+                    onClick={() => onResetElementBox(targetKey)}
+                  >
+                    Сбросить позицию
+                  </Button>
+                </div>
+              )
+            })()
+          )}
         </div>
 
         <div className="slide-edit-topbar__right">
@@ -882,6 +973,7 @@ export function SlideEditToolbar({
           <button
             type="button"
             className="icon-btn"
+            disabled={isSaving}
             onClick={onClose}
             aria-label="Закрыть режим редактирования"
             title="Закрыть режим редактирования"

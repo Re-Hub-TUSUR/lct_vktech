@@ -1,11 +1,12 @@
 import clsx from 'clsx'
 import { ImageIcon } from 'lucide-react'
-import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 import type { FrameRect, LayoutSkin, Severity, Slide, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
 import { fitFontSize } from '../../lib/fit'
 import { SlideChart } from './SlideChart'
 import { SlideShapesLayer } from './SlideShapesLayer'
+import { TransformFrame } from './TransformFrame'
 
 // Отрисовка слайда в оформлении шаблона. Если есть рендер собранного .pptx (render), показываем его —
 // превью совпадает с экспортом, а проблемы аудита подсвечиваются по рамкам элементов из сборки.
@@ -26,13 +27,21 @@ interface SlideViewProps {
   render?: SlideRender
   /** Режим ручного визуального редактирования (Canva-style). */
   editable?: boolean
+  /** Текстовые элементы, которые уже изменены поверх raster-render. */
+  editedElementIds?: string[]
+  /** После первого подтверждённого изменения можно безопасно показать весь DOM. */
+  hasEdits?: boolean
   selectedShapeId?: string | null
-  onElementSelect?: (elementId: string) => void
+  selectedElementId?: string | null
+  onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
   onSelectShape?: (shapeId: string | null) => void
   onUpdateShape?: (shapeId: string, patch: Partial<SlideShape>) => void
   onDeleteShape?: (shapeId: string) => void
+  onUpdateElementBox?: (target: string, box: [number, number, number, number]) => void
+  onResetElementBox?: (target: string) => void
+  onUpdateElementCrop?: (target: string, crop: [number, number, number, number]) => void
 }
 
 /** Рендер слайда варианта, если превью актуально. */
@@ -48,6 +57,27 @@ function targetRect(targets: Record<string, FrameRect>, target: string): FrameRe
     if (rect) return rect
   }
   return undefined
+}
+
+function unionRects(...rects: Array<FrameRect | undefined>): FrameRect | undefined {
+  const present = rects.filter((rect): rect is FrameRect => !!rect)
+  if (present.length === 0) return undefined
+  const left = Math.min(...present.map((rect) => rect[0]))
+  const top = Math.min(...present.map((rect) => rect[1]))
+  const right = Math.max(...present.map((rect) => rect[0] + rect[2]))
+  const bottom = Math.max(...present.map((rect) => rect[1] + rect[3]))
+  return [left, top, right - left, bottom - top]
+}
+
+function contentTargetForKind(kind: Slide['kind']): string | null {
+  if (kind === 'bullets' || kind === 'agenda' || kind === 'image_text') return 'bullets'
+  if (kind === 'cards' || kind === 'two_columns') return 'columns'
+  if (kind === 'kpi') return 'kpis'
+  if (kind === 'timeline') return 'timeline'
+  if (kind === 'quote') return 'quote'
+  if (kind === 'chart') return 'chart'
+  if (kind === 'table') return 'table'
+  return null
 }
 
 const COVER_ROLES = { title: 'cover', section: 'section', closing: 'closing' } as const
@@ -69,6 +99,23 @@ function box(rect: FrameRect): CSSProperties {
   return { left: `${left * 100}%`, top: `${top * 100}%`, width: `${width * 100}%`, height: `${height * 100}%` }
 }
 
+// Element boxes are normalized to the whole slide. Nested content (body frame,
+// cards area) needs local percentages, otherwise moving a chart also changes
+// its apparent size because its percentages are resolved against the parent.
+function boxInContainer(rect: FrameRect, container: FrameRect = [0, 0, 1, 1]): CSSProperties {
+  const [x, y, width, height] = rect
+  const [containerX, containerY, containerWidth, containerHeight] = container
+  const safeWidth = Math.max(containerWidth, 0.0001)
+  const safeHeight = Math.max(containerHeight, 0.0001)
+  const local: FrameRect = [
+    (x - containerX) / safeWidth,
+    (y - containerY) / safeHeight,
+    width / safeWidth,
+    height / safeHeight,
+  ]
+  return box(local)
+}
+
 export function getElementStyle(
   target: string,
   elementFonts?: Record<string, string> | null,
@@ -86,37 +133,137 @@ export function getElementStyle(
   return style
 }
 
-export function SlideView({
+export function normalizeTarget(target: string | null | undefined): string | null {
+  if (!target) return null
+  if (target === 'title' || target === 'subtitle' || target === 'image') return target
+  if (target.startsWith('bullets.')) return target
+  if (target === 'bullets') return 'bullets'
+  if (target.startsWith('columns.') && !target.includes('.bullets') && !target.includes('.title')) return target
+  if (target.includes('.bullets.') || target.includes('.title')) {
+    const cardMatch = target.match(/^(columns\.\d+)/)
+    if (cardMatch) return cardMatch[1]
+  }
+  if (target.startsWith('kpis.')) {
+    const kpiMatch = target.match(/^(kpis\.\d+)/)
+    if (kpiMatch) return kpiMatch[1]
+  }
+  if (target.startsWith('timeline.')) {
+    const timeMatch = target.match(/^(timeline\.\d+)/)
+    if (timeMatch) return timeMatch[1]
+  }
+  if (target === 'quote' || target.startsWith('quote.')) return 'quote'
+  if (target === 'chart' || target.startsWith('chart.')) return 'chart'
+  if (target === 'table' || target.startsWith('table.')) return 'table'
+  if (target === 'content') return 'content'
+  return target
+}
+
+export function getElementLabel(target: string): string {
+  if (target === 'title') return 'Заголовок'
+  if (target === 'subtitle') return 'Подзаголовок'
+  if (target === 'image') return 'Изображение'
+  if (target.startsWith('bullets.')) {
+    const idx = parseInt(target.replace('bullets.', ''), 10)
+    return `Тезис ${isNaN(idx) ? '' : idx + 1}`
+  }
+  if (target === 'bullets') return 'Список тезисов'
+  if (target.startsWith('columns.')) {
+    const match = target.match(/^columns\.(\d+)/)
+    const idx = match ? parseInt(match[1], 10) : NaN
+    if (target.includes('.title')) return `Заголовок карточки ${isNaN(idx) ? '' : idx + 1}`
+    if (target.includes('.bullets.')) return `Текст карточки ${isNaN(idx) ? '' : idx + 1}`
+    return `Карточка ${isNaN(idx) ? '' : idx + 1}`
+  }
+  if (target.startsWith('kpis.')) {
+    const match = target.match(/^kpis\.(\d+)/)
+    const idx = match ? parseInt(match[1], 10) : NaN
+    return `Показатель KPI ${isNaN(idx) ? '' : idx + 1}`
+  }
+  if (target.startsWith('timeline.')) {
+    const match = target.match(/^timeline\.(\d+)/)
+    const idx = match ? parseInt(match[1], 10) : NaN
+    return `Этап таймлайна ${isNaN(idx) ? '' : idx + 1}`
+  }
+  if (target === 'quote' || target.startsWith('quote.')) return 'Цитата'
+  if (target === 'chart' || target.startsWith('chart.')) return 'Диаграмма'
+  if (target === 'table' || target.startsWith('table.')) return 'Таблица'
+  if (target === 'content') return 'Блок контента'
+  return 'Элемент'
+}
+
+export const normalizeElementTarget = normalizeTarget
+
+export function SlideView(props: SlideViewProps) {
+  // В обычном режиме показываем точный рендер экспортированного .pptx, если он готов
+  if (props.render && !props.editable) {
+    return (
+      <RenderedSlide
+        slide={props.slide}
+        render={props.render}
+        aspect={props.theme.aspect}
+        number={props.number}
+        highlights={props.highlights}
+        activeTarget={props.activeTarget}
+        className={props.className}
+      />
+    )
+  }
+
+  return <InteractiveSlideView {...props} />
+}
+
+function InteractiveSlideView({
   slide,
   theme,
   number,
   highlights,
   activeTarget,
   className,
-  render,
   editable = false,
+  editedElementIds = [],
+  hasEdits = false,
   selectedShapeId,
+  selectedElementId,
   onElementSelect,
   onFieldChange,
   onImageClick,
   onSelectShape,
   onUpdateShape,
   onDeleteShape,
+  onUpdateElementBox,
+  onResetElementBox,
+  onUpdateElementCrop,
+  render: referenceRender,
 }: SlideViewProps) {
-  // В обычном режиме показываем точный рендер экспортированного .pptx, если он готов
-  if (render && !editable) {
-    return (
-      <RenderedSlide
-        slide={slide}
-        render={render}
-        aspect={theme.aspect}
-        number={number}
-        highlights={highlights}
-        activeTarget={activeTarget}
-        className={className}
-      />
-    )
-  }
+  const [isCroppingImage, setIsCroppingImage] = useState(false)
+  const normalizedTarget = normalizeTarget(selectedElementId)
+  const normalizedEditedTargets = useMemo(
+    () => Array.from(new Set(editedElementIds.map(normalizeTarget).filter((target): target is string => !!target))),
+    [editedElementIds],
+  )
+  const slideRef = useRef<HTMLDivElement>(null)
+  const [measuredBox, setMeasuredBox] = useState<[number, number, number, number] | null>(null)
+
+  // Редактор должен использовать геометрию уже собранного слайда. Иначе
+  // CSS-макет редактора начинает жить отдельно от презентации сразу после
+  // первого изменения текста.
+  const referenceBodyTarget = contentTargetForKind(slide.kind)
+  const referenceBodyBox = useMemo(() => {
+    if (!referenceRender || !referenceBodyTarget) return undefined
+    return slide.kind === 'image_text'
+      ? unionRects(targetRect(referenceRender.targets, 'bullets'), targetRect(referenceRender.targets, 'image'))
+      : targetRect(referenceRender.targets, referenceBodyTarget)
+  }, [referenceBodyTarget, referenceRender, slide.kind])
+  const displaySlide = referenceRender && editable
+    ? {
+        ...slide,
+        element_boxes: {
+          ...(referenceBodyBox ? { content: referenceBodyBox } : {}),
+          ...referenceRender.targets,
+          ...(slide.element_boxes || {}),
+        },
+      }
+    : slide
 
   const pattern = slide.pattern_id && theme?.patterns ? theme.patterns.find((p) => p.id === slide.pattern_id) : undefined
   const layoutKey = slide.layout_key || pattern?.layout_key || undefined
@@ -152,31 +299,185 @@ export function SlideView({
     return severity ? clsx('flagged', `flag-${severity}`, activeTarget === target && 'flag-active') : undefined
   }
 
+  const getFallbackBox = (target: string): [number, number, number, number] => {
+    if (slide.element_boxes?.[target]) {
+      return slide.element_boxes[target] as [number, number, number, number]
+    }
+    if (target === 'content' && referenceBodyBox) return referenceBodyBox
+    const referenceBox = referenceRender ? targetRect(referenceRender.targets, target) : undefined
+    if (referenceBox) return referenceBox
+    const cover = isCover(slide)
+    if (target === 'title') {
+      if (skin?.frames?.title) return skin.frames.title
+      return cover ? [0.08, 0.22, 0.84, 0.32] : [0.06, 0.08, 0.88, 0.14]
+    }
+    if (target === 'subtitle') {
+      if (skin?.frames?.subtitle) return skin.frames.subtitle
+      const tRect = skin?.frames?.title || (cover ? [0.08, 0.22, 0.84, 0.32] : [0.06, 0.08, 0.88, 0.14])
+      return [tRect[0], Math.min(tRect[1] + tRect[3] + 0.02, 0.8), tRect[2], 0.16]
+    }
+    if (target === 'content' || target === 'bullets') {
+      if (skin?.frames?.body) return skin.frames.body
+      return [0.06, 0.24, 0.88, 0.66]
+    }
+    if (target.startsWith('bullets.')) {
+      const idx = parseInt(target.replace('bullets.', ''), 10) || 0
+      const bodyBox = skin?.frames?.body || [0.06, 0.24, 0.88, 0.66]
+      const count = Math.max(1, slide.bullets?.length || 4)
+      const itemH = bodyBox[3] / count
+      return [bodyBox[0], bodyBox[1] + idx * itemH, bodyBox[2], itemH * 0.9]
+    }
+    if (target === 'image') {
+      return [0.55, 0.25, 0.38, 0.55]
+    }
+    return [0.1, 0.1, 0.8, 0.5]
+  }
+
+  useLayoutEffect(() => {
+    if (!editable || !normalizedTarget || !slideRef.current) {
+      setMeasuredBox(null)
+      return
+    }
+
+    if (slide.element_boxes?.[normalizedTarget]) {
+      setMeasuredBox(slide.element_boxes[normalizedTarget] as [number, number, number, number])
+      return
+    }
+
+    if (referenceRender) {
+      const referenceBox = normalizedTarget === 'content'
+        ? referenceBodyBox
+        : targetRect(referenceRender.targets, normalizedTarget)
+      if (referenceBox) {
+        setMeasuredBox(referenceBox)
+        return
+      }
+    }
+
+    const slideElem = slideRef.current
+    let targetElem = slideElem.querySelector(`[data-element-id="${normalizedTarget}"]`) as HTMLElement | null
+
+    // Рамка изображения должна совпадать с видимым media-слоем, а не с
+    // декоративным контейнером слота. Иначе на шаблонах с padding рамка шире
+    // фотографии и создаёт ощущение «плывущего» размера.
+    if (normalizedTarget === 'image') {
+      targetElem = (slideElem.querySelector('[data-element-id="image"] img') as HTMLElement | null)
+        || (slideElem.querySelector('[data-element-id="image"]') as HTMLElement | null)
+    } else if (!targetElem) {
+      if (normalizedTarget === 'title') {
+        targetElem = slideElem.querySelector('.slide__title, .slide__cover-title, .slide__frame--title') as HTMLElement | null
+      } else if (normalizedTarget === 'subtitle') {
+        targetElem = slideElem.querySelector('.slide__subtitle, .slide__section-number') as HTMLElement | null
+      } else if (normalizedTarget === 'content') {
+        targetElem = slideElem.querySelector('.slide__frame--body, .slide__image-text, .slide__bullets') as HTMLElement | null
+      }
+    }
+
+    if (targetElem) {
+      const slideRect = slideElem.getBoundingClientRect()
+      const elemRect = targetElem.getBoundingClientRect()
+      if (slideRect.width > 0 && slideRect.height > 0) {
+        const left = Math.max(0, Math.min(1, (elemRect.left - slideRect.left) / slideRect.width))
+        const top = Math.max(0, Math.min(1, (elemRect.top - slideRect.top) / slideRect.height))
+        const width = Math.max(0.02, Math.min(1, elemRect.width / slideRect.width))
+        const height = Math.max(0.02, Math.min(1, elemRect.height / slideRect.height))
+        setMeasuredBox([
+          Math.round(left * 1000) / 1000,
+          Math.round(top * 1000) / 1000,
+          Math.round(width * 1000) / 1000,
+          Math.round(height * 1000) / 1000,
+        ])
+        return
+      }
+    }
+
+    setMeasuredBox(getFallbackBox(normalizedTarget))
+  }, [editable, normalizedTarget, referenceBodyBox, referenceRender, slide, selectedElementId])
+
+  // В reference-editor DOM-слой остаётся hit-area поверх точного raster-render.
+  // Помечаем выбранный узел и ближайший визуальный контейнер, чтобы поверх
+  // картинки показывался только активный слой для редактирования.
+  useEffect(() => {
+    const root = slideRef.current
+    if (!root) return
+    root.querySelectorAll('[data-editor-selected], [data-editor-visible]').forEach((node) => {
+      node.removeAttribute('data-editor-selected')
+      node.removeAttribute('data-editor-visible')
+    })
+    if (!editable || !referenceRender) return
+    const visibleTargets = new Set(normalizedEditedTargets)
+    if (normalizedTarget) visibleTargets.add(normalizedTarget)
+    visibleTargets.forEach((target) => {
+      const selected = root.querySelector(`[data-element-id="${target}"]`)
+      if (!(selected instanceof HTMLElement)) return
+      if (target === normalizedTarget) selected.setAttribute('data-editor-selected', 'true')
+      let ancestor: HTMLElement | null = selected
+      while (ancestor && ancestor !== root) {
+        if (ancestor.hasAttribute('data-element-id')) ancestor.setAttribute('data-editor-visible', 'true')
+        ancestor = ancestor.parentElement
+      }
+    })
+  }, [editable, normalizedEditedTargets, normalizedTarget, referenceRender])
+
+  const effectiveBox = (slide.element_boxes?.[normalizedTarget || ''] as [number, number, number, number] | undefined) || measuredBox
+
   const framed = skin?.frames?.title ? skin : undefined
   return (
     <div
+      ref={slideRef}
       className={clsx(
         'slide',
         `slide--${slide.kind}`,
         skin?.image && 'slide--skinned',
         editable && 'slide--editable',
+        editable && referenceRender && 'slide--reference-editor',
+        editable && referenceRender && hasEdits && 'slide--reference-editor-dom',
         flag('slide'),
         className
       )}
       style={style}
       onPointerDown={
-        editable && onSelectShape
+        editable
           ? (e) => {
-              // Клик мимо фигуры и её ручек снимает выделение (текст при этом редактируется как обычно).
-              if (!(e.target as HTMLElement).closest('.slide-shape-item, .slide-shape-selection')) onSelectShape(null)
+              const target = e.target as HTMLElement
+              if (!target.closest('.slide-shape-item, .transform-frame, [data-element-id], [contenteditable="true"]')) {
+                onSelectShape?.(null)
+                onElementSelect?.(null)
+                setIsCroppingImage(false)
+              }
+            }
+          : undefined
+      }
+      onClickCapture={
+        editable
+          ? (e) => {
+              // Родительские карточки и content-wrapper имеют свои onClick.
+              // На фазе capture гасим только bubbling-клик от текста: выбор
+              // уже выполняется в onFocus у конкретного contentEditable-узла.
+              const target = e.target as HTMLElement
+              const editableNode = target.closest('[contenteditable="true"]')
+              if (!editableNode) return
+              // Фокус конкретного contentEditable уже выбрал точное поле.
+              // Здесь только останавливаем bubbling, чтобы родительская
+              // карточка/content-wrapper не заменили его своим target.
+              e.stopPropagation()
             }
           : undefined
       }
     >
       {skin?.image && <img className="slide__bg" src={skin.image} alt="" draggable={false} loading="lazy" />}
+      {editable && referenceRender && (
+        <img
+          className="slide__edit-reference"
+          src={referenceRender.image}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+        />
+      )}
       {framed ? (
         <FramedSlide
-          slide={slide}
+          slide={displaySlide}
           skin={framed}
           theme={theme}
           flag={flag}
@@ -188,7 +489,7 @@ export function SlideView({
       ) : (
         <div className="slide__inner">
           <FlowSlide
-            slide={slide}
+            slide={displaySlide}
             theme={theme}
             flag={flag}
             editable={editable}
@@ -210,13 +511,32 @@ export function SlideView({
         onDeleteShape={onDeleteShape}
       />
 
+      {/* Рамка трансформации выбранного структурного блока или картинки */}
+      {editable && normalizedTarget && effectiveBox && (
+        <TransformFrame
+          key={normalizedTarget}
+          box={effectiveBox}
+          previewTarget={normalizedTarget}
+          isImage={normalizedTarget === 'image'}
+          canCrop={normalizedTarget === 'image' && !!slide.image?.url}
+          isCropping={normalizedTarget === 'image' && isCroppingImage}
+          crop={slide.element_crops?.[normalizedTarget]}
+          label={getElementLabel(normalizedTarget)}
+          hasCustomPosition={!!slide.element_boxes?.[normalizedTarget]}
+          onUpdateBox={(newBox) => onUpdateElementBox?.(normalizedTarget, newBox)}
+          onUpdateCrop={(newCrop) => onUpdateElementCrop?.(normalizedTarget, newCrop)}
+          onResetBox={() => onResetElementBox?.(normalizedTarget)}
+          onToggleCrop={() => setIsCroppingImage((prev) => !prev)}
+          onCloseCrop={() => setIsCroppingImage(false)}
+        />
+      )}
+
       {number !== undefined && <span className="slide__number">{number}</span>}
     </div>
   )
 }
 
-/** Слайд как картинка из собранного .pptx; проблемы аудита — рамками поверх элементов.
- *  Фигуры слайда (и шаблонные, и добавленные вручную) уже есть на картинке — поверх их не рисуем. */
+/** Слайд как картинка из собранного .pptx; проблемы аудита — рамками поверх элементов. */
 function RenderedSlide({
   slide,
   render,
@@ -279,33 +599,44 @@ function FramedSlide({
   theme: SlideTheme
   flag: Flag
   editable?: boolean
-  onElementSelect?: (elementId: string) => void
+  onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
 }) {
-  const frames = skin.frames!
-  const titleRect = frames.title!
+  const frames = skin.frames
   const cover = isCover(slide)
-  const size = fitFontSize(slide.title, Math.min(skin.title.size ?? (cover ? 5 : 3.1), 8), titleRect, theme.aspect)
-  const subtitleRect: FrameRect = frames.subtitle ?? [
+  const defaultTitleRect: FrameRect = frames?.title || (cover ? [0.08, 0.22, 0.84, 0.32] : [0.06, 0.08, 0.88, 0.14])
+  const titleRect: FrameRect = (slide.element_boxes?.['title'] as FrameRect) || defaultTitleRect
+  const defaultSubtitleRect: FrameRect = frames?.subtitle ?? [
     titleRect[0],
     Math.min(titleRect[1] + titleRect[3] + 0.02, 0.8),
     titleRect[2],
     0.16,
   ]
+  const subtitleRect: FrameRect = (slide.element_boxes?.['subtitle'] as FrameRect) || defaultSubtitleRect
+  const bodyRect: FrameRect = (slide.element_boxes?.['content'] as FrameRect) || frames?.body || [0.06, 0.24, 0.88, 0.66]
+  const size = fitFontSize(slide.title, Math.min(skin.title?.size ?? (cover ? 5 : 3.1), 8), titleRect, theme.aspect)
   const Heading = cover ? 'h1' : 'h2'
 
   return (
     <>
       <div
+        data-element-id="title"
         className="slide__frame slide__frame--title"
         style={{
           ...box(titleRect),
           fontSize: `${size}cqw`,
-          color: skin.title.color,
-          justifyContent: ANCHOR[skin.title.anchor ?? ''] ?? 'flex-start',
-          textAlign: ALIGN[skin.title.align ?? ''] ?? 'left',
-          fontWeight: skin.title.bold === false ? 400 : 700,
+          color: skin.title?.color,
+          justifyContent: ANCHOR[skin.title?.anchor ?? ''] ?? 'flex-start',
+          textAlign: ALIGN[skin.title?.align ?? ''] ?? 'left',
+          fontWeight: skin.title?.bold === false ? 400 : 700,
+          overflow: 'hidden',
+        }}
+        onClick={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('title')
+          }
         }}
       >
         <Heading
@@ -313,7 +644,12 @@ function FramedSlide({
           contentEditable={editable}
           suppressContentEditableWarning
           style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
-          onFocus={() => onElementSelect?.('title')}
+          onFocus={(e) => {
+            if (editable) {
+              e.stopPropagation()
+              onElementSelect?.('title')
+            }
+          }}
           onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
         >
           {slide.title}
@@ -321,13 +657,28 @@ function FramedSlide({
       </div>
       {cover ? (
         slide.subtitle && (
-          <div className="slide__frame" style={box(subtitleRect)}>
+          <div
+            data-element-id="subtitle"
+            className="slide__frame"
+            style={{ ...box(subtitleRect), overflow: 'hidden' }}
+            onClick={(e) => {
+              if (editable) {
+                e.stopPropagation()
+                onElementSelect?.('subtitle')
+              }
+            }}
+          >
             <p
               className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
               contentEditable={editable}
               suppressContentEditableWarning
               style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
-              onFocus={() => onElementSelect?.('subtitle')}
+              onFocus={(e) => {
+                if (editable) {
+                  e.stopPropagation()
+                  onElementSelect?.('subtitle')
+                }
+              }}
               onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
             >
               {slide.subtitle}
@@ -335,11 +686,22 @@ function FramedSlide({
           </div>
         )
       ) : (
-        <div className="slide__frame slide__frame--body" style={box(frames.body ?? [0.06, 0.24, 0.88, 0.66])}>
+        <div
+          data-element-id="content"
+          className="slide__frame slide__frame--body"
+          style={{ ...box(bodyRect), overflow: editable ? 'visible' : 'hidden' }}
+          onClick={(e) => {
+            if (editable && e.target === e.currentTarget) {
+              e.stopPropagation()
+              onElementSelect?.('content')
+            }
+          }}
+        >
           <SlideContent
             slide={slide}
             theme={theme}
             flag={flag}
+            containerBox={bodyRect}
             editable={editable}
             onElementSelect={onElementSelect}
             onFieldChange={onFieldChange}
@@ -365,89 +727,236 @@ function FlowSlide({
   theme: SlideTheme
   flag: Flag
   editable?: boolean
-  onElementSelect?: (elementId: string) => void
+  onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
 }) {
+  const customTitleBox = slide.element_boxes?.['title'] as FrameRect | undefined
+  const customSubtitleBox = slide.element_boxes?.['subtitle'] as FrameRect | undefined
+  const customContentBox = slide.element_boxes?.['content'] as FrameRect | undefined
+
   if (slide.kind === 'title' || slide.kind === 'closing') {
+    const titleNode = (
+      <h1
+        data-element-id="title"
+        className={clsx('slide__cover-title', flag('title'))}
+        contentEditable={editable}
+        suppressContentEditableWarning
+        style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+        onFocus={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('title')
+          }
+        }}
+        onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+        onClick={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('title')
+          }
+        }}
+      >
+        {slide.title}
+      </h1>
+    )
+
+    const subtitleNode = slide.subtitle && (
+      <p
+        data-element-id="subtitle"
+        className={clsx('slide__subtitle', flag('subtitle'))}
+        contentEditable={editable}
+        suppressContentEditableWarning
+        style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
+        onFocus={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('subtitle')
+          }
+        }}
+        onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
+        onClick={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('subtitle')
+          }
+        }}
+      >
+        {slide.subtitle}
+      </p>
+    )
+
     return (
-      <div className="slide__cover">
-        <h1
-          className={clsx('slide__cover-title', flag('title'))}
-          contentEditable={editable}
-          suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
-          onFocus={() => onElementSelect?.('title')}
-          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
-        >
-          {slide.title}
-        </h1>
-        {slide.subtitle && (
-          <p
-            className={clsx('slide__subtitle', flag('subtitle'))}
-            contentEditable={editable}
-            suppressContentEditableWarning
-            style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
-            onFocus={() => onElementSelect?.('subtitle')}
-            onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
-          >
-            {slide.subtitle}
-          </p>
-        )}
-      </div>
+      <>
+        {customTitleBox ? (
+          <div className="slide__custom-block" style={box(customTitleBox)}>
+            {titleNode}
+          </div>
+        ) : null}
+        {customSubtitleBox ? (
+          <div className="slide__custom-block" style={box(customSubtitleBox)}>
+            {subtitleNode}
+          </div>
+        ) : null}
+        {!customTitleBox && !customSubtitleBox ? (
+          <div className="slide__cover">
+            {titleNode}
+            {subtitleNode}
+          </div>
+        ) : null}
+      </>
     )
   }
+
   if (slide.kind === 'section') {
+    const sectionNumNode = slide.subtitle && (
+      <p
+        data-element-id="subtitle"
+        className="slide__section-number"
+        contentEditable={editable}
+        suppressContentEditableWarning
+        style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
+        onFocus={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('subtitle')
+          }
+        }}
+        onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
+        onClick={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('subtitle')
+          }
+        }}
+      >
+        {slide.subtitle}
+      </p>
+    )
+
+    const titleNode = (
+      <h1
+        data-element-id="title"
+        className={clsx('slide__cover-title', flag('title'))}
+        contentEditable={editable}
+        suppressContentEditableWarning
+        style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+        onFocus={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('title')
+          }
+        }}
+        onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+        onClick={(e) => {
+          if (editable) {
+            e.stopPropagation()
+            onElementSelect?.('title')
+          }
+        }}
+      >
+        {slide.title}
+      </h1>
+    )
+
     return (
-      <div className="slide__cover">
-        {slide.subtitle && (
-          <p
-            className="slide__section-number"
-            contentEditable={editable}
-            suppressContentEditableWarning
-            style={getElementStyle('subtitle', slide.element_fonts, slide.element_scales)}
-            onFocus={() => onElementSelect?.('subtitle')}
-            onBlur={(e) => onFieldChange?.('subtitle', e.currentTarget.textContent || '')}
-          >
-            {slide.subtitle}
-          </p>
-        )}
-        <h1
-          className={clsx('slide__cover-title', flag('title'))}
-          contentEditable={editable}
-          suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
-          onFocus={() => onElementSelect?.('title')}
-          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
-        >
-          {slide.title}
-        </h1>
-      </div>
+      <>
+        {customSubtitleBox && sectionNumNode ? (
+          <div className="slide__custom-block" style={box(customSubtitleBox)}>
+            {sectionNumNode}
+          </div>
+        ) : null}
+        {customTitleBox ? (
+          <div className="slide__custom-block" style={box(customTitleBox)}>
+            {titleNode}
+          </div>
+        ) : null}
+        {!customTitleBox && !customSubtitleBox ? (
+          <div className="slide__cover">
+            {sectionNumNode}
+            {titleNode}
+          </div>
+        ) : null}
+      </>
     )
   }
+
+  const titleNode = slide.kind !== 'quote' && (
+    <h2
+      data-element-id="title"
+      className={clsx('slide__title', flag('title'))}
+      contentEditable={editable}
+      suppressContentEditableWarning
+      style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
+      onFocus={(e) => {
+        if (editable) {
+          e.stopPropagation()
+          onElementSelect?.('title')
+        }
+      }}
+      onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
+      onClick={(e) => {
+        if (editable) {
+          e.stopPropagation()
+          onElementSelect?.('title')
+        }
+      }}
+    >
+      {slide.title}
+    </h2>
+  )
+
+  const contentNode = (
+    <SlideContent
+      slide={slide}
+      theme={theme}
+      flag={flag}
+      containerBox={customContentBox || [0, 0, 1, 1]}
+      editable={editable}
+      onElementSelect={onElementSelect}
+      onFieldChange={onFieldChange}
+      onImageClick={onImageClick}
+    />
+  )
+
   return (
     <>
-      {slide.kind !== 'quote' && (
-        <h2
-          className={clsx('slide__title', flag('title'))}
-          contentEditable={editable}
-          suppressContentEditableWarning
-          style={getElementStyle('title', slide.element_fonts, slide.element_scales)}
-          onFocus={() => onElementSelect?.('title')}
-          onBlur={(e) => onFieldChange?.('title', e.currentTarget.textContent || '')}
-        >
-          {slide.title}
-        </h2>
+      {customTitleBox && titleNode ? (
+        <div className="slide__custom-block" style={box(customTitleBox)}>
+          {titleNode}
+        </div>
+      ) : (
+        titleNode
       )}
-      <SlideContent
-        slide={slide}
-        theme={theme}
-        flag={flag}
-        editable={editable}
-        onElementSelect={onElementSelect}
-        onFieldChange={onFieldChange}
-        onImageClick={onImageClick}
-      />
+
+      {customContentBox ? (
+        <div
+          data-element-id="content"
+          className="slide__custom-block"
+          style={box(customContentBox)}
+          onClick={(e) => {
+            if (editable && e.target === e.currentTarget) {
+              e.stopPropagation()
+              onElementSelect?.('content')
+            }
+          }}
+        >
+          {contentNode}
+        </div>
+      ) : (
+        <div
+          data-element-id="content"
+          style={{ width: '100%', height: '100%' }}
+          onClick={(e) => {
+            if (editable && e.target === e.currentTarget) {
+              e.stopPropagation()
+              onElementSelect?.('content')
+            }
+          }}
+        >
+          {contentNode}
+        </div>
+      )}
     </>
   )
 }
@@ -457,6 +966,7 @@ function SlideContent({
   slide,
   theme,
   flag,
+  containerBox = [0, 0, 1, 1],
   editable,
   onElementSelect,
   onFieldChange,
@@ -465,106 +975,243 @@ function SlideContent({
   slide: Slide
   theme: SlideTheme
   flag: Flag
+  containerBox?: FrameRect
   editable?: boolean
-  onElementSelect?: (elementId: string) => void
+  onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
   onImageClick?: () => void
 }): ReactNode {
+  // Вычисляем обрезку и кастомную позицию изображения, если заданы
+  const imageCrop = slide.element_crops?.['image']
+  const hasImageCrop = imageCrop && imageCrop.some((v) => v > 0)
+  const imageCropStyle: CSSProperties = hasImageCrop
+    ? { clipPath: `inset(${imageCrop[0] * 100}% ${imageCrop[1] * 100}% ${imageCrop[2] * 100}% ${imageCrop[3] * 100}%)` }
+    : {}
+
+  const customImageBox = slide.element_boxes?.['image'] as FrameRect | undefined
+
+  const renderImageElement = () => (
+    <div
+      data-element-id="image"
+      className={clsx('slide__image', slide.image?.url && 'slide__image--filled', flag('image'))}
+      style={{
+        ...(customImageBox ? { ...boxInContainer(customImageBox, containerBox), position: 'absolute', zIndex: 15 } : {}),
+        ...imageCropStyle,
+      }}
+      onClick={(e) => {
+        if (editable) {
+          e.stopPropagation()
+          onElementSelect?.('image')
+          if (!slide.image?.url) {
+            onImageClick?.()
+          }
+        }
+      }}
+    >
+      {slide.image?.url ? (
+        <img src={slide.image.url} alt="" draggable={false} />
+      ) : (
+        <>
+          <ImageIcon />
+          <span>{slide.image?.prompt || 'Область изображения'}</span>
+          {editable && <span style={{ fontSize: 11, opacity: 0.8 }}>(кликните для загрузки)</span>}
+        </>
+      )}
+    </div>
+  )
+
   switch (slide.kind) {
-    case 'agenda':
+    case 'agenda': {
+      const customBulletsBox = slide.element_boxes?.['bullets'] as FrameRect | undefined
       return (
-        <ol className={clsx('slide__agenda', flag('bullets'))}>
-          {slide.bullets.map((item, i) => (
-            <li
-              key={i}
-              className={flag(`bullets.${i}`)}
-              contentEditable={editable}
-              suppressContentEditableWarning
-              style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
-              onFocus={() => onElementSelect?.(`bullets.${i}`)}
-              onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
-            >
-              <span>{String(i + 1).padStart(2, '0')}</span>
-              {item}
-            </li>
-          ))}
+        <ol
+          data-element-id="bullets"
+          className={clsx('slide__agenda', flag('bullets'))}
+          style={{
+            ...(customBulletsBox ? { ...boxInContainer(customBulletsBox, containerBox), position: 'absolute', zIndex: 11 } : {}),
+          }}
+          onClick={(e) => {
+            if (editable && e.target === e.currentTarget) {
+              e.stopPropagation()
+              onElementSelect?.('bullets')
+            }
+          }}
+        >
+          {slide.bullets.map((item, i) => {
+            const customBulletBox = slide.element_boxes?.[`bullets.${i}`] as FrameRect | undefined
+            return (
+              <li
+                key={i}
+                data-element-id={`bullets.${i}`}
+                className={clsx(flag(`bullets.${i}`), customBulletBox && 'slide__bullet--custom')}
+                contentEditable={editable}
+                suppressContentEditableWarning
+                style={{
+                  ...getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales),
+                  ...(customBulletBox ? { position: 'absolute', ...boxInContainer(customBulletBox, customBulletsBox || containerBox), zIndex: 12 } : {}),
+                }}
+                onClick={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`bullets.${i}`)
+                  }
+                }}
+                onFocus={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`bullets.${i}`)
+                  }
+                }}
+                onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+              >
+                <span>{String(i + 1).padStart(2, '0')}</span>
+                {item}
+              </li>
+            )
+          })}
         </ol>
       )
+    }
 
     case 'cards':
       return (
-        <div className={clsx('slide__cards', flag('columns'))}>
-          {slide.columns.map((card, ci) => (
-            <div key={ci} className={clsx('slide__card', flag(`columns.${ci}`))}>
-              <h3
-                className={flag(`columns.${ci}.title`)}
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
-                onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
+        <div
+          className={clsx('slide__cards', flag('columns'))}
+          style={{
+            '--slide-card-count': String(Math.max(1, slide.columns.length)),
+          } as CSSProperties}
+        >
+          {slide.columns.map((card, ci) => {
+            const customCardBox = slide.element_boxes?.[`columns.${ci}`] as FrameRect | undefined
+            return (
+              <div
+                key={ci}
+                data-element-id={`columns.${ci}`}
+                className={clsx('slide__card', flag(`columns.${ci}`))}
+                style={{
+                  ...(customCardBox ? { position: 'absolute', ...boxInContainer(customCardBox, containerBox), zIndex: 12 } : {}),
+                }}
+                onClick={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`columns.${ci}`)
+                  }
+                }}
               >
-                {card.title}
-              </h3>
-              {card.bullets.map((line, bi) => (
-                <p
-                  key={bi}
-                  className={flag(`columns.${ci}.bullets.${bi}`)}
+                <h3
+                  className={flag(`columns.${ci}.title`)}
                   contentEditable={editable}
                   suppressContentEditableWarning
-                  style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
-                  onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
-                  onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
+                  style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`columns.${ci}.title`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
                 >
-                  {line}
-                </p>
-              ))}
-            </div>
-          ))}
+                  {card.title}
+                </h3>
+                {card.bullets.map((line, bi) => (
+                  <p
+                    key={bi}
+                    className={flag(`columns.${ci}.bullets.${bi}`)}
+                    contentEditable={editable}
+                    suppressContentEditableWarning
+                    style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
+                    onFocus={(e) => {
+                      if (editable) {
+                        e.stopPropagation()
+                        onElementSelect?.(`columns.${ci}.bullets.${bi}`)
+                      }
+                    }}
+                    onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
+            )
+          })}
         </div>
       )
 
     case 'two_columns':
       return (
         <div className={clsx('slide__columns', flag('columns'))}>
-          {slide.columns.map((column, ci) => (
-            <div key={ci} className={flag(`columns.${ci}`)}>
-              <h3
-                className={flag(`columns.${ci}.title`)}
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`columns.${ci}.title`)}
-                onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
+          {slide.columns.map((column, ci) => {
+            const customColBox = slide.element_boxes?.[`columns.${ci}`] as FrameRect | undefined
+            return (
+              <div
+                key={ci}
+                data-element-id={`columns.${ci}`}
+                className={flag(`columns.${ci}`)}
+                style={{
+                  ...(customColBox ? { position: 'absolute', ...boxInContainer(customColBox, containerBox), zIndex: 12 } : {}),
+                }}
+                onClick={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`columns.${ci}`)
+                  }
+                }}
               >
-                {column.title}
-              </h3>
-              <ul className={clsx('slide__bullets', flag(`columns.${ci}.bullets`))}>
-                {column.bullets.map((item, bi) => (
-                  <li
-                    key={bi}
-                    className={flag(`columns.${ci}.bullets.${bi}`)}
-                    contentEditable={editable}
-                    suppressContentEditableWarning
-                    style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
-                    onFocus={() => onElementSelect?.(`columns.${ci}.bullets.${bi}`)}
-                    onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
-                  >
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+                <h3
+                  className={flag(`columns.${ci}.title`)}
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  style={getElementStyle(`columns.${ci}.title`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`columns.${ci}.title`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`columns.${ci}.title`, e.currentTarget.textContent || '')}
+                >
+                  {column.title}
+                </h3>
+                <ul className={clsx('slide__bullets', flag(`columns.${ci}.bullets`))}>
+                  {column.bullets.map((item, bi) => (
+                    <li
+                      key={bi}
+                      className={flag(`columns.${ci}.bullets.${bi}`)}
+                      contentEditable={editable}
+                      suppressContentEditableWarning
+                      style={getElementStyle(`columns.${ci}.bullets.${bi}`, slide.element_fonts, slide.element_scales)}
+                      onFocus={(e) => {
+                        if (editable) {
+                          e.stopPropagation()
+                          onElementSelect?.(`columns.${ci}.bullets.${bi}`)
+                        }
+                      }}
+                      onBlur={(e) => onFieldChange?.(`columns.${ci}.bullets.${bi}`, e.currentTarget.textContent || '')}
+                    >
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
         </div>
       )
 
-    case 'chart':
+    case 'chart': {
+      const customChartBox = slide.element_boxes?.['chart'] as FrameRect | undefined
       return (
         <div
+          data-element-id="chart"
           className={clsx('slide__chart-box', editable && 'is-editable-chart')}
-          onClick={() => {
-            if (editable) onElementSelect?.('chart')
+          style={{
+            ...(customChartBox ? { position: 'absolute', ...boxInContainer(customChartBox, containerBox), zIndex: 12 } : {}),
+          }}
+          onClick={(e) => {
+            if (editable) {
+              e.stopPropagation()
+              onElementSelect?.('chart')
+            }
           }}
         >
           {slide.chart?.caption && (
@@ -573,7 +1220,12 @@ function SlideContent({
               contentEditable={editable}
               suppressContentEditableWarning
               style={getElementStyle('chart.caption', slide.element_fonts, slide.element_scales)}
-              onFocus={() => onElementSelect?.('chart.caption')}
+              onFocus={(e) => {
+                if (editable) {
+                  e.stopPropagation()
+                  onElementSelect?.('chart.caption')
+                }
+              }}
               onBlur={(e) => onFieldChange?.('chart.caption', e.currentTarget.textContent || '')}
             >
               {slide.chart.caption}
@@ -584,18 +1236,27 @@ function SlideContent({
               <SlideChart chart={slide.chart} colors={theme.accents} />
             </div>
           )}
-          {editable && (
-            <div className="slide__chart-hint">
-              <span>Кликните для редактирования данных диаграммы</span>
-            </div>
-          )}
         </div>
       )
+    }
 
-    case 'table':
+    case 'table': {
+      const customTableBox = slide.element_boxes?.['table'] as FrameRect | undefined
       return (
         slide.table && (
-          <table className={clsx('slide__table', flag('table'))}>
+          <table
+            data-element-id="table"
+            className={clsx('slide__table', flag('table'))}
+            style={{
+              ...(customTableBox ? { position: 'absolute', ...boxInContainer(customTableBox, containerBox), zIndex: 12 } : {}),
+            }}
+            onClick={(e) => {
+              if (editable) {
+                e.stopPropagation()
+                onElementSelect?.('table')
+              }
+            }}
+          >
             <thead>
               <tr>
                 {slide.table.columns.map((cell, ci) => (
@@ -604,7 +1265,12 @@ function SlideContent({
                     contentEditable={editable}
                     suppressContentEditableWarning
                     style={getElementStyle(`table.columns.${ci}`, slide.element_fonts, slide.element_scales)}
-                    onFocus={() => onElementSelect?.(`table.columns.${ci}`)}
+                    onFocus={(e) => {
+                      if (editable) {
+                        e.stopPropagation()
+                        onElementSelect?.(`table.columns.${ci}`)
+                      }
+                    }}
                     onBlur={(e) => onFieldChange?.(`table.columns.${ci}`, e.currentTarget.textContent || '')}
                   >
                     {cell}
@@ -621,7 +1287,12 @@ function SlideContent({
                       contentEditable={editable}
                       suppressContentEditableWarning
                       style={getElementStyle(`table.rows.${ri}.${ci}`, slide.element_fonts, slide.element_scales)}
-                      onFocus={() => onElementSelect?.(`table.rows.${ri}.${ci}`)}
+                      onFocus={(e) => {
+                        if (editable) {
+                          e.stopPropagation()
+                          onElementSelect?.(`table.rows.${ri}.${ci}`)
+                        }
+                      }}
                       onBlur={(e) => onFieldChange?.(`table.rows.${ri}.${ci}`, e.currentTarget.textContent || '')}
                     >
                       {cell}
@@ -633,81 +1304,157 @@ function SlideContent({
           </table>
         )
       )
+    }
 
     case 'kpi':
       return (
         <div className="slide__kpis">
-          {slide.kpis.map((kpi, i) => (
-            <div key={i} className={clsx('slide__kpi', flag(`kpis.${i}`))}>
-              <strong
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`kpis.${i}.value`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`kpis.${i}.value`)}
-                onBlur={(e) => onFieldChange?.(`kpis.${i}.value`, e.currentTarget.textContent || '')}
+          {slide.kpis.map((kpi, i) => {
+            const customKpiBox = slide.element_boxes?.[`kpis.${i}`] as FrameRect | undefined
+            return (
+              <div
+                key={i}
+                data-element-id={`kpis.${i}`}
+                className={clsx('slide__kpi', flag(`kpis.${i}`))}
+                style={{
+                  ...(customKpiBox ? { position: 'absolute', ...boxInContainer(customKpiBox, containerBox), zIndex: 12 } : {}),
+                }}
+                onClick={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`kpis.${i}`)
+                  }
+                }}
               >
-                {kpi.value}
-              </strong>
-              <span
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`kpis.${i}.label`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`kpis.${i}.label`)}
-                onBlur={(e) => onFieldChange?.(`kpis.${i}.label`, e.currentTarget.textContent || '')}
-              >
-                {kpi.label}
-              </span>
-            </div>
-          ))}
+                <strong
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  style={getElementStyle(`kpis.${i}.value`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`kpis.${i}.value`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`kpis.${i}.value`, e.currentTarget.textContent || '')}
+                >
+                  {kpi.value}
+                </strong>
+                <span
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  style={getElementStyle(`kpis.${i}.label`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`kpis.${i}.label`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`kpis.${i}.label`, e.currentTarget.textContent || '')}
+                >
+                  {kpi.label}
+                </span>
+              </div>
+            )
+          })}
         </div>
       )
 
     case 'timeline':
       return (
         <div className="slide__timeline">
-          {slide.timeline.map((item, i) => (
-            <div key={i} className={flag(`timeline.${i}`)}>
-              <b
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`timeline.${i}.date`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`timeline.${i}.date`)}
-                onBlur={(e) => onFieldChange?.(`timeline.${i}.date`, e.currentTarget.textContent || '')}
+          {slide.timeline.map((item, i) => {
+            const customTimeBox = slide.element_boxes?.[`timeline.${i}`] as FrameRect | undefined
+            return (
+              <div
+                key={i}
+                data-element-id={`timeline.${i}`}
+                className={flag(`timeline.${i}`)}
+                style={{
+                  ...(customTimeBox ? { position: 'absolute', ...boxInContainer(customTimeBox, containerBox), zIndex: 12 } : {}),
+                }}
+                onClick={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`timeline.${i}`)
+                  }
+                }}
               >
-                {item.date}
-              </b>
-              <strong
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`timeline.${i}.title`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`timeline.${i}.title`)}
-                onBlur={(e) => onFieldChange?.(`timeline.${i}.title`, e.currentTarget.textContent || '')}
-              >
-                {item.title}
-              </strong>
-              <p
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`timeline.${i}.text`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`timeline.${i}.text`)}
-                onBlur={(e) => onFieldChange?.(`timeline.${i}.text`, e.currentTarget.textContent || '')}
-              >
-                {item.text || ''}
-              </p>
-            </div>
-          ))}
+                <b
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  style={getElementStyle(`timeline.${i}.date`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`timeline.${i}.date`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`timeline.${i}.date`, e.currentTarget.textContent || '')}
+                >
+                  {item.date}
+                </b>
+                <strong
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  style={getElementStyle(`timeline.${i}.title`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`timeline.${i}.title`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`timeline.${i}.title`, e.currentTarget.textContent || '')}
+                >
+                  {item.title}
+                </strong>
+                <p
+                  contentEditable={editable}
+                  suppressContentEditableWarning
+                  style={getElementStyle(`timeline.${i}.text`, slide.element_fonts, slide.element_scales)}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`timeline.${i}.text`)
+                    }
+                  }}
+                  onBlur={(e) => onFieldChange?.(`timeline.${i}.text`, e.currentTarget.textContent || '')}
+                >
+                  {item.text || ''}
+                </p>
+              </div>
+            )
+          })}
         </div>
       )
 
-    case 'quote':
+    case 'quote': {
+      const customQuoteBox = slide.element_boxes?.['quote'] as FrameRect | undefined
       return (
-        <blockquote className={clsx('slide__quote', flag('quote'))}>
+        <blockquote
+          data-element-id="quote"
+          className={clsx('slide__quote', flag('quote'))}
+          style={{
+                ...(customQuoteBox ? { position: 'absolute', ...boxInContainer(customQuoteBox, containerBox), zIndex: 12 } : {}),
+          }}
+          onClick={(e) => {
+            if (editable) {
+              e.stopPropagation()
+              onElementSelect?.('quote')
+            }
+          }}
+        >
           «
           <span
             contentEditable={editable}
             suppressContentEditableWarning
             style={getElementStyle('quote.text', slide.element_fonts, slide.element_scales)}
-            onFocus={() => onElementSelect?.('quote.text')}
+            onFocus={(e) => {
+              if (editable) {
+                e.stopPropagation()
+                onElementSelect?.('quote.text')
+              }
+            }}
             onBlur={(e) => onFieldChange?.('quote.text', e.currentTarget.textContent || '')}
           >
             {slide.quote?.text || ''}
@@ -717,104 +1464,176 @@ function SlideContent({
             contentEditable={editable}
             suppressContentEditableWarning
             style={getElementStyle('quote.author', slide.element_fonts, slide.element_scales)}
-            onFocus={() => onElementSelect?.('quote.author')}
+            onFocus={(e) => {
+              if (editable) {
+                e.stopPropagation()
+                onElementSelect?.('quote.author')
+              }
+            }}
             onBlur={(e) => onFieldChange?.('quote.author', e.currentTarget.textContent || '')}
           >
             {slide.quote?.author ? `— ${slide.quote.author}` : '— Автор'}
           </footer>
         </blockquote>
       )
+    }
 
-    case 'image_text':
+    case 'image_text': {
+      const customBulletsBox = slide.element_boxes?.['bullets'] as FrameRect | undefined
       return (
         <div className="slide__image-text">
-          <ul className={clsx('slide__bullets', flag('bullets'))}>
-            {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : ['Описание или ключевой тезис']).map((item, i) => (
-              <li
-                key={i}
-                className={flag(`bullets.${i}`)}
-                contentEditable={editable}
-                suppressContentEditableWarning
-                style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
-                onFocus={() => onElementSelect?.(`bullets.${i}`)}
-                onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
-              >
-                {item}
-              </li>
-            ))}
-          </ul>
-          <div
-            className={clsx('slide__image', flag('image'))}
-            onClick={() => {
-              if (editable) {
-                onElementSelect?.('image')
-                onImageClick?.()
+          <ul
+            data-element-id="bullets"
+            className={clsx('slide__bullets', flag('bullets'))}
+            style={{
+              ...(customBulletsBox ? { position: 'absolute', ...boxInContainer(customBulletsBox, containerBox), zIndex: 11 } : {}),
+            }}
+            onClick={(e) => {
+              if (editable && e.target === e.currentTarget) {
+                e.stopPropagation()
+                onElementSelect?.('bullets')
               }
             }}
           >
-            {slide.image?.url ? (
-              <img src={slide.image.url} alt="" />
-            ) : (
-              <>
-                <ImageIcon />
-                <span>{slide.image?.prompt || 'Область изображения'}</span>
-                {editable && <span style={{ fontSize: 11, opacity: 0.8 }}>(кликните для загрузки)</span>}
-              </>
-            )}
-          </div>
-        </div>
-      )
-
-    case 'bullets':
-    default:
-      if (slide.image?.url) {
-        return (
-          <div className="slide__image-text">
-            <ul className={clsx('slide__bullets', flag('bullets'))}>
-              {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : ['Описание или ключевой тезис']).map((item, i) => (
+            {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : ['Описание или ключевой тезис']).map((item, i) => {
+              const customBulletBox = slide.element_boxes?.[`bullets.${i}`] as FrameRect | undefined
+              return (
                 <li
                   key={i}
-                  className={flag(`bullets.${i}`)}
+                  data-element-id={`bullets.${i}`}
+                  className={clsx(flag(`bullets.${i}`), customBulletBox && 'slide__bullet--custom')}
                   contentEditable={editable}
                   suppressContentEditableWarning
-                  style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
-                  onFocus={() => onElementSelect?.(`bullets.${i}`)}
+                  style={{
+                    ...getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales),
+                    ...(customBulletBox ? { position: 'absolute', ...boxInContainer(customBulletBox, customBulletsBox || containerBox), zIndex: 12 } : {}),
+                  }}
+                  onClick={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`bullets.${i}`)
+                    }
+                  }}
+                  onFocus={(e) => {
+                    if (editable) {
+                      e.stopPropagation()
+                      onElementSelect?.(`bullets.${i}`)
+                    }
+                  }}
                   onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
                 >
                   {item}
                 </li>
-              ))}
-            </ul>
-            <div
-              className={clsx('slide__image', flag('image'))}
-              onClick={() => {
-                if (editable) {
-                  onElementSelect?.('image')
-                  onImageClick?.()
+              )
+            })}
+          </ul>
+          {renderImageElement()}
+        </div>
+      )
+    }
+
+    case 'bullets':
+    default: {
+      const customBulletsBox = slide.element_boxes?.['bullets'] as FrameRect | undefined
+      if (slide.image?.url) {
+        return (
+          <div className="slide__image-text">
+            <ul
+              data-element-id="bullets"
+              className={clsx('slide__bullets', flag('bullets'))}
+              style={{
+                ...(customBulletsBox ? { position: 'absolute', ...boxInContainer(customBulletsBox, containerBox), zIndex: 11 } : {}),
+              }}
+              onClick={(e) => {
+                if (editable && e.target === e.currentTarget) {
+                  e.stopPropagation()
+                  onElementSelect?.('bullets')
                 }
               }}
             >
-              <img src={slide.image.url} alt="" />
-            </div>
+              {(slide.bullets && slide.bullets.length > 0 ? slide.bullets : ['Описание или ключевой тезис']).map((item, i) => {
+                const customBulletBox = slide.element_boxes?.[`bullets.${i}`] as FrameRect | undefined
+                return (
+                  <li
+                    key={i}
+                    data-element-id={`bullets.${i}`}
+                    className={clsx(flag(`bullets.${i}`), customBulletBox && 'slide__bullet--custom')}
+                    contentEditable={editable}
+                    suppressContentEditableWarning
+                    style={{
+                      ...getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales),
+                      ...(customBulletBox ? { position: 'absolute', ...boxInContainer(customBulletBox, customBulletsBox || containerBox), zIndex: 12 } : {}),
+                    }}
+                    onClick={(e) => {
+                      if (editable) {
+                        e.stopPropagation()
+                        onElementSelect?.(`bullets.${i}`)
+                      }
+                    }}
+                    onFocus={(e) => {
+                      if (editable) {
+                        e.stopPropagation()
+                        onElementSelect?.(`bullets.${i}`)
+                      }
+                    }}
+                    onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+                  >
+                    {item}
+                  </li>
+                )
+              })}
+            </ul>
+            {renderImageElement()}
           </div>
         )
       }
       return (
-        <ul className={clsx('slide__bullets', flag('bullets'))}>
-          {(slide.bullets || []).map((item, i) => (
-            <li
-              key={i}
-              className={flag(`bullets.${i}`)}
-              contentEditable={editable}
-              suppressContentEditableWarning
-              style={getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales)}
-              onFocus={() => onElementSelect?.(`bullets.${i}`)}
-              onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
-            >
-              {item}
-            </li>
-          ))}
+        <ul
+          data-element-id="bullets"
+          className={clsx('slide__bullets', flag('bullets'))}
+          style={{
+            ...(customBulletsBox ? { position: 'absolute', ...boxInContainer(customBulletsBox, containerBox), zIndex: 11 } : {}),
+          }}
+          onClick={(e) => {
+            if (editable && e.target === e.currentTarget) {
+              e.stopPropagation()
+              onElementSelect?.('bullets')
+            }
+          }}
+        >
+          {(slide.bullets || []).map((item, i) => {
+            const customBulletBox = slide.element_boxes?.[`bullets.${i}`] as FrameRect | undefined
+            return (
+              <li
+                key={i}
+                data-element-id={`bullets.${i}`}
+                className={clsx(flag(`bullets.${i}`), customBulletBox && 'slide__bullet--custom')}
+                contentEditable={editable}
+                suppressContentEditableWarning
+                style={{
+                  ...getElementStyle(`bullets.${i}`, slide.element_fonts, slide.element_scales),
+                  ...(customBulletBox ? { position: 'absolute', ...boxInContainer(customBulletBox, customBulletsBox || containerBox), zIndex: 12 } : {}),
+                }}
+                onClick={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`bullets.${i}`)
+                  }
+                }}
+                onFocus={(e) => {
+                  if (editable) {
+                    e.stopPropagation()
+                    onElementSelect?.(`bullets.${i}`)
+                  }
+                }}
+                onBlur={(e) => onFieldChange?.(`bullets.${i}`, e.currentTarget.textContent || '')}
+              >
+                {item}
+              </li>
+            )
+          })}
         </ul>
       )
+    }
   }
 }

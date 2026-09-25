@@ -7,6 +7,11 @@ import { FileDrop } from './FileDrop'
 import { useToast } from './Toast'
 import { Spinner } from './ui'
 
+// Keep the file picker in sync with backend/app/pipeline/parsing/formats.py.
+// LibreOffice converts the legacy and OpenDocument variants to .pptx server-side.
+const TEMPLATE_ACCEPT = '.pptx,.potx,.pptm,.potm,.ppsx,.ppsm,.ppt,.pot,.pps,.odp,.otp'
+const TEMPLATE_EXTENSIONS_LABEL = 'PPTX, POTX, PPTM, POTM, PPSX, PPSM, PPT, POT, PPS, ODP или OTP'
+
 export function TemplateUploader({ onUploaded, compact }: { onUploaded?: (template: TemplateSummary) => void; compact?: boolean }) {
   const queryClient = useQueryClient()
   const notify = useToast()
@@ -36,11 +41,12 @@ export function TemplateUploader({ onUploaded, compact }: { onUploaded?: (templa
 
   return (
     <FileDrop
-      accept=".pptx"
+      accept={TEMPLATE_ACCEPT}
       compact={compact}
       onFiles={([file]) => upload.mutate(file)}
+      onRejected={() => notify(`Поддерживаются форматы: ${TEMPLATE_EXTENSIONS_LABEL}`, 'error')}
       title="Загрузить свой шаблон"
-      hint="Перетащите .pptx или нажмите, чтобы выбрать файл"
+      hint={compact ? 'PowerPoint или OpenDocument' : 'PPTX, POTX, PPTM, PPT, ODP и другие форматы'}
     />
   )
 }

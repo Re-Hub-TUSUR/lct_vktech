@@ -41,6 +41,7 @@ import type {
   VariantDetail,
 } from '../api/types'
 import { ImagePickerModal } from '../components/ImagePickerModal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
@@ -245,11 +246,19 @@ function AuditWorkspace({
   const [isEditing, setIsEditing] = useState(false)
   const [activeElement, setActiveElement] = useState<string | null>(null)
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
+  const [imagePickerMode, setImagePickerMode] = useState<'slide' | 'floating' | 'shape'>('slide')
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
+  const [editedElementsBySlide, setEditedElementsBySlide] = useState<Record<string, string[]>>({})
   const [showDesignModal, setShowDesignModal] = useState(false)
   const [showImagePicker, setShowImagePicker] = useState(false)
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false)
+  const [draftHistory, setDraftHistory] = useState<
+    Record<string, { past: SlideUpdate[]; future: SlideUpdate[] }>
+  >({})
+  const [isSavingAll, setIsSavingAll] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
+  const saveInProgressRef = useRef(false)
 
   // Рабочая область аудита (миниатюры, слайд, панель замечаний) занимает ровно оставшуюся часть экрана,
   // поэтому страница не прокручивается целиком, а каждая колонка прокручивается сама.
@@ -323,10 +332,20 @@ function AuditWorkspace({
       element_fonts: edits.element_fonts !== undefined ? edits.element_fonts : currentSlide.element_fonts,
       element_scales: edits.element_scales !== undefined ? edits.element_scales : currentSlide.element_scales,
       block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
+      element_boxes: edits.element_boxes !== undefined ? edits.element_boxes : currentSlide.element_boxes,
+      element_crops: edits.element_crops !== undefined ? edits.element_crops : currentSlide.element_crops,
     }
   }, [currentSlide, slideEdits, theme?.patterns])
 
-  const hasChanges = !!(currentSlide && slideEdits[currentSlide.id])
+  const hasDraftChanges = (draft: SlideUpdate | undefined) => Boolean(draft && Object.keys(draft).length > 0)
+  const hasChanges = Object.values(slideEdits).some(hasDraftChanges)
+  const hasCurrentSlideChanges = currentSlide ? hasDraftChanges(slideEdits[currentSlide.id]) : false
+  const currentDraft = currentSlide ? slideEdits[currentSlide.id] : undefined
+  const editedElementIds = currentSlide && hasCurrentSlideChanges
+    ? (editedElementsBySlide[currentSlide.id] || []).filter((path) =>
+        Boolean(currentDraft && Object.prototype.hasOwnProperty.call(currentDraft, path.split('.')[0])),
+      )
+    : []
   const openIssues = report.issues.filter((issue) => issue.status === 'open')
   const resolvedIssues = report.issues.filter((issue) => issue.status !== 'open')
 
@@ -368,6 +387,10 @@ function AuditWorkspace({
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (
+        isEditing ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement)?.isContentEditable
@@ -382,7 +405,7 @@ function AuditWorkspace({
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [isZenMode])
+  }, [isEditing, isZenMode])
 
   const currentTourIndex = useMemo(() => {
     if (!activeIssue) return 0
@@ -442,12 +465,11 @@ function AuditWorkspace({
   })
 
   const updateSlideMutation = useMutation({
-    mutationFn: (updates: SlideUpdate) =>
-      api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}`, updates),
+    mutationFn: ({ slideId, updates }: { slideId: string; updates: SlideUpdate }) =>
+      api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, updates),
     onSuccess: (result) => {
       applyResult(result)
       notify('Слайд сохранён')
-      setIsEditing(false)
     },
     onError: (error) => notify(error.message, 'error'),
   })
@@ -456,60 +478,185 @@ function AuditWorkspace({
     mutationFn: (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      return api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/upload-image`, formData)
+      // Upload the asset first; the slide itself stays untouched until the
+      // user presses «Готово». This keeps «Выйти без сохранения» reliable.
+      return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
     },
     onSuccess: (result) => {
-      applyResult(result)
-      const updatedVariant = 'variant' in result ? result.variant : variant
-      const updatedSlide = updatedVariant.slides.find((s) => s.id === currentSlide?.id)
-      if (updatedSlide && currentSlide) {
-        setSlideEdits((prev) => ({
-          ...prev,
-          [currentSlide.id]: {
-            ...(prev[currentSlide.id] || {}),
-            kind: updatedSlide.kind,
-            image: updatedSlide.image,
-            bullets: updatedSlide.bullets,
-          },
-        }))
-      }
+      handleSelectContentImage(result.url, result.filename)
       notify('Изображение успешно загружено на слайд')
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+
+  const uploadVariantImageMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
     },
     onError: (error) => notify(error.message, 'error'),
   })
 
   // Правка слайда моделью по сообщению из чата; ответ модели показывает ассистент, ошибку — тоже он.
   const regenerateSlideMutation = useMutation({
-    mutationFn: (instruction: string) =>
-      api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, {
+    mutationFn: ({ slideId, instruction }: { slideId: string; instruction: string }) =>
+      api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, {
         instruction,
       }),
-    onSuccess: (result) => {
+    onSuccess: (result, { slideId }) => {
       applyResult(result)
-      if (currentSlide) {
-        setSlideEdits((prev) => {
-          const next = { ...prev }
-          delete next[currentSlide.id]
-          return next
-        })
-      }
+      setSlideEdits((prev) => {
+        const next = { ...prev }
+        delete next[slideId]
+        return next
+      })
+      setEditedElementsBySlide((prev) => {
+        const next = { ...prev }
+        delete next[slideId]
+        return next
+      })
+      setDraftHistory((prev) => {
+        const next = { ...prev }
+        delete next[slideId]
+        return next
+      })
       notify('Слайд обновлён')
     },
   })
 
   const handleSlideChange = (updates: SlideUpdate) => {
-    if (!currentSlide) return
+    if (!currentSlide || saveInProgressRef.current) return
+    const slideId = currentSlide.id
+    const currentDraft = slideEdits[slideId] || {}
+    setDraftHistory((prev) => ({
+      ...prev,
+      [slideId]: {
+        past: [...(prev[slideId]?.past || []), currentDraft].slice(-40),
+        future: [],
+      },
+    }))
     setSlideEdits((prev) => ({
       ...prev,
-      [currentSlide.id]: {
-        ...(prev[currentSlide.id] || {}),
+      [slideId]: {
+        ...(prev[slideId] || {}),
         ...updates,
       },
     }))
   }
 
+  const handleUndo = () => {
+    if (!currentSlide || saveInProgressRef.current) return
+    const slideId = currentSlide.id
+    const history = draftHistory[slideId]
+    if (!history?.past.length) return
+    const previous = history.past[history.past.length - 1]
+    const currentDraft = slideEdits[slideId] || {}
+    setSlideEdits((prev) => {
+      const next = { ...prev }
+      if (Object.keys(previous).length === 0) delete next[slideId]
+      else next[slideId] = previous
+      return next
+    })
+    setDraftHistory((prev) => ({
+      ...prev,
+      [slideId]: { past: history.past.slice(0, -1), future: [currentDraft, ...history.future].slice(0, 40) },
+    }))
+  }
+
+  const handleRedo = () => {
+    if (!currentSlide || saveInProgressRef.current) return
+    const slideId = currentSlide.id
+    const history = draftHistory[slideId]
+    if (!history?.future.length) return
+    const nextDraft = history.future[0]
+    const currentDraft = slideEdits[slideId] || {}
+    setSlideEdits((prev) => {
+      const next = { ...prev }
+      if (Object.keys(nextDraft).length === 0) delete next[slideId]
+      else next[slideId] = nextDraft
+      return next
+    })
+    setDraftHistory((prev) => ({
+      ...prev,
+      [slideId]: { past: [...history.past, currentDraft].slice(-40), future: history.future.slice(1) },
+    }))
+  }
+
+  const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>) => {
+    const currentShapes = activeSlide.shapes || []
+    const next = currentShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s))
+    handleSlideChange({ shapes: next })
+  }
+
+  const handleDeleteShape = (shapeId: string) => {
+    const currentShapes = activeSlide.shapes || []
+    const next = currentShapes.filter((s) => s.id !== shapeId)
+    handleSlideChange({ shapes: next })
+    if (selectedShapeId === shapeId) setSelectedShapeId(null)
+  }
+
+  const handleUpdateElementBox = (target: string, box: [number, number, number, number]) => {
+    if (!currentSlide) return
+    const currentBoxes = activeSlide.element_boxes || {}
+    const nextBoxes = { ...currentBoxes, [target]: box }
+    handleSlideChange({ element_boxes: nextBoxes })
+  }
+
+  const handleResetElementBox = (target: string) => {
+    if (!currentSlide) return
+    const currentBoxes = { ...(activeSlide.element_boxes || {}) }
+    delete currentBoxes[target]
+    const currentCrops = { ...(activeSlide.element_crops || {}) }
+    delete currentCrops[target]
+    handleSlideChange({ element_boxes: currentBoxes, element_crops: currentCrops })
+    notify('Положение блока сброшено к шаблону')
+  }
+
+  const handleUpdateElementCrop = (target: string, crop: [number, number, number, number]) => {
+    if (!currentSlide) return
+    const currentCrops = activeSlide.element_crops || {}
+    const nextCrops = { ...currentCrops, [target]: crop }
+    handleSlideChange({ element_crops: nextCrops })
+  }
+
+  const handleAddFloatingImage = () => {
+    setImagePickerMode('floating')
+    setShowImagePicker(true)
+  }
+
   const handleSelectContentImage = (imageUrl: string, filename: string) => {
     if (!currentSlide) return
+    if (imagePickerMode === 'floating') {
+      const id = Math.random().toString(36).substring(2, 10)
+      const newShape: SlideShape = {
+        id,
+        kind: 'image',
+        image_url: imageUrl,
+        x: 0.3,
+        y: 0.25,
+        width: 0.4,
+        height: 0.4,
+        color: 'transparent',
+        opacity: 1,
+        border: false,
+      }
+      const currentShapes = activeSlide.shapes || []
+      handleSlideChange({ shapes: [...currentShapes, newShape] })
+      setSelectedShapeId(id)
+      setActiveElement(null)
+      setShowImagePicker(false)
+      notify('Плавающее изображение добавлено на слайд')
+      return
+    }
+
+    if (imagePickerMode === 'shape' && selectedShapeId) {
+      handleUpdateShape(selectedShapeId, { image_url: imageUrl })
+      setShowImagePicker(false)
+      notify('Изображение обновлено')
+      return
+    }
+
     const patch: SlideUpdate = {
       image: {
         prompt: `Изображение из контент-пакета: ${filename}`,
@@ -748,65 +895,88 @@ function AuditWorkspace({
   }
 
   const handleFieldChange = (path: string, value: string) => {
-    if (!currentSlide) return
+    if (!currentSlide || saveInProgressRef.current) return
     const updated = applyFieldChange(activeSlide, path, value)
-    setSlideEdits((prev) => ({
+    const root = path.split('.')[0] as keyof Slide
+    if (JSON.stringify(activeSlide[root]) === JSON.stringify(updated[root])) return
+    setEditedElementsBySlide((prev) => ({
       ...prev,
-      [currentSlide.id]: {
-        ...(prev[currentSlide.id] || {}),
-        title: updated.title,
-        subtitle: updated.subtitle,
-        notes: updated.notes,
-        bullets: updated.bullets,
-        columns: updated.columns,
-        kpis: updated.kpis,
-        timeline: updated.timeline,
-        quote: updated.quote,
-        table: updated.table,
-        chart: updated.chart,
-      },
+      [currentSlide.id]: Array.from(new Set([...(prev[currentSlide.id] || []), path])),
     }))
-  }
-
-  const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>) => {
-    const currentShapes = activeSlide.shapes || []
-    const next = currentShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s))
-    handleSlideChange({ shapes: next })
-  }
-
-  const handleDeleteShape = (shapeId: string) => {
-    const currentShapes = activeSlide.shapes || []
-    const next = currentShapes.filter((s) => s.id !== shapeId)
-    handleSlideChange({ shapes: next })
-    if (selectedShapeId === shapeId) setSelectedShapeId(null)
+    if (root === 'title') handleSlideChange({ title: updated.title })
+    else if (root === 'subtitle') handleSlideChange({ subtitle: updated.subtitle })
+    else if (root === 'notes') handleSlideChange({ notes: updated.notes })
+    else if (root === 'bullets') handleSlideChange({ bullets: updated.bullets })
+    else if (root === 'columns') handleSlideChange({ columns: updated.columns })
+    else if (root === 'kpis') handleSlideChange({ kpis: updated.kpis })
+    else if (root === 'timeline') handleSlideChange({ timeline: updated.timeline })
+    else if (root === 'quote') handleSlideChange({ quote: updated.quote })
+    else if (root === 'table') handleSlideChange({ table: updated.table })
+    else if (root === 'chart') handleSlideChange({ chart: updated.chart })
   }
 
   useEffect(() => {
+    // Состояние выбора относится к конкретному слайду. Иначе после переключения
+    // рамка старого элемента накладывается на новый слайд.
     setSelectedShapeId(null)
+    setActiveElement(null)
+    setImagePickerMode('slide')
   }, [slideIndex])
 
   const handleSaveSlide = async () => {
-    if (!currentSlide) return
-    const edits = slideEdits[currentSlide.id]
-    if (edits) {
-      await updateSlideMutation.mutateAsync({
-        ...edits,
-        shapes: activeSlide.shapes,
-      })
-    }
-    // Также сохраняем изменения на других слайдах, если они были отредактированы
-    const otherEntries = Object.entries(slideEdits).filter(([id]) => id !== currentSlide.id)
-    for (const [sId, sEdits] of otherEntries) {
-      try {
-        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${sId}`, sEdits)
-      } catch (err) {
-        console.error(`Failed to save slide ${sId}:`, err)
+    if (!currentSlide || saveInProgressRef.current) return
+    saveInProgressRef.current = true
+    setIsSavingAll(true)
+    try {
+      const edits = slideEdits[currentSlide.id]
+      if (hasDraftChanges(edits)) {
+        try {
+          await updateSlideMutation.mutateAsync({
+            slideId: currentSlide.id,
+            updates: {
+              ...edits,
+              shapes: activeSlide.shapes,
+            },
+          })
+        } catch {
+          // The mutation already shows the server error. Keep all local drafts
+          // so the user can retry without losing work.
+          return
+        }
       }
+      // PATCH записывает весь массив слайдов варианта. Сохраняем остальные
+      // слайды последовательно, чтобы запросы не перезаписывали друг друга.
+      const otherEntries = Object.entries(slideEdits).filter(([id, draft]) => id !== currentSlide.id && hasDraftChanges(draft))
+      const failedSlideIds: string[] = []
+      for (const [sId, sEdits] of otherEntries) {
+        try {
+          await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${sId}`, sEdits)
+        } catch (err) {
+          console.error(`Failed to save slide ${sId}:`, err)
+          failedSlideIds.push(sId)
+        }
+      }
+      if (otherEntries.length > 0) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.variant(variant.id) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.audit(variant.id) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.variants(detail.presentation.id) }),
+        ])
+      }
+      if (failedSlideIds.length > 0) {
+        notify(`Не удалось сохранить ${failedSlideIds.length} ${countLabel(failedSlideIds.length, ['слайд', 'слайда', 'слайдов'])}. Черновики оставлены для повтора.`, 'error')
+        return
+      }
+      setSlideEdits({})
+      setEditedElementsBySlide({})
+      setDraftHistory({})
+      setIsEditing(false)
+      setActiveElement(null)
+      setSelectedShapeId(null)
+    } finally {
+      saveInProgressRef.current = false
+      setIsSavingAll(false)
     }
-    setSlideEdits({})
-    setIsEditing(false)
-    setActiveElement(null)
-    setSelectedShapeId(null)
   }
 
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -817,18 +987,61 @@ function AuditWorkspace({
     }
   }
 
-  const handleCloseEdit = () => {
-    if (currentSlide) {
-      setSlideEdits((prev) => {
-        const next = { ...prev }
-        delete next[currentSlide.id]
-        return next
-      })
-    }
+  const discardEditing = () => {
+    // Один сеанс редактирования может менять несколько слайдов. Сбрасываем
+    // весь локальный буфер, иначе правка «прячется» и попадёт в следующий Save.
+    setSlideEdits({})
+    setEditedElementsBySlide({})
+    setDraftHistory({})
     setIsEditing(false)
     setActiveElement(null)
     setSelectedShapeId(null)
+    setShowDiscardDialog(false)
   }
+
+  const handleCloseEdit = () => {
+    if (saveInProgressRef.current) return
+    if (hasChanges) {
+      setShowDiscardDialog(true)
+      return
+    }
+    discardEditing()
+  }
+
+  useEffect(() => {
+    if (!isEditing) return
+    const handleEditorShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const isField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        Boolean(target?.isContentEditable)
+
+      if ((event.metaKey || event.ctrlKey) && !isField && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) handleRedo()
+        else handleUndo()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && !isField && event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        handleRedo()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        if (!updateSlideMutation.isPending && !isSavingAll && !saveInProgressRef.current) void handleSaveSlide()
+        return
+      }
+      if (event.key === 'Escape' && !isField && !showDesignModal && !showImagePicker && !showDiscardDialog) {
+        event.preventDefault()
+        handleCloseEdit()
+      }
+    }
+    window.addEventListener('keydown', handleEditorShortcut)
+    return () => window.removeEventListener('keydown', handleEditorShortcut)
+  }, [isEditing, hasChanges, showDesignModal, showImagePicker, showDiscardDialog, updateSlideMutation.isPending, isSavingAll, slideEdits, draftHistory])
 
   const toggle = (issueId: string) =>
     setChecked((current) => {
@@ -840,6 +1053,12 @@ function AuditWorkspace({
 
   const checkedIds = [...checked].filter((issueId) => openIssues.some((issue) => issue.id === issueId))
   const { summary } = report
+  const isEditorBusy =
+    isSavingAll ||
+    updateSlideMutation.isPending ||
+    uploadImageMutation.isPending ||
+    uploadVariantImageMutation.isPending ||
+    regenerateSlideMutation.isPending
 
   return (
     <>
@@ -858,15 +1077,34 @@ function AuditWorkspace({
             theme={theme}
             activeElement={activeElement}
             selectedShapeId={selectedShapeId}
-            onSelectShape={setSelectedShapeId}
+            onSelectShape={(id) => {
+              setSelectedShapeId(id)
+              if (id) setActiveElement(null)
+            }}
             onChange={handleSlideChange}
             onSave={handleSaveSlide}
-            onTriggerImageUpload={() => setShowImagePicker(true)}
-            onOpenImagePicker={() => setShowImagePicker(true)}
+            onTriggerImageUpload={() => {
+              setImagePickerMode('slide')
+              setShowImagePicker(true)
+            }}
+            onOpenImagePicker={() => {
+              if (selectedShapeId && activeSlide.shapes?.some((s) => s.id === selectedShapeId && s.kind === 'image')) {
+                setImagePickerMode('shape')
+              } else {
+                setImagePickerMode('slide')
+              }
+              setShowImagePicker(true)
+            }}
+            onAddFloatingImage={handleAddFloatingImage}
+            onResetElementBox={handleResetElementBox}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={Boolean(currentSlide && draftHistory[currentSlide.id]?.past.length)}
+            canRedo={Boolean(currentSlide && draftHistory[currentSlide.id]?.future.length)}
             onOpenDesignModal={() => setShowDesignModal(true)}
             onClose={handleCloseEdit}
-            isSaving={updateSlideMutation.isPending}
-            isUploading={uploadImageMutation.isPending}
+            isSaving={updateSlideMutation.isPending || isSavingAll}
+            isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
             hasChanges={hasChanges}
           />
         ) : (
@@ -952,7 +1190,10 @@ function AuditWorkspace({
                 key={slide.id}
                 type="button"
                 className={clsx('audit-slide', index === slideIndex && 'is-active')}
+                aria-current={index === slideIndex ? 'true' : undefined}
+                disabled={isEditing && isEditorBusy}
                 onClick={() => {
+                  if (isEditing && isEditorBusy) return
                   setSlideIndex(index)
                   setScope('slide')
                 }}
@@ -989,18 +1230,35 @@ function AuditWorkspace({
                     number={slideIndex + 1}
                     highlights={isEditing ? undefined : highlights}
                     activeTarget={isEditing ? undefined : activeTarget}
-                    render={isEditing ? undefined : slideRender(variant, slideIndex)}
+                    // До первого изменения сохраняем точный raster-вид. После
+                    // blur SlideView переключается на DOM с геометрией render.targets,
+                    // поэтому старый raster-текст не дублируется под новым.
+                    render={slideRender(variant, slideIndex)}
                     editable={isEditing}
+                    editedElementIds={editedElementIds}
+                    hasEdits={hasCurrentSlideChanges}
                     selectedShapeId={selectedShapeId}
-                    onSelectShape={setSelectedShapeId}
+                    selectedElementId={activeElement}
+                    onSelectShape={(id) => {
+                      setSelectedShapeId(id)
+                      if (id) setActiveElement(null)
+                    }}
                     onUpdateShape={handleUpdateShape}
                     onDeleteShape={handleDeleteShape}
-                    onElementSelect={(el) => setActiveElement(el)}
+                    onElementSelect={(el) => {
+                      setActiveElement(el)
+                      if (el) setSelectedShapeId(null)
+                    }}
                     onFieldChange={handleFieldChange}
                     onImageClick={() => {
                       setActiveElement('image')
+                      setSelectedShapeId(null)
+                      setImagePickerMode('slide')
                       setShowImagePicker(true)
                     }}
+                    onUpdateElementBox={handleUpdateElementBox}
+                    onResetElementBox={handleResetElementBox}
+                    onUpdateElementCrop={handleUpdateElementCrop}
                   />
                 </div>
               </div>
@@ -1158,7 +1416,8 @@ function AuditWorkspace({
               slide={activeSlide}
               theme={theme}
               slideIndex={slideIndex}
-              onRegenerate={async (instruction) => (await regenerateSlideMutation.mutateAsync(instruction)).reply}
+              onRegenerate={async (instruction) =>
+                (await regenerateSlideMutation.mutateAsync({ slideId: activeSlide.id, instruction })).reply}
               onChangeKind={handleChangeKind}
               onSelectPattern={handleSelectPattern}
               onOpenDesignModal={() => setShowDesignModal(true)}
@@ -1469,14 +1728,38 @@ function AuditWorkspace({
           isOpen={showImagePicker}
           presentationId={presentation.id}
           contentFiles={presentation.files ?? []}
-          currentImageUrl={activeSlide.image?.url}
+          currentImageUrl={
+            imagePickerMode === 'shape'
+              ? activeSlide.shapes?.find((s) => s.id === selectedShapeId)?.image_url
+              : activeSlide.image?.url
+          }
           onClose={() => setShowImagePicker(false)}
           onSelectImage={handleSelectContentImage}
           onUploadImage={async (file) => {
-            await uploadImageMutation.mutateAsync(file)
+            if (imagePickerMode === 'floating') {
+              const res = await uploadVariantImageMutation.mutateAsync(file)
+              handleSelectContentImage(res.url, res.filename)
+            } else if (imagePickerMode === 'shape' && selectedShapeId) {
+              const res = await uploadVariantImageMutation.mutateAsync(file)
+              handleUpdateShape(selectedShapeId, { image_url: res.url })
+              setShowImagePicker(false)
+              notify('Изображение обновлено')
+            } else {
+              await uploadImageMutation.mutateAsync(file)
+            }
           }}
-          onRemoveImage={activeSlide.image?.url ? handleRemoveSlideImage : undefined}
-          isUploading={uploadImageMutation.isPending}
+          onRemoveImage={imagePickerMode === 'slide' && activeSlide.image?.url ? handleRemoveSlideImage : undefined}
+          isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
+        />
+      )}
+
+      {showDiscardDialog && (
+        <ConfirmDialog
+          title="Выйти без сохранения?"
+          text="В редакторе есть несохранённые изменения. Они будут удалены для всех слайдов этой сессии."
+          confirmLabel="Выйти без сохранения"
+          onConfirm={discardEditing}
+          onClose={() => setShowDiscardDialog(false)}
         />
       )}
     </>

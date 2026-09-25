@@ -259,7 +259,7 @@ async def update_slide(
     for field, val in updates.items():
         if val is not None or field in (
             "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
-            "element_fonts", "element_scales",
+            "element_fonts", "element_scales", "element_boxes", "element_crops",
             "block_density", "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
         ):
             setattr(slide, field, val)
@@ -276,6 +276,29 @@ async def update_slide(
         report=await audit_report(db, variant),
         variant=await _variant_payload(db, variant, presentation),
     )
+
+
+@router.post("/{variant_id}/upload-image")
+async def upload_variant_image(
+    variant_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    file: UploadFile = File(...),
+) -> dict[str, str]:
+    """Загрузка изображения в вариант (для плавающих картинок или ассетов)."""
+    variant, _ = await get_variant_for_user(db, variant_id, user, editable=True)
+    filename = file.filename or "image.png"
+    ext = Path(filename).suffix.lower()
+    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Поддерживаются изображения PNG, JPG, WEBP, SVG")
+
+    file_id = uuid.uuid4().hex[:12]
+    image_rel_path = f"{variant.id}_{file_id}{ext}"
+    dest = storage_path("user_images", image_rel_path)
+    await save_upload(file, dest)
+
+    image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
+    return {"url": image_url, "filename": filename}
 
 
 @router.post("/{variant_id}/slides/{slide_id}/upload-image")

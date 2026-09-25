@@ -1,8 +1,8 @@
 import clsx from 'clsx'
-import { Move, Trash2 } from 'lucide-react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import { useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 
 import type { SlideShape, SlideTheme } from '../../api/types'
+import { TransformFrame } from './TransformFrame'
 
 interface SlideShapesLayerProps {
   shapes: SlideShape[]
@@ -23,11 +23,9 @@ function isTemplateShape(shape: SlideShape): boolean {
 function cornerRadius(shape: SlideShape, aspect: number): string {
   if (shape.kind === 'circle') return '50%'
   if (shape.kind === 'line') return '2px'
+  if (shape.kind === 'image') return '0'
   if (!isTemplateShape(shape)) return shape.kind === 'rect' ? '1.2cqw' : '9999px'
   if (shape.kind === 'rect') return '0'
-  // Скруглённый прямоугольник шаблона — не капсула: в PowerPoint радиус по умолчанию — шестая часть короткой
-  // стороны, а у крупных карточек шаблоны обычно ставят его меньше. Точного радиуса парсер не сохраняет,
-  // поэтому у больших фигур он ограничен 1.2% ширины слайда. Размеры — доли слайда, высота переводится в cqw.
   const shortSide = Math.min(shape.width * 100, (shape.height * 100) / aspect)
   return `${Math.min(shortSide / 6, 1.2).toFixed(3)}cqw`
 }
@@ -37,15 +35,12 @@ function boxStyle(shape: SlideShape): CSSProperties {
     left: `${shape.x * 100}%`,
     top: `${shape.y * 100}%`,
     width: `${shape.width * 100}%`,
-    height: shape.kind === 'line' ? '4px' : `${shape.height * 100}%`,
+    // Линия тоже должна иметь тот же layout-box, что и её рамка. Фиксированная
+    // высота 4px делала выделение и resize визуально рассинхронизированными.
+    height: `${Math.max(shape.height, 0.004) * 100}%`,
   }
 }
 
-/**
- * Фигуры слайда в два слоя — в том же порядке, что и в собранном .pptx: фигуры шаблона лежат под текстом
- * (слой --back), фигуры пользователя сборка добавляет поверх всего (слой --front). У выделенной фигуры
- * шаблона рамка и ручки рисуются в верхнем слое, а сама она остаётся под текстом и его не закрывает.
- */
 export function SlideShapesLayer({
   shapes,
   theme,
@@ -55,149 +50,43 @@ export function SlideShapesLayer({
   onUpdateShape,
   onDeleteShape,
 }: SlideShapesLayerProps) {
-  // Фигуру шаблона, у которой парсер не распознал заливку (градиент, картинка, сложный эффект),
-  // рисовать нечем: закрасить её акцентом — значит положить цветной блок во весь слайд поверх
-  // текста. Такие фигуры пропускаем; у фигур, добавленных пользователем, акцент остаётся.
-  const visible = (shapes || []).filter((shape) => shape.color || !isTemplateShape(shape))
+  const [croppingShapeId, setCroppingShapeId] = useState<string | null>(null)
+
+  const visible = (shapes || []).filter(
+    (shape) => shape.color || shape.kind === 'image' || !isTemplateShape(shape)
+  )
   if (visible.length === 0) return null
 
   const aspect = theme.aspect || 16 / 9
   const back = visible.filter(isTemplateShape)
   const front = visible.filter((shape) => !isTemplateShape(shape))
-  const selectedBack = editable ? back.find((shape) => shape.id === selectedShapeId) : undefined
-
-  const slideRect = (e: ReactPointerEvent) => (e.currentTarget as HTMLElement).closest('.slide')?.getBoundingClientRect()
-
-  const startDrag = (e: ReactPointerEvent, shape: SlideShape, immediate: boolean) => {
-    if (!editable) return
-    e.stopPropagation()
-
-    const container = slideRect(e)
-    if (!container) return
-
-    const startX = e.clientX
-    const startY = e.clientY
-    const origX = shape.x
-    const origY = shape.y
-    let hasMoved = immediate
-
-    const onPointerMove = (moveEv: PointerEvent) => {
-      if (!hasMoved) {
-        const dist = Math.hypot(moveEv.clientX - startX, moveEv.clientY - startY)
-        if (dist < 8) return // Порог 8px исключает случайные сдвиги при клике
-        hasMoved = true
-      }
-
-      const dx = (moveEv.clientX - startX) / container.width
-      const dy = (moveEv.clientY - startY) / container.height
-
-      const newX = Math.max(0, Math.min(0.95, origX + dx))
-      const newY = Math.max(0, Math.min(0.95, origY + dy))
-
-      onUpdateShape?.(shape.id, {
-        x: Math.round(newX * 1000) / 1000,
-        y: Math.round(newY * 1000) / 1000,
-      })
-    }
-
-    const onPointerUp = () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', onPointerUp)
-    }
-
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
-  }
+  const selectedShape = editable ? visible.find((shape) => shape.id === selectedShapeId) : undefined
 
   const handleShapePointerDown = (e: ReactPointerEvent, shape: SlideShape) => {
     if (!editable) return
     e.stopPropagation()
     onSelectShape?.(shape.id)
-
-    // Если фигура не была выделена, нажатие ТОЛЬКО выделяет её.
-    if (selectedShapeId !== shape.id) {
-      return
-    }
-
-    // Если фигура уже выделена, позволяем перетаскивать только при явном движении (порог 8px)
-    startDrag(e, shape, false)
   }
 
-  const handleResizePointerDown = (e: ReactPointerEvent, shape: SlideShape) => {
-    if (!editable) return
-    e.stopPropagation()
-    const container = slideRect(e)
-    if (!container) return
-
-    const startX = e.clientX
-    const startY = e.clientY
-    const startW = shape.width
-    const startH = shape.height
-
-    const onPointerMove = (moveEv: PointerEvent) => {
-      const dw = (moveEv.clientX - startX) / container.width
-      const dh = (moveEv.clientY - startY) / container.height
-
-      const newW = Math.max(0.02, Math.min(1 - shape.x, startW + dw))
-      const newH = Math.max(0.01, Math.min(1 - shape.y, startH + dh))
-
-      onUpdateShape?.(shape.id, {
-        width: Math.round(newW * 1000) / 1000,
-        height: Math.round(newH * 1000) / 1000,
-      })
-    }
-
-    const onPointerUp = () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', onPointerUp)
-    }
-
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', onPointerUp)
-  }
-
-  const handles = (shape: SlideShape) => (
-    <>
-      <span
-        className="slide-shape-move-handle"
-        title="Переместить фигуру"
-        onPointerDown={(e) => startDrag(e, shape, true)}
-      >
-        <Move size={11} />
-      </span>
-      <button
-        type="button"
-        className="slide-shape-delete-btn"
-        title="Удалить фигуру"
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation()
-          onDeleteShape?.(shape.id)
-        }}
-      >
-        <Trash2 size={12} />
-      </button>
-      {shape.kind !== 'line' && (
-        <span
-          className="slide-shape-resize-handle"
-          title="Изменить размер"
-          onPointerDown={(e) => handleResizePointerDown(e, shape)}
-        />
-      )}
-    </>
-  )
-
-  const renderShape = (shape: SlideShape) => {
+  const renderShapeContent = (shape: SlideShape) => {
     const isSelected = editable && selectedShapeId === shape.id
     const isLine = shape.kind === 'line'
+    const isImage = shape.kind === 'image'
     const template = isTemplateShape(shape)
+
+    const crop = shape.crop || [0, 0, 0, 0]
+    const hasCrop = crop.some((v) => v > 0)
+    const clipStyle = hasCrop
+      ? `inset(${crop[0] * 100}% ${crop[1] * 100}% ${crop[2] * 100}% ${crop[3] * 100}%)`
+      : undefined
 
     const style: CSSProperties = {
       ...boxStyle(shape),
-      backgroundColor: shape.color || theme.accent,
+      backgroundColor: isImage ? 'transparent' : (shape.color || theme.accent),
       opacity: shape.opacity ?? 1,
       borderRadius: cornerRadius(shape, aspect),
       border: shape.border ? '2px solid var(--slide-text)' : undefined,
+      clipPath: clipStyle,
     }
 
     return (
@@ -209,10 +98,18 @@ export function SlideShapesLayer({
           template && 'slide-shape-item--template',
           isSelected && 'is-selected'
         )}
+        data-shape-id={shape.id}
         style={style}
         onPointerDown={(e) => handleShapePointerDown(e, shape)}
       >
-        {!isLine && (
+        {isImage && shape.image_url ? (
+          <img
+            src={shape.image_url}
+            alt=""
+            draggable={false}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : !isLine && (
           <span
             className="slide-shape-text"
             contentEditable={editable && isSelected}
@@ -230,8 +127,6 @@ export function SlideShapesLayer({
             {shape.text || (isSelected && !shape.text ? '' : null)}
           </span>
         )}
-        {/* Ручки фигуры шаблона — в верхнем слое (см. ниже), иначе их закроет текст */}
-        {isSelected && !template && handles(shape)}
       </div>
     )
   }
@@ -240,21 +135,47 @@ export function SlideShapesLayer({
     <>
       {back.length > 0 && (
         <div className={clsx('slide-shapes-layer', 'slide-shapes-layer--back', editable && 'is-editable')}>
-          {back.map(renderShape)}
+          {back.map(renderShapeContent)}
         </div>
       )}
-      {(front.length > 0 || selectedBack) && (
+
+      {front.length > 0 && (
         <div className={clsx('slide-shapes-layer', 'slide-shapes-layer--front', editable && 'is-editable')}>
-          {front.map(renderShape)}
-          {selectedBack && (
-            <div
-              className="slide-shape-selection"
-              style={{ ...boxStyle(selectedBack), borderRadius: cornerRadius(selectedBack, aspect) }}
-            >
-              {handles(selectedBack)}
-            </div>
-          )}
+          {front.map(renderShapeContent)}
         </div>
+      )}
+
+      {/* Рамка выделения и трансформации (TransformFrame) */}
+      {editable && selectedShape && (
+        <TransformFrame
+          box={[selectedShape.x, selectedShape.y, selectedShape.width, selectedShape.height]}
+          previewTarget={`shape:${selectedShape.id}`}
+          isImage={selectedShape.kind === 'image'}
+          canCrop={selectedShape.kind === 'image'}
+          crop={selectedShape.crop}
+          isCropping={croppingShapeId === selectedShape.id}
+          label={selectedShape.kind === 'image' ? 'Изображение' : isTemplateShape(selectedShape) ? 'Фигура шаблона' : 'Фигура'}
+          onUpdateBox={(newBox) => {
+            onUpdateShape?.(selectedShape.id, {
+              x: newBox[0],
+              y: newBox[1],
+              width: newBox[2],
+              height: newBox[3],
+            })
+          }}
+          onUpdateCrop={(newCrop) => {
+            onUpdateShape?.(selectedShape.id, { crop: newCrop })
+          }}
+          onToggleCrop={() => {
+            setCroppingShapeId((prev) => (prev === selectedShape.id ? null : selectedShape.id))
+          }}
+          onCloseCrop={() => setCroppingShapeId(null)}
+          onDelete={
+            !isTemplateShape(selectedShape)
+              ? () => onDeleteShape?.(selectedShape.id)
+              : undefined
+          }
+        />
       )}
     </>
   )

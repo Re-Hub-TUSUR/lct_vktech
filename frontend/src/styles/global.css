@@ -946,6 +946,7 @@ select {
 .file-drop > div {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 .file-drop strong {
   color: var(--color-text);
@@ -1719,6 +1720,10 @@ a:hover > .template-card,
   justify-content: space-between;
   gap: var(--space-2);
 }
+.template-card[role='radio']:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
 .template-card__check {
   color: var(--color-primary);
 }
@@ -1742,6 +1747,28 @@ a:hover > .template-card,
   height: 16px;
   border-radius: 50%;
   border: 1px solid rgba(0, 0, 0, 0.12);
+}
+.templates-empty {
+  max-width: 720px;
+}
+.templates-empty .file-drop {
+  width: min(420px, 100%);
+}
+
+.template-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+.template-status--processing {
+  color: var(--color-info);
+  background: var(--color-info-soft);
+}
+.template-status .spin {
+  flex: 0 0 auto;
 }
 
 /* ===== Страница шаблона ===== */
@@ -1837,6 +1864,18 @@ a:hover > .template-card,
 .roles dd {
   margin: 0;
   font-weight: 600;
+}
+@media (max-width: 560px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .template-hero__info .row .btn {
+    flex: 1 1 100%;
+  }
+  .roles div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
 
 /* ===== Шапка презентации и шаги ===== */
@@ -2371,6 +2410,23 @@ a:hover > .template-card,
   background: var(--color-primary-soft);
   color: var(--color-primary);
 }
+.slide-edit-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.slide-edit-history .icon-btn-tiny {
+  width: 28px;
+  height: 28px;
+}
+.slide-edit-history .icon-btn-tiny:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
 .slide-edit-topbar__item {
   display: inline-flex;
   align-items: center;
@@ -2672,6 +2728,12 @@ a:hover > .template-card,
   transition: grid-template-columns 0.2s ease;
 }
 
+/* У редактора должна быть собственная минимальная ширина холста, иначе
+   toolbar и панели начинают сжиматься и вызывать горизонтальный overflow. */
+.audit-layout > * {
+  min-width: 0;
+}
+
 /* Фокус-режим (хоткей Z): скрываем список слайдов и боковую панель. Сетка у нас с явными grid-column/grid-row,
    поэтому в фокусе всё сводим в одну колонку. */
 .audit-layout.is-zen {
@@ -2786,6 +2848,62 @@ a:hover > .template-card,
   }
 }
 
+@media (max-width: 760px) {
+  .page {
+    padding-inline: 12px;
+  }
+
+  .topbar {
+    gap: 10px;
+    padding-inline: 12px;
+  }
+
+  .topbar__nav {
+    display: none;
+  }
+
+  .topbar__actions {
+    gap: 6px;
+  }
+
+  .user-chip {
+    max-width: 34px;
+    padding-right: 4px;
+  }
+
+  .user-chip__name {
+    display: none;
+  }
+
+  .audit-layout {
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .audit-slides {
+    max-height: none;
+  }
+
+  .slide-edit-topbar {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .slide-edit-topbar__left,
+  .slide-edit-topbar__right {
+    gap: 6px;
+  }
+
+  .slide-edit-topbar__label,
+  .slide-edit-topbar__badge {
+    font-size: 12px;
+  }
+
+  .audit-panel {
+    grid-column: 1 / -1;
+  }
+}
+
 .audit-slides {
   display: flex;
   flex-direction: column;
@@ -2795,6 +2913,13 @@ a:hover > .template-card,
   padding-right: 4px;
   position: sticky;
   top: calc(var(--topbar-height) + var(--space-4));
+}
+
+@media (max-width: 760px) {
+  .audit-slides {
+    max-height: none;
+    position: static;
+  }
 }
 
 .audit-slide {
@@ -4031,6 +4156,10 @@ a:hover > .template-card,
   position: relative;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -4902,4 +5031,3 @@ a:hover > .template-card,
 .text-btn:hover {
   text-decoration: underline;
 }
-

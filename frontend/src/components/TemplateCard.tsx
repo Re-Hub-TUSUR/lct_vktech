@@ -35,7 +35,11 @@ function coverSlide(template: TemplateSummary): Slide {
 export function TemplatePreview({ template }: { template: TemplateSummary }) {
   if (template.status === 'processing' || !template.theme) {
     return (
-      <div className="template-preview template-preview--pending">
+      <div
+        className="template-preview template-preview--pending"
+        role={template.status === 'failed' ? 'alert' : 'status'}
+        aria-live={template.status === 'failed' ? undefined : 'polite'}
+      >
         {template.status === 'failed' ? <CircleAlert /> : <Spinner />}
         <span>{template.status === 'failed' ? 'Не удалось разобрать' : 'Разбираем шаблон…'}</span>
       </div>
@@ -77,7 +81,7 @@ export function TemplateCard({
             </small>
           </>
         ) : (
-          <small>{template.status === 'failed' ? template.error : 'Декомпозиция в очереди воркера'}</small>
+          <small>{template.status === 'failed' ? template.error || 'Не удалось разобрать шаблон' : 'Декомпозиция в очереди воркера'}</small>
         )}
         {footer}
       </div>
@@ -92,8 +96,13 @@ export function TemplateCard({
       aria-disabled={!ready}
       tabIndex={ready ? 0 : -1}
       className={clsx('template-card', 'is-selectable', selected && 'is-selected', !ready && 'is-disabled')}
-      onClick={() => ready && onSelect()}
-      onKeyDown={(event) => ready && (event.key === 'Enter' || event.key === ' ') && onSelect()}
+      onClick={() => ready && onSelect?.()}
+      onKeyDown={(event) => {
+        if (!ready || (event.key !== 'Enter' && event.key !== ' ')) return
+        event.preventDefault()
+        onSelect?.()
+      }}
+      aria-label={`Выбрать шаблон «${template.name}»`}
     >
       {content}
     </div>

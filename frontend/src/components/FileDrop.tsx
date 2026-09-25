@@ -6,6 +6,7 @@ export function FileDrop({
   accept,
   multiple = false,
   onFiles,
+  onRejected,
   title,
   hint,
   compact = false,
@@ -13,6 +14,8 @@ export function FileDrop({
   accept: string
   multiple?: boolean
   onFiles: (files: File[]) => void
+  /** Called when the user selects or drops files that do not match `accept`. */
+  onRejected?: (files: File[]) => void
   title: ReactNode
   hint?: ReactNode
   compact?: boolean
@@ -44,10 +47,13 @@ export function FileDrop({
   }
 
   const take = (list: FileList | null) => {
-    let files = Array.from(list ?? [])
+    const picked = Array.from(list ?? [])
+    let files = picked
     if (accept) {
       files = files.filter(isAccepted)
     }
+    const rejected = accept ? picked.filter((file) => !isAccepted(file)) : []
+    if (rejected.length) onRejected?.(rejected)
     if (files.length) onFiles(multiple ? files : files.slice(0, 1))
   }
 
@@ -67,7 +73,11 @@ export function FileDrop({
       }}
       role="button"
       tabIndex={0}
-      onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && input.current?.click()}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        input.current?.click()
+      }}
     >
       <Upload size={compact ? 18 : 24} />
       <div>
@@ -80,6 +90,7 @@ export function FileDrop({
         accept={accept}
         multiple={multiple}
         hidden
+        onClick={(event) => event.stopPropagation()}
         onChange={(event) => {
           take(event.target.files)
           event.target.value = ''

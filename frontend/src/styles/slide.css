@@ -16,6 +16,7 @@
 .slide__inner {
   position: absolute;
   inset: 0;
+  box-sizing: border-box;
   padding: 5cqw 6cqw;
   display: flex;
   flex-direction: column;
@@ -177,6 +178,9 @@
   grid-template-columns: 1fr 1fr;
   gap: 4cqw;
 }
+.slide__columns > * {
+  min-width: 0;
+}
 .slide__columns h3 {
   font-family: var(--slide-heading-font);
   font-size: 2.1cqw;
@@ -187,10 +191,12 @@
 /* Карточки */
 .slide__cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18cqw, 1fr));
+  /* Количество слотов задаётся моделью слайда, а не временной шириной текста. */
+  grid-template-columns: repeat(var(--slide-card-count, 3), minmax(0, 1fr));
   gap: 2cqw;
 }
 .slide__card {
+  min-width: 0;
   background: var(--slide-surface);
   border-radius: 1.2cqw;
   padding: 2cqw;
@@ -199,12 +205,14 @@
   gap: 0.8cqw;
 }
 .slide__card h3 {
+  min-width: 0;
   font-family: var(--slide-heading-font);
   font-size: 1.9cqw;
   color: var(--slide-accent);
   margin: 0;
 }
 .slide__card p {
+  min-width: 0;
   margin: 0;
   font-size: 1.5cqw;
   line-height: 1.35;
@@ -276,6 +284,7 @@
   margin-top: 1cqw;
 }
 .slide__kpi {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1cqw;
@@ -305,6 +314,7 @@
 }
 .slide__timeline > div {
   position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.5cqw;
@@ -355,7 +365,12 @@
   grid-template-columns: 1.1fr 1fr;
   gap: 4cqw;
 }
+.slide__image-text > * {
+  min-width: 0;
+  min-height: 0;
+}
 .slide__image {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -378,6 +393,10 @@
   height: 100%;
   object-fit: cover;
   border-radius: inherit;
+}
+.slide__image--filled {
+  /* Заполненная картинка и её рамка должны иметь один layout-box. */
+  padding: 0;
 }
 
 /* Подсветка проблем аудита */
@@ -409,6 +428,9 @@
   user-select: text;
 }
 .slide--editable [contenteditable="true"] {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   outline: 1px dashed transparent;
   outline-offset: 2px;
   border-radius: 4px;
@@ -453,9 +475,75 @@
 .slide--editable .slide__frame {
   pointer-events: none;
 }
+.slide--editable {
+  /* Ручки и плавающая панель выделения выходят за границы холста. */
+  overflow: visible;
+}
+.slide--reference-editor .slide__edit-reference {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+  pointer-events: none;
+}
+/* Raster-render остаётся визуальной основой редактора. DOM-слой выше него
+   используется как hit-area, а выбранная ветка возвращается поверх картинки. */
+.slide--reference-editor .slide__inner,
+.slide--reference-editor .slide__frame,
+.slide--reference-editor .slide__custom-block,
+.slide--reference-editor .slide-shapes-layer {
+  opacity: 1;
+}
+.slide--reference-editor .slide__number {
+  opacity: 0;
+}
+.slide--reference-editor .slide__bg {
+  opacity: 0;
+}
+.slide--reference-editor [data-element-id] {
+  opacity: 0;
+  pointer-events: auto;
+}
+.slide--reference-editor [data-element-id][data-editor-visible="true"],
+.slide--reference-editor [data-editor-selected="true"] {
+  opacity: 1;
+}
+.slide--reference-editor [data-editor-selected="true"] [data-element-id] {
+  opacity: 1;
+}
+.slide--reference-editor .slide-shape-item {
+  opacity: 0;
+}
+.slide--reference-editor .slide-shape-item.is-selected {
+  opacity: 1;
+}
+
+/* После первого подтверждённого изменения raster больше не должен оставаться
+   под редактируемым DOM: иначе старый текст дублируется под новым. Геометрия
+   DOM уже зафиксирована координатами render.targets в SlideView. */
+.slide--reference-editor-dom .slide__edit-reference {
+  display: none;
+}
+.slide--reference-editor-dom .slide__bg,
+.slide--reference-editor-dom .slide__number,
+.slide--reference-editor-dom [data-element-id],
+.slide--reference-editor-dom .slide-shape-item,
+.slide--reference-editor-dom .slide-shapes-layer {
+  opacity: 1;
+}
+.slide--reference-editor-dom .slide__number {
+  color: var(--slide-text);
+}
 .slide--editable [contenteditable='true'],
 .slide--editable .slide__image,
 .slide--editable .slide__chart-box {
+  pointer-events: auto;
+}
+.slide--reference-editor .slide__frame[data-element-id],
+.slide--reference-editor .slide__custom-block[data-element-id] {
   pointer-events: auto;
 }
 .slide-shape-item {
@@ -474,9 +562,10 @@
 }
 .slide-shape-item.is-selected {
   cursor: default;
-  outline: 2px dashed #0077ff;
-  outline-offset: 3px;
-  box-shadow: 0 0 0 4px rgba(0, 119, 255, 0.25);
+  /* Геометрию и подсветку рисует единый TransformFrame; второй outline
+     создавал ощущение, что размер фигуры больше самого объекта. */
+  outline: none;
+  box-shadow: none;
 }
 /* Рамка и ручки выделенной фигуры шаблона: сверху, но сама рамка клики не перехватывает. */
 .slide-shape-selection {
@@ -752,6 +841,65 @@
 }
 
 /* Карточки шаблонов в модальном окне */
+.slide-design-modal {
+  width: min(860px, 100%);
+  max-height: 88vh;
+}
+
+.slide-design-modal .modal__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 20px 16px;
+}
+
+.slide-design-modal__content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.slide-design-modal__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.slide-design-modal__title-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.slide-design-modal__title-copy > span {
+  font: inherit;
+}
+
+.slide-design-modal__title-copy small {
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.slide-design-modal .modal__header {
+  flex: none;
+}
+
+.slide-design-modal .modal__header h2 {
+  min-width: 0;
+}
+
+.slide-design-modal__content > .row:first-child,
+.slide-design-modal__content > .row:last-child {
+  flex: none;
+}
+
 .slide-design-card {
   display: flex;
   flex-direction: column;
@@ -762,6 +910,10 @@
   cursor: pointer;
   transition: all 0.15s ease;
   gap: 8px;
+  width: 100%;
+  color: var(--color-text);
+  text-align: left;
+  font: inherit;
 }
 
 .slide-design-card:hover {
@@ -779,6 +931,11 @@
   border-color: #0077ff;
   box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.2);
   background: rgba(0, 119, 255, 0.02);
+}
+
+.slide-design-card:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .slide-design-card__preview {
@@ -854,6 +1011,8 @@
 
 .slide-design-modal__gallery {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   max-height: 56vh;
   padding-right: 6px;
@@ -862,11 +1021,13 @@
 .slide-design-modal__sidebar {
   width: 310px;
   flex-shrink: 0;
+  min-height: 0;
   border-left: 1px solid var(--color-border, #e2e8f0);
   padding-left: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
 }
 
 .slide-design-detail-preview {
@@ -877,6 +1038,35 @@
   border: 1px solid var(--color-border, #cbd5e1);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   background: #0b0c0f;
+}
+
+@media (max-width: 760px) {
+  .slide-design-modal .modal__header {
+    padding-inline: 16px;
+  }
+
+  .slide-design-modal .modal__body {
+    padding-inline: 12px;
+  }
+
+  .slide-design-modal__layout {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .slide-design-modal__gallery {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .slide-design-modal__sidebar {
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--color-border, #e2e8f0);
+    padding: 16px 0 0;
+    margin-top: 16px;
+  }
 }
 
 /* Миниатюры шаблонов в панели ассистента */
@@ -890,6 +1080,281 @@
   background: #f1f5f9;
 }
 
+/* --- Интерактивная рамка трансформации (Canva/Figma style) --- */
+.transform-frame {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 50;
+  pointer-events: none;
+  will-change: left, top, width, height;
+}
 
+.transform-frame__content {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  /* Рамка не должна перекрывать contenteditable-элемент под ней. */
+  pointer-events: none;
+}
 
+.transform-frame__border {
+  position: absolute;
+  inset: -1px;
+  border: 1.5px solid #1684ff;
+  border-radius: 6px;
+  pointer-events: auto;
+  cursor: move;
+  background: transparent;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7), 0 2px 8px rgba(0, 119, 255, 0.22);
+  touch-action: none;
+}
 
+/* Для текстовых и структурных блоков перемещение выполняется верхней ручкой,
+   а сам текст остаётся доступен для обычного клика и редактирования. */
+.transform-frame--structural .transform-frame__border {
+  pointer-events: none;
+}
+
+.transform-frame.is-dragging .transform-frame__border {
+  border-style: dashed;
+}
+
+.transform-frame__move-handle {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #0077ff;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: move;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  z-index: 60;
+  touch-action: none;
+  transition: transform 0.15s ease;
+}
+
+.transform-frame__move-handle:hover {
+  transform: translateX(-50%) scale(1.15);
+  background: #0060d4;
+}
+
+/* 8 маркеров изменения размера */
+.transform-frame__handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #ffffff;
+  border: 2px solid #0077ff;
+  border-radius: 2px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  z-index: 55;
+  touch-action: none;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.transform-frame__handle:hover {
+  background: #0077ff;
+  transform: scale(1.25);
+}
+
+.handle--nw { top: -5px; left: -5px; }
+.handle--ne { top: -5px; right: -5px; }
+.handle--se { bottom: -5px; right: -5px; }
+.handle--sw { bottom: -5px; left: -5px; }
+.handle--n { top: -4px; left: calc(50% - 4px); }
+.handle--s { bottom: -4px; left: calc(50% - 4px); }
+.handle--w { top: calc(50% - 4px); left: -4px; }
+.handle--e { top: calc(50% - 4px); right: -4px; }
+
+/* Плавающая панель действий над рамкой */
+.transform-frame__toolbar {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(6px);
+  color: #ffffff;
+  padding: 4px 6px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  z-index: 65;
+  white-space: nowrap;
+}
+
+.transform-frame__badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  margin-right: 2px;
+}
+
+.transform-frame__tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.transform-frame__tool-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.transform-frame__tool-btn--danger:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+}
+
+/* Режим кадрирования (Crop Mode) */
+.transform-frame.is-cropping {
+  z-index: 70;
+}
+
+.transform-frame__crop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.transform-frame__crop-window {
+  position: absolute;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  z-index: 72;
+}
+
+.transform-frame__crop-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.3) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.3) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+  pointer-events: none;
+}
+
+.transform-frame__crop-handle {
+  position: absolute;
+  background: #ffffff;
+  border: 2px solid #0f172a;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  z-index: 75;
+}
+
+/* Угловые маркеры кадрирования */
+.crop-handle--nw { top: -4px; left: -4px; width: 14px; height: 14px; border-right: none; border-bottom: none; }
+.crop-handle--ne { top: -4px; right: -4px; width: 14px; height: 14px; border-left: none; border-bottom: none; }
+.crop-handle--se { bottom: -4px; right: -4px; width: 14px; height: 14px; border-left: none; border-top: none; }
+.crop-handle--sw { bottom: -4px; left: -4px; width: 14px; height: 14px; border-right: none; border-top: none; }
+
+/* Боковые плашки кадрирования */
+.crop-handle--n { top: -3px; left: calc(50% - 12px); width: 24px; height: 6px; border-radius: 3px; }
+.crop-handle--s { bottom: -3px; left: calc(50% - 12px); width: 24px; height: 6px; border-radius: 3px; }
+.crop-handle--w { left: -3px; top: calc(50% - 12px); width: 6px; height: 24px; border-radius: 3px; }
+.crop-handle--e { right: -3px; top: calc(50% - 12px); width: 6px; height: 24px; border-radius: 3px; }
+
+.transform-frame__crop-toolbar {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(8px);
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 80;
+  white-space: nowrap;
+}
+
+.transform-frame__crop-title {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.transform-frame__btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border: none;
+  border-radius: 12px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.transform-frame__btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.transform-frame__btn--primary {
+  background: #0077ff;
+  font-weight: 600;
+}
+
+.transform-frame__btn--primary:hover {
+  background: #0060d4;
+}
+
+/* Изображение с поддержкой кадрирования */
+.cropped-image-container {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cropped-image-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Абсолютно позиционированные структурные блоки */
+.slide__custom-block {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  z-index: 10;
+}
+.slide__custom-block > * {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
