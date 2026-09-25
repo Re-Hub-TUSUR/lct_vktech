@@ -16,6 +16,7 @@ import {
   LayoutTemplate,
   Maximize2,
   Minus,
+  Moon,
   Palette,
   Play,
   Plus,
@@ -23,6 +24,7 @@ import {
   Save,
   Shapes,
   Sparkles,
+  Sun,
   Type,
   Undo2,
   Upload,
@@ -33,6 +35,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api } from '../api/client'
+import { useTheme } from '../lib/theme'
 import { queryKeys, usePresentation, useVariant } from '../api/queries'
 import type {
   ChartData,
@@ -104,6 +107,7 @@ function GoogleSlidesEditor({
   const queryClient = useQueryClient()
   const notify = useToast()
   const { variant, theme } = detail
+  const { theme: uiTheme, toggleTheme: toggleUiTheme } = useTheme()
 
   // Локальный стейт слайдов презентации
   const [slides, setSlides] = useState<Slide[]>(() => variant.slides || [])
@@ -810,6 +814,16 @@ function GoogleSlidesEditor({
           >
             <Play size={14} fill="currentColor" />
             <span>Смотреть</span>
+          </button>
+
+          <button
+            type="button"
+            className="gslides-header-btn gslides-header-btn--icon"
+            onClick={toggleUiTheme}
+            title={uiTheme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+            aria-label={uiTheme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          >
+            {uiTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
 
           <button

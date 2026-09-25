@@ -11,6 +11,9 @@
   --color-bg: #f3f5f8;
   --color-surface: #ffffff;
   --color-surface-muted: #f7f8fa;
+  --color-surface-hover: #eef1f5;
+  --color-surface-strong: #e9ecf1;
+  --color-canvas: #f8fafc;
   --color-border: #e3e7ed;
   --color-border-strong: #cfd6df;
   --color-text: #17191c;
@@ -63,6 +66,9 @@
   --color-bg: #0f1217;
   --color-surface: #191d24;
   --color-surface-muted: #222732;
+  --color-surface-hover: #262c37;
+  --color-surface-strong: #2c323f;
+  --color-canvas: #14171d;
   --color-border: #2c323f;
   --color-border-strong: #3d4657;
   --color-text: #f0f3f8;
