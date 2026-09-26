@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, get_project_for_user
@@ -82,7 +83,7 @@ async def create_project(payload: ProjectCreate, user: CurrentUser, db: DbSessio
 
 @router.patch("/{project_id}", response_model=ProjectOut)
 async def update_project(project_id: uuid.UUID, payload: ProjectUpdate, user: CurrentUser, db: DbSession) -> ProjectOut:
-    project = await get_project_for_user(db, project_id, user, editable=True)
+    project = await get_project_for_user(db, project_id, user, manage=True)
     for field, value in payload.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(project, field, value.strip() if isinstance(value, str) else value)
@@ -141,9 +142,11 @@ async def list_project_members(project_id: uuid.UUID, user: CurrentUser, db: DbS
 async def update_project_member(
     project_id: uuid.UUID, member_user_id: uuid.UUID, payload: ProjectMemberUpdate, user: CurrentUser, db: DbSession
 ) -> ProjectMemberOut:
-    project = await get_project_for_user(db, project_id, user, owner_only=True)
+    project = await get_project_for_user(db, project_id, user, manage=True)
     if member_user_id == project.owner_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя изменить роль владельца")
+    if member_user_id == user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя изменить роль самому себе")
     row = (
         await db.execute(
             select(ProjectMember, User)
@@ -161,9 +164,11 @@ async def update_project_member(
 
 @router.delete("/{project_id}/members/{member_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_project_member(project_id: uuid.UUID, member_user_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
-    project = await get_project_for_user(db, project_id, user, owner_only=True)
+    project = await get_project_for_user(db, project_id, user, manage=True)
     if member_user_id == project.owner_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить владельца")
+    if member_user_id == user.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить самого себя")
     member = await db.scalar(
         select(ProjectMember).where(ProjectMember.project_id == project.id, ProjectMember.user_id == member_user_id)
     )
@@ -175,23 +180,47 @@ async def remove_project_member(project_id: uuid.UUID, member_user_id: uuid.UUID
 
 @router.get("/{project_id}/share-links", response_model=list[ProjectShareLinkOut])
 async def list_project_share_links(project_id: uuid.UUID, user: CurrentUser, db: DbSession) -> list[ProjectShareLinkOut]:
-    project = await get_project_for_user(db, project_id, user, owner_only=True)
+    """Активные ссылки: не больше одной на каждую роль (наблюдатель, редактор, совладелец)."""
+    project = await get_project_for_user(db, project_id, user, manage=True)
     links = list(
         await db.scalars(
-            select(ProjectShareLink).where(ProjectShareLink.project_id == project.id).order_by(ProjectShareLink.created_at.desc())
+            select(ProjectShareLink)
+            .where(ProjectShareLink.project_id == project.id, ProjectShareLink.is_active.is_(True))
+            .order_by(ProjectShareLink.created_at.desc())
         )
     )
     return [_link_out(link) for link in links]
+
+
+async def _active_link(db: DbSession, project_id: uuid.UUID, role: str) -> ProjectShareLink | None:
+    return await db.scalar(
+        select(ProjectShareLink).where(
+            ProjectShareLink.project_id == project_id,
+            ProjectShareLink.role == role,
+            ProjectShareLink.is_active.is_(True),
+        )
+    )
 
 
 @router.post("/{project_id}/share-links", response_model=ProjectShareLinkOut, status_code=status.HTTP_201_CREATED)
 async def create_project_share_link(
     project_id: uuid.UUID, payload: ProjectShareLinkCreate, user: CurrentUser, db: DbSession
 ) -> ProjectShareLinkOut:
-    project = await get_project_for_user(db, project_id, user, owner_only=True)
+    """Возвращает активную ссылку на роль; если её нет — создаёт. Дубликатов не бывает."""
+    project = await get_project_for_user(db, project_id, user, manage=True)
+    existing = await _active_link(db, project.id, payload.role)
+    if existing is not None:
+        return _link_out(existing)
     link = ProjectShareLink(project_id=project.id, created_by_id=user.id, token=secrets.token_urlsafe(24), role=payload.role)
     db.add(link)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing = await _active_link(db, project.id, payload.role)
+        if existing is None:
+            raise
+        return _link_out(existing)
     return _link_out(link)
 
 
@@ -199,13 +228,20 @@ async def create_project_share_link(
 async def update_project_share_link(
     project_id: uuid.UUID, share_link_id: uuid.UUID, payload: ProjectShareLinkUpdate, user: CurrentUser, db: DbSession
 ) -> ProjectShareLinkOut:
-    project = await get_project_for_user(db, project_id, user, owner_only=True)
+    project = await get_project_for_user(db, project_id, user, manage=True)
     link = await db.scalar(
         select(ProjectShareLink).where(ProjectShareLink.id == share_link_id, ProjectShareLink.project_id == project.id)
     )
     if link is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ссылка не найдена")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    next_role = changes.get("role", link.role)
+    next_active = changes.get("is_active", link.is_active)
+    if next_active:
+        clash = await _active_link(db, project.id, next_role)
+        if clash is not None and clash.id != link.id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Активная ссылка для этой роли уже есть")
+    for field, value in changes.items():
         setattr(link, field, value)
     await db.commit()
     return _link_out(link)

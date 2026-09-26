@@ -18,7 +18,7 @@ class ProjectSummary(BaseModel):
 Purpose = Literal["feature", "product", "project", "initiative"]
 PresentationStatus = Literal["draft", "generating", "ready", "failed"]
 VariantAxis = Literal["density", "visualization", "structure", "layouts"]
-PresentationAccessRole = Literal["owner", "editor", "viewer"]
+PresentationAccessRole = Literal["owner", "coowner", "editor", "viewer"]
 SLIDES_MIN, SLIDES_MAX, SLIDES_DEFAULT = 5, 20, 12
 
 

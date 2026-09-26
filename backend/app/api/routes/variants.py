@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.api.deps import Arq, CurrentUser, DbSession, OptionalUser, get_variant_for_user
+from app.api.roles import EDIT_ROLES
 from app.api.serializers import variant_out
 from app.core.config import settings
 from app.core.redis import publish_presentation_update, redis_client
@@ -32,7 +33,16 @@ from app.pipeline.visuals.visualizer import refine_variant
 from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
 from app.schemas.presentation import GenerationSettings
-from app.schemas.slide import ImageSpec, RegenerateSlideRequest, SlideUpdate
+from app.schemas.slide import (
+    BatchSlidesUpdate,
+    CreateSlideRequest,
+    ImageSpec,
+    RegenerateSlideRequest,
+    ReorderSlidesRequest,
+    Slide,
+    SlideUpdate,
+    new_slide_id,
+)
 from app.schemas.template import SlideTheme
 from app.services.audit import (
     audit_report,
@@ -65,7 +75,7 @@ async def _variant_payload(db, variant, presentation) -> VariantOut:
 async def get_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> VariantDetailResponse:
     variant, presentation = await get_variant_for_user(db, variant_id, user)
     # Превью отстало от слайдов (новая версия парсера и т. п.) — пересобираем в фоне.
-    if presentation.access_role in {"owner", "editor"} and await schedule_render(db, arq, variant, presentation.template):
+    if presentation.access_role in EDIT_ROLES and await schedule_render(db, arq, variant, presentation.template):
         await db.commit()
     return VariantDetailResponse(
         theme=SlideTheme(**template_theme(presentation.template)),
@@ -260,7 +270,8 @@ async def update_slide(
         if val is not None or field in (
             "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
             "element_fonts", "element_scales", "element_boxes", "element_crops",
-            "block_density", "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
+            "block_density", "background_color", "text_color", "accent_color", "element_colors",
+            "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
         ):
             setattr(slide, field, val)
 
@@ -299,6 +310,180 @@ async def upload_variant_image(
 
     image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
     return {"url": image_url, "filename": filename}
+
+
+@router.put("/{variant_id}/slides", response_model=ResolveResponse)
+async def update_all_slides(
+    variant_id: uuid.UUID,
+    payload: BatchSlidesUpdate,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Пакетное сохранение полного списка слайдов презентации (из полноэкранного редактора)."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
+    template = presentation.template
+
+    if not payload.slides:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Презентация должна содержать хотя бы один слайд")
+
+    variant.slides = [s.model_dump(mode="json") for s in payload.slides]
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
+
+    return ResolveResponse(
+        applied=len(payload.slides),
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+
+
+@router.post("/{variant_id}/slides", response_model=ResolveResponse)
+async def create_slide(
+    variant_id: uuid.UUID,
+    payload: CreateSlideRequest,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Добавление нового слайда в презентацию."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
+    template = presentation.template
+    slides = load_slides(variant)
+
+    new_slide = Slide(
+        id=new_slide_id(),
+        kind=payload.kind,
+        title=payload.title,
+        subtitle=payload.subtitle,
+        bullets=["Ключевой тезис слайда", "Дополнительная деталь"] if payload.kind in ("bullets", "agenda") else [],
+        columns=[{"title": "Карточка 1", "bullets": ["Описание карточки"]}] if payload.kind == "cards" else [],
+    )
+
+    if payload.position is not None and 0 <= payload.position <= len(slides):
+        slides.insert(payload.position, new_slide)
+    else:
+        slides.append(new_slide)
+
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
+
+    return ResolveResponse(
+        applied=1,
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+
+
+@router.post("/{variant_id}/slides/{slide_id}/duplicate", response_model=ResolveResponse)
+async def duplicate_slide(
+    variant_id: uuid.UUID,
+    slide_id: str,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Дублирование существующего слайда."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
+    template = presentation.template
+    slides = load_slides(variant)
+    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
+    if target_idx is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
+
+    target = slides[target_idx]
+    duplicated_dict = target.model_dump(mode="json")
+    duplicated_dict["id"] = new_slide_id()
+    duplicated_dict["title"] = f"{target.title} (копия)" if target.title else "Копия слайда"
+    # Для фигур создаем новые id
+    if "shapes" in duplicated_dict and duplicated_dict["shapes"]:
+        for sh in duplicated_dict["shapes"]:
+            sh["id"] = new_slide_id()[:8]
+
+    duplicated_slide = Slide.model_validate(duplicated_dict)
+    slides.insert(target_idx + 1, duplicated_slide)
+
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
+
+    return ResolveResponse(
+        applied=1,
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+
+
+@router.delete("/{variant_id}/slides/{slide_id}", response_model=ResolveResponse)
+async def delete_slide(
+    variant_id: uuid.UUID,
+    slide_id: str,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Удаление слайда из презентации."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
+    template = presentation.template
+    slides = load_slides(variant)
+    if len(slides) <= 1:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить единственный слайд презентации")
+
+    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
+    if target_idx is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
+
+    slides.pop(target_idx)
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
+
+    return ResolveResponse(
+        applied=1,
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
+
+
+@router.put("/{variant_id}/slides/reorder", response_model=ResolveResponse)
+async def reorder_slides(
+    variant_id: uuid.UUID,
+    payload: ReorderSlidesRequest,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> ResolveResponse:
+    """Изменение порядка слайдов."""
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
+    template = presentation.template
+    slides = load_slides(variant)
+    by_id = {s.id: s for s in slides}
+
+    reordered: list[Slide] = []
+    for sid in payload.slide_ids:
+        if sid in by_id:
+            reordered.append(by_id.pop(sid))
+    # Добавляем оставшиеся, если были
+    reordered.extend(by_id.values())
+
+    if len(reordered) != len(slides):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный список идентификаторов слайдов")
+
+    variant.slides = [s.model_dump(mode="json") for s in reordered]
+    await schedule_render(db, arq, variant, template)
+    await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
+
+    return ResolveResponse(
+        applied=len(reordered),
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )
 
 
 @router.post("/{variant_id}/slides/{slide_id}/upload-image")

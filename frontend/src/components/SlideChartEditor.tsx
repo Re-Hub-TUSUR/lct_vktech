@@ -1,4 +1,4 @@
-import { BarChart3, Check, Palette, Plus, Sparkles, Trash2, X } from 'lucide-react'
+import { BarChart3, BarChartHorizontal, Check, Disc2, LineChart, Palette, PieChart, Plus, Sparkles, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 
@@ -9,6 +9,7 @@ interface SlideChartEditorProps {
   chart: ChartData
   onChange: (updatedChart: ChartData) => void
   onClose: () => void
+  onDelete?: () => void
 }
 
 const PALETTES = [
@@ -68,7 +69,7 @@ const PRESETS: Record<string, Partial<ChartData>> = {
   },
 }
 
-export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorProps) {
+export function SlideChartEditor({ chart, onChange, onClose, onDelete }: SlideChartEditorProps) {
   const [localChart, setLocalChart] = useState<ChartData>({
     type: chart.type || 'bar',
     caption: chart.caption || '',
@@ -190,7 +191,7 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
   // та закреплена поверх страницы — без портала оверлей оказался бы под верхней панелью.
   return createPortal(
     <div className="chart-editor-overlay" onClick={onClose}>
-      <div className="chart-editor-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 780 }}>
+      <div className="chart-editor-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 920 }}>
         <div className="chart-editor-header">
           <div className="row row--sm" style={{ alignItems: 'center' }}>
             <BarChart3 size={18} style={{ color: 'var(--color-primary)' }} />
@@ -201,58 +202,63 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </button>
         </div>
 
-        <div className="chart-editor-body" style={{ maxHeight: '78vh', overflowY: 'auto' }}>
+        <div className="chart-editor-body" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
           {/* Тип диаграммы */}
           <div className="form-group">
             <label className="text-sm" style={{ fontWeight: 600 }}>
               Тип диаграммы:
             </label>
-            <div className="row row--xs" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+            <div className="row row--xs" style={{ marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
               <Button
                 size="sm"
+                icon={<BarChart3 size={15} />}
                 variant={localChart.type === 'bar' ? 'primary' : 'secondary'}
                 onClick={() => handleTypeChange('bar')}
               >
-                📊 Столбчатая
+                Столбчатая
               </Button>
               <Button
                 size="sm"
+                icon={<BarChartHorizontal size={15} />}
                 variant={localChart.type === 'horizontal_bar' ? 'primary' : 'secondary'}
                 onClick={() => handleTypeChange('horizontal_bar')}
               >
-                📶 Горизонтальная
+                Горизонтальная
               </Button>
               <Button
                 size="sm"
+                icon={<LineChart size={15} />}
                 variant={localChart.type === 'line' ? 'primary' : 'secondary'}
                 onClick={() => handleTypeChange('line')}
               >
-                📈 Линейная
+                Линейная
               </Button>
               <Button
                 size="sm"
+                icon={<Disc2 size={15} />}
                 variant={localChart.type === 'donut' ? 'primary' : 'secondary'}
                 onClick={() => handleTypeChange('donut')}
               >
-                🍩 Кольцевая
+                Кольцевая
               </Button>
               <Button
                 size="sm"
+                icon={<PieChart size={15} />}
                 variant={localChart.type === 'pie' ? 'primary' : 'secondary'}
                 onClick={() => handleTypeChange('pie')}
               >
-                🥧 Круговая
+                Круговая
               </Button>
             </div>
           </div>
 
           {/* Быстрые шаблоны / пресеты */}
-          <div className="form-group" style={{ marginTop: 12 }}>
+          <div className="form-group" style={{ marginTop: 22 }}>
             <label className="text-sm" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
               <Sparkles size={14} style={{ color: 'var(--color-primary)' }} />
               Готовые бизнес-пресеты:
             </label>
-            <div className="row row--xs" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+            <div className="row row--xs" style={{ marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -285,12 +291,12 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </div>
 
           {/* Палитры оформления */}
-          <div className="form-group" style={{ marginTop: 12 }}>
+          <div className="form-group" style={{ marginTop: 22 }}>
             <label className="text-sm" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
               <Palette size={14} style={{ color: 'var(--color-primary)' }} />
               Цветовая гамма графиков:
             </label>
-            <div className="row row--xs" style={{ marginTop: 6, flexWrap: 'wrap', gap: 8 }}>
+            <div className="row row--xs" style={{ marginTop: 8, flexWrap: 'wrap', gap: 10 }}>
               {PALETTES.map((p) => {
                 const isSelected =
                   localChart.colors &&
@@ -306,7 +312,7 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
                       alignItems: 'center',
                       gap: 6,
                       border: isSelected ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                      padding: '4px 8px',
+                      padding: '6px 10px',
                     }}
                     onClick={() => handlePaletteSelect(p.colors)}
                     title={p.name}
@@ -334,7 +340,7 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </div>
 
           {/* Подпись, единицы и флаги */}
-          <div className="grid grid-2" style={{ gap: 12, marginTop: 12 }}>
+          <div className="grid grid-2" style={{ gap: 16, marginTop: 22 }}>
             <div className="form-group">
               <label className="text-sm" style={{ fontWeight: 600 }}>
                 Подпись диаграммы (caption):
@@ -360,7 +366,7 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </div>
 
           {/* Переключатели отображения */}
-          <div className="row row--md" style={{ marginTop: 12, alignItems: 'center', gap: 20 }}>
+          <div className="row row--md" style={{ marginTop: 20, alignItems: 'center', gap: 20 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
               <input
                 type="checkbox"
@@ -380,8 +386,8 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </div>
 
           {/* Таблица данных */}
-          <div style={{ marginTop: 16 }}>
-            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ marginTop: 24 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <span className="text-sm" style={{ fontWeight: 600 }}>
                 Таблица данных графика:
               </span>
@@ -467,7 +473,19 @@ export function SlideChartEditor({ chart, onChange, onClose }: SlideChartEditorP
           </div>
         </div>
 
-        <div className="chart-editor-footer" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+        <div className="chart-editor-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}>
+          {onDelete ? (
+            <Button
+              variant="danger"
+              icon={<Trash2 size={15} />}
+              onClick={() => {
+                onDelete()
+                onClose()
+              }}
+            >
+              Удалить диаграмму
+            </Button>
+          ) : <div />}
           <Button variant="primary" onClick={onClose}>
             Применить изменения
           </Button>

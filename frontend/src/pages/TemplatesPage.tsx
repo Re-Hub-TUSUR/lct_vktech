@@ -10,7 +10,7 @@ export function TemplatesPage() {
   const templates = useTemplates()
 
   return (
-    <div className="stack">
+    <div className="stack templates-page">
       <div className="page-header">
         <h1>Шаблоны</h1>
         <p>
@@ -32,7 +32,7 @@ export function TemplatesPage() {
           />
         </div>
       ) : (
-        <div className="grid grid-cards">
+        <div className="grid grid-templates">
           {templates.data.map((template) => (
             <Link key={template.id} to={`/templates/${template.id}`} className="plain-link">
               <TemplateCard template={template} />

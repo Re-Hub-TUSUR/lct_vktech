@@ -62,6 +62,7 @@ class SlideShape(BaseModel):
     border: bool | None = False
     font_family: str | None = None
     font_size: float | None = None
+    bold: bool | None = None
     image_url: str | None = None
     crop: list[float] | None = None  # [top, right, bottom, left] fractions (0..1)
 
@@ -140,6 +141,14 @@ class Slide(BaseModel):
     element_boxes: dict[str, list[float]] = Field(default_factory=dict)  # target -> [x, y, w, h] (0..1)
     element_crops: dict[str, list[float]] = Field(default_factory=dict)  # target -> [top, right, bottom, left] (0..1)
     block_density: Literal["compact", "normal", "spacious"] | None = None
+    background_color: str | None = None
+    text_color: str | None = None
+    text_background_color: str | None = None
+    accent_color: str | None = None
+    element_colors: dict[str, str] = Field(default_factory=dict)
+    element_backgrounds: dict[str, str] = Field(default_factory=dict)
+    is_bold: bool | None = None
+    element_bolds: dict[str, bool] = Field(default_factory=dict)
 
 
 class SlideUpdate(BaseModel):
@@ -163,10 +172,33 @@ class SlideUpdate(BaseModel):
     element_boxes: dict[str, list[float]] | None = None
     element_crops: dict[str, list[float]] | None = None
     block_density: Literal["compact", "normal", "spacious"] | None = None
+    background_color: str | None = None
+    text_color: str | None = None
+    text_background_color: str | None = None
+    accent_color: str | None = None
+    element_colors: dict[str, str] | None = None
+    element_backgrounds: dict[str, str] | None = None
+    is_bold: bool | None = None
+    element_bolds: dict[str, bool] | None = None
     image: ImageSpec | None = None
     layout_key: str | None = None
     layout_name: str | None = None
     pattern_id: str | None = None
+
+
+class BatchSlidesUpdate(BaseModel):
+    slides: list[Slide]
+
+
+class CreateSlideRequest(BaseModel):
+    kind: SlideKind = "bullets"
+    title: str = "Новый слайд"
+    subtitle: str | None = None
+    position: int | None = None
+
+
+class ReorderSlidesRequest(BaseModel):
+    slide_ids: list[str]
 
 
 def slide_key(slide: Slide, salt: str = "") -> str:
@@ -179,4 +211,5 @@ def slide_key(slide: Slide, salt: str = "") -> str:
 class RegenerateSlideRequest(BaseModel):
     instruction: str | None = None
     style: str | None = None
+
 

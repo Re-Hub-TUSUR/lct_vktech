@@ -11,6 +11,9 @@
   --color-bg: #f3f5f8;
   --color-surface: #ffffff;
   --color-surface-muted: #f7f8fa;
+  --color-surface-hover: #eef1f5;
+  --color-surface-strong: #e9ecf1;
+  --color-canvas: #f8fafc;
   --color-border: #e3e7ed;
   --color-border-strong: #cfd6df;
   --color-text: #17191c;
@@ -63,11 +66,14 @@
   --color-bg: #0f1217;
   --color-surface: #191d24;
   --color-surface-muted: #222732;
+  --color-surface-hover: #262c37;
+  --color-surface-strong: #2c323f;
+  --color-canvas: #14171d;
   --color-border: #2c323f;
   --color-border-strong: #3d4657;
   --color-text: #f0f3f8;
-  --color-text-muted: #9aa2ae;
-  --color-text-subtle: #767f8d;
+  --color-text-muted: #aab3c2;
+  --color-text-subtle: #8792a2;
   --color-topbar-bg: rgba(25, 29, 36, 0.92);
   --color-hero-bg: linear-gradient(135deg, #191d24 0%, #151a24 100%);
 

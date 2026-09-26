@@ -62,7 +62,7 @@ class ProjectOut(BaseModel):
 
 class ProjectMemberOut(BaseModel):
     user: PresentationUserOut
-    role: Literal["owner", "viewer", "editor"]
+    role: ProjectAccessRole
     created_at: datetime | None = None
 
 

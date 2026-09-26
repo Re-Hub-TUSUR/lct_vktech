@@ -1,11 +1,12 @@
 import clsx from 'clsx'
-import { Check, Share2 } from 'lucide-react'
+import { Check, Share2, Users } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 
 import type { Presentation } from '../api/types'
 import { usePresentationRealtime } from '../api/queries'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
+import { canManageAccess, ROLE_LABEL, ROLE_TONE } from '../lib/roles'
 import { Badge, Button } from './ui'
 import { ShareDialog } from './ShareDialog'
 
@@ -44,7 +45,7 @@ export function PresentationHeader({
   const [shareOpen, setShareOpen] = useState(false)
   usePresentationRealtime(presentation.id)
   const currentIndex = STEPS.findIndex((item) => item.key === step)
-  const canShare = presentation.access_role === 'owner'
+  const canManage = canManageAccess(presentation.access_role)
   return (
     <div className="presentation-header">
       <div className="presentation-header__top">
@@ -61,27 +62,21 @@ export function PresentationHeader({
             )}
             <Badge tone={STATUS_TONES[presentation.status]}>{STATUS_LABELS[presentation.status]}</Badge>
             {presentation.access_role !== 'owner' && (
-              <Badge tone={presentation.access_role === 'editor' ? 'info' : 'neutral'}>
-                {presentation.access_role === 'editor' ? 'Общий доступ: редактор' : 'Общий доступ: просмотр'}
-              </Badge>
+              <Badge tone={ROLE_TONE[presentation.access_role]}>Общий доступ: {ROLE_LABEL[presentation.access_role].toLowerCase()}</Badge>
             )}
           </div>
           <h1>{presentation.title}</h1>
         </div>
-        {(actions || canShare) && (
-          <div className="presentation-header__actions">
-            {actions}
-            {canShare && (
-              <Button
-                variant="secondary"
-                icon={<Share2 size={16} />}
-                onClick={() => setShareOpen(true)}
-              >
-                Поделиться
-              </Button>
-            )}
-          </div>
-        )}
+        <div className="presentation-header__actions">
+          {actions}
+          <Button
+            variant="secondary"
+            icon={canManage ? <Share2 size={16} /> : <Users size={16} />}
+            onClick={() => setShareOpen(true)}
+          >
+            {canManage ? 'Поделиться' : 'Участники'}
+          </Button>
+        </div>
       </div>
       <ol className="stepper">
         {STEPS.map((item, index) => {
@@ -104,7 +99,14 @@ export function PresentationHeader({
           )
         })}
       </ol>
-      {shareOpen && <ShareDialog presentationId={presentation.id} title={presentation.title} onClose={() => setShareOpen(false)} />}
+      {shareOpen && (
+        <ShareDialog
+          presentationId={presentation.id}
+          title={presentation.title}
+          myRole={presentation.access_role}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </div>
   )
 }

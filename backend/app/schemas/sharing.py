@@ -6,12 +6,13 @@ from pydantic import BaseModel
 
 from app.schemas.presentation import PresentationUserOut
 
-ShareRole = Literal["viewer", "editor"]
+ShareRole = Literal["viewer", "editor", "coowner"]
+AccessRole = Literal["owner", "coowner", "editor", "viewer"]
 
 
 class PresentationMemberOut(BaseModel):
     user: PresentationUserOut
-    role: Literal["owner", "viewer", "editor"]
+    role: AccessRole
     created_at: datetime | None = None
 
 
@@ -35,7 +36,7 @@ class ShareLinkOut(BaseModel):
 class ShareAcceptOut(BaseModel):
     presentation_id: uuid.UUID
     title: str
-    role: Literal["owner", "viewer", "editor"]
+    role: AccessRole
 
 
 class NotificationOut(BaseModel):

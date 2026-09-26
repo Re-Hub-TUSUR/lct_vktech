@@ -7,6 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.roles import EDIT_ROLES, MANAGE_ROLES, best_role
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.redis import redis_client
@@ -72,15 +73,37 @@ async def get_presentation_for_user(
     *,
     with_files: bool = False,
     editable: bool = False,
+    manage: bool = False,
     owner_only: bool = False,
 ) -> Presentation:
     query = (
-        select(Presentation, PresentationMember.role)
+        select(
+            Presentation,
+            PresentationMember.role.label("direct_role"),
+            Project.owner_id.label("project_owner_id"),
+            ProjectMember.role.label("project_role"),
+        )
         .outerjoin(
             PresentationMember,
             (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
         )
-        .where(Presentation.id == presentation_id, or_(Presentation.owner_id == user.id, PresentationMember.user_id == user.id))
+        .outerjoin(
+            Project,
+            Presentation.project_id == Project.id,
+        )
+        .outerjoin(
+            ProjectMember,
+            (ProjectMember.project_id == Presentation.project_id) & (ProjectMember.user_id == user.id),
+        )
+        .where(
+            Presentation.id == presentation_id,
+            or_(
+                Presentation.owner_id == user.id,
+                PresentationMember.user_id == user.id,
+                Project.owner_id == user.id,
+                ProjectMember.user_id == user.id,
+            ),
+        )
         .options(selectinload(Presentation.template), selectinload(Presentation.project), selectinload(Presentation.owner))
     )
     if with_files:
@@ -88,11 +111,17 @@ async def get_presentation_for_user(
     row = (await db.execute(query)).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Презентация не найдена")
-    presentation, member_role = row
-    presentation.access_role = "owner" if presentation.owner_id == user.id else member_role
+    presentation, direct_role, project_owner_id, project_role = row
+    if presentation.owner_id == user.id:
+        presentation.access_role = "owner"
+    else:
+        folder_role = "coowner" if project_owner_id == user.id else project_role
+        presentation.access_role = best_role(direct_role, folder_role)
     if owner_only and presentation.access_role != "owner":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Управлять доступом может только владелец")
-    if editable and presentation.access_role not in {"owner", "editor"}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Это действие доступно только владельцу")
+    if manage and presentation.access_role not in MANAGE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Управлять доступом могут только владелец и совладельцы")
+    if editable and presentation.access_role not in EDIT_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
     return presentation
 
@@ -103,6 +132,7 @@ async def get_project_for_user(
     user: User,
     *,
     owner_only: bool = False,
+    manage: bool = False,
     editable: bool = False,
 ) -> Project:
     query = (
@@ -117,8 +147,10 @@ async def get_project_for_user(
     project, member_role = row
     project.access_role = "owner" if project.owner_id == user.id else member_role
     if owner_only and project.access_role != "owner":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Управлять проектом может только владелец")
-    if editable and project.access_role not in {"owner", "editor"}:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Это действие доступно только владельцу")
+    if manage and project.access_role not in MANAGE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Управлять доступом могут только владелец и совладельцы")
+    if editable and project.access_role not in EDIT_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
     return project
 
@@ -126,30 +158,8 @@ async def get_project_for_user(
 async def get_variant_for_user(
     db: AsyncSession, variant_id: uuid.UUID, user: User, *, editable: bool = False
 ) -> tuple[Variant, Presentation]:
-    row = (
-        await db.execute(
-            select(Variant, Presentation)
-            .join(Presentation, Presentation.id == Variant.presentation_id)
-            .outerjoin(
-                PresentationMember,
-                (PresentationMember.presentation_id == Presentation.id) & (PresentationMember.user_id == user.id),
-            )
-            .where(
-                Variant.id == variant_id,
-                or_(Presentation.owner_id == user.id, PresentationMember.user_id == user.id),
-            )
-            .options(selectinload(Presentation.template), selectinload(Presentation.project), selectinload(Presentation.owner))
-        )
-    ).first()
-    if row is None:
+    variant = await db.scalar(select(Variant).where(Variant.id == variant_id))
+    if variant is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Вариант не найден")
-    variant, presentation = row[0], row[1]
-    # Второй столбец join не выбираем намеренно: роль можно достать отдельным компактным запросом.
-    presentation.access_role = "owner" if presentation.owner_id == user.id else await db.scalar(
-        select(PresentationMember.role).where(
-            PresentationMember.presentation_id == presentation.id, PresentationMember.user_id == user.id
-        )
-    )
-    if editable and presentation.access_role not in {"owner", "editor"}:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "У вас есть доступ только для просмотра")
+    presentation = await get_presentation_for_user(db, variant.presentation_id, user, editable=editable)
     return variant, presentation

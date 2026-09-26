@@ -12,6 +12,7 @@ import { TemplateUploader } from '../components/TemplateUploader'
 import { Badge, Button, EmptyState, ErrorState, Spinner } from '../components/ui'
 import { countLabel, formatDate } from '../lib/format'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
+import { ROLE_LABEL, ROLE_TONE } from '../lib/roles'
 import { presentationLink } from '../lib/routes'
 
 const PIPELINE = [
@@ -42,9 +43,7 @@ function PresentationCard({ item }: { item: PresentationListItem }) {
           <div className="presentation-card__badges">
             <Badge tone={STATUS_TONES[item.status]}>{STATUS_LABELS[item.status]}</Badge>
             {item.access_role !== 'owner' && (
-              <Badge tone={item.access_role === 'editor' ? 'info' : 'neutral'}>
-                {item.access_role === 'editor' ? 'Редактор' : 'Наблюдатель'}
-              </Badge>
+              <Badge tone={ROLE_TONE[item.access_role]}>{ROLE_LABEL[item.access_role]}</Badge>
             )}
           </div>
           <small>{formatDate(item.updated_at)}</small>
@@ -107,7 +106,7 @@ export function DashboardPage() {
         </ol>
       </section>
 
-      <section className="section">
+      <section className="section dashboard-section dashboard-section--recent">
         <div className="section__header">
           <div className="row" style={{ alignItems: 'center', gap: 10 }}>
             <h2>Последние презентации</h2>
@@ -139,7 +138,7 @@ export function DashboardPage() {
         )}
       </section>
 
-      <section className="section">
+      <section className="section dashboard-section dashboard-section--templates">
         <div className="section__header">
           <h2>Шаблоны</h2>
           <Link to="/templates">Все шаблоны</Link>

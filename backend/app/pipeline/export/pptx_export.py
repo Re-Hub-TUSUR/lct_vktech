@@ -172,13 +172,14 @@ def build_deck(
     for spec in slides:
         key = spec.layout_key if spec.layout_key in layouts else fallback_key
         layout = layouts[key]
-        background = layout_background(layout, theme_colors) or theme["background"]
-        fg = text_on(background, theme["text"])
+        background = getattr(spec, "background_color", None) or layout_background(layout, theme_colors) or theme["background"]
+        fg = getattr(spec, "text_color", None) or text_on(background, theme["text"])
+        accent = getattr(spec, "accent_color", None) or theme.get("accent", "#0077FF")
         slide_ctx = replace(
             ctx,
             fg=fg,
             muted=mix(fg, background, 0.45),
-            surface=mix(theme["accent"], background, 0.88),
+            surface=mix(accent, background, 0.88),
             background=background,
             font_family=spec.font_family,
         )
@@ -489,16 +490,20 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         # Длинный заголовок ужимается в рамку макета, а не наезжает на декор (как автоподбор в PowerPoint).
         title_ph.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
         used.add(title_ph.shape_id)
-        if title_font:
-            for p in title_ph.text_frame.paragraphs:
-                for r in p.runs:
+        for p in title_ph.text_frame.paragraphs:
+            for r in p.runs:
+                if title_font:
                     r.font.name = title_font
+                if title_color:
+                    r.font.color.rgb = ctx.rgb(title_color)
+                if title_bold is not None:
+                    r.font.bold = title_bold
         if None not in (title_ph.left, title_ph.top, title_ph.width, title_ph.height):
             targets["title"] = _fraction((title_ph.left, title_ph.top, title_ph.width, title_ph.height), ctx)
     else:
         rect = (int(ctx.width * 0.06), int(ctx.height * 0.07), int(ctx.width * 0.88), int(ctx.height * 0.14))
         box = slide.shapes.add_textbox(*rect)
-        _write(box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=True, font_name=title_font)
+        _write(box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font)
         targets["title"] = _fraction(rect, ctx)
 
     if "content" in elem_boxes:
@@ -512,6 +517,8 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
 
     sub_font = elem_fonts.get("subtitle") or spec.font_family
     sub_scale = elem_scales.get("subtitle", 1.0)
+    sub_color = elem_colors.get("subtitle") or getattr(spec, "text_color", None)
+    sub_bold = elem_bolds.get("subtitle") if "subtitle" in elem_bolds else getattr(spec, "is_bold", None)
     if kind in {"title", "section", "closing"}:
         if spec.subtitle:
             if "subtitle" in elem_boxes:
@@ -525,10 +532,14 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
             elif bodies:
                 bodies[0].text_frame.text = spec.subtitle
                 used.add(bodies[0].shape_id)
-                if sub_font:
-                    for p in bodies[0].text_frame.paragraphs:
-                        for r in p.runs:
+                for p in bodies[0].text_frame.paragraphs:
+                    for r in p.runs:
+                        if sub_font:
                             r.font.name = sub_font
+                        if sub_color:
+                            r.font.color.rgb = ctx.rgb(sub_color)
+                        if sub_bold is not None:
+                            r.font.bold = sub_bold
             else:
                 x, y, w, _ = area
                 box = slide.shapes.add_textbox(x, y, w, int(ctx.height * 0.12))

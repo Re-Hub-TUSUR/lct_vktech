@@ -1,6 +1,7 @@
 import clsx from 'clsx'
-import { LogOut, Moon, Plus, Sun } from 'lucide-react'
+import { LogOut, Menu, Moon, Plus, Sun, X } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
+import { useState } from 'react'
 
 import { useAuth } from '../auth/AuthProvider'
 import vkLogo from '../assets/vk-logo.png'
@@ -25,27 +26,44 @@ export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { theme, toggleTheme } = useTheme()
+  const [menuOpen, setMenuOpen] = useState(false)
   const isAudit = location.pathname.includes('/audit')
+
+  const closeMenu = () => setMenuOpen(false)
 
   return (
     <div className="app">
-      <header className="topbar">
+      <header className={menuOpen ? 'topbar is-menu-open' : 'topbar'}>
         <Logo />
+        <button
+          type="button"
+          className="topbar__menu-toggle"
+          aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
         <nav className="topbar__nav">
-          <NavLink to="/" end>
+          <NavLink to="/" end onClick={closeMenu}>
             Главная
           </NavLink>
-          <NavLink to="/presentations">Мои презентации</NavLink>
-          <NavLink to="/templates">Шаблоны</NavLink>
+          <NavLink to="/presentations" onClick={closeMenu}>Мои презентации</NavLink>
+          <NavLink to="/templates" onClick={closeMenu}>Шаблоны</NavLink>
         </nav>
         <div className="topbar__actions">
-          <Button size="sm" icon={<Plus size={16} />} onClick={() => navigate('/presentations/new')}>
+          <Button
+            size="sm"
+            icon={<Plus size={16} />}
+            aria-label="Новая презентация"
+            onClick={() => navigate('/presentations/new')}
+          >
             Новая презентация
           </Button>
           <NotificationsBell />
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn topbar__theme-toggle"
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
             aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
@@ -58,7 +76,7 @@ export function AppLayout() {
           </div>
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn topbar__logout"
             onClick={async () => {
               await logout()
               navigate('/login', { replace: true })
