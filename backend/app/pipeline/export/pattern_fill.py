@@ -27,6 +27,7 @@ from app.pipeline.export.chart_style import highlight_points
 from app.pipeline.parsing.layout_patterns import slot_id
 from app.pipeline.parsing.patterns import _walk
 from app.pipeline.visuals.numbers import numeric_columns
+from app.pipeline.export.text_style import TextStyle, style_body, style_for
 from app.schemas.slide import INVERSE_KINDS, ChartData, Slide, TableData
 
 R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -446,14 +447,17 @@ def set_text(
     slot: dict[str, Any] | None = None,
     fit: Fit | None = None,
     scale: float | None = None,
+    styles: list[TextStyle | None] | None = None,
 ) -> bool:
     """Ставит текст в фигуру. slot и fit — чтобы длинный текст ужался по рамке слота;
-    scale — готовый масштаб, когда кегль согласован по всей серии элементов."""
+    scale — готовый масштаб, когда кегль согласован по всей серии элементов;
+    styles — оформление из редактора по абзацам (заголовок элемента, затем строки)."""
     text = " ".join([head or "", *lines]).strip()
     if scale is None:
         scale = fit.scale(slot, text) if fit else 1.0
-    return set_body(
-        element.find(qn("p:txBody")),
+    body = element.find(qn("p:txBody"))
+    done = set_body(
+        body,
         lines,
         head=head,
         plain_head=plain_head,
@@ -461,6 +465,9 @@ def set_text(
         base_size=(slot or {}).get("size"),
         steps=fit.steps if fit else (),
     )
+    if done and styles:
+        style_body(body, styles, base_size_pt=(slot or {}).get("size"))
+    return done
 
 
 def _apply_shape_box(element, box: list[float], slide_w: int, slide_h: int) -> None:
@@ -508,6 +515,38 @@ def drop(elements: dict[int, Any], slot: dict[str, Any]) -> None:
 # --- заполнение паттерна ------------------------------------------------------------
 
 
+@dataclass
+class ItemStyles:
+    """Оформление полей элемента из редактора: заголовок, число, дата и строки текста."""
+
+    title: TextStyle | None = None
+    value: TextStyle | None = None
+    date: TextStyle | None = None
+    lines: list[TextStyle | None] = field(default_factory=list)
+
+
+def item_styles(spec: Slide, index: int) -> ItemStyles:
+    """Адреса полей элемента index — как в редакторе (columns.1.title, kpis.0.value, timeline.2.date…)."""
+    kind = spec.kind
+    if kind in {"cards", "two_columns"}:
+        bullets = spec.columns[index].bullets if index < len(spec.columns) else []
+        return ItemStyles(
+            title=style_for(spec, f"columns.{index}.title"),
+            lines=[style_for(spec, f"columns.{index}.bullets.{j}") for j in range(len(bullets))],
+        )
+    if kind == "kpi":
+        return ItemStyles(value=style_for(spec, f"kpis.{index}.value"), lines=[style_for(spec, f"kpis.{index}.label")])
+    if kind == "timeline":
+        return ItemStyles(
+            title=style_for(spec, f"timeline.{index}.title"),
+            date=style_for(spec, f"timeline.{index}.date"),
+            lines=[style_for(spec, f"timeline.{index}.text")],
+        )
+    if kind == "agenda":
+        return ItemStyles(title=style_for(spec, f"bullets.{index}"))
+    return ItemStyles()
+
+
 def _fill_item(
     elements: dict[int, Any],
     unit: dict[str, Any],
@@ -516,26 +555,34 @@ def _fill_item(
     plain_head: bool = False,
     fit: Fit | None = None,
     value_scale: float | None = None,
+    styles: ItemStyles | None = None,
 ) -> None:
+    styles = styles or ItemStyles()
     slots: dict[str, list[tuple[dict[str, Any], Any]]] = {}
     for slot in unit["slots"]:
         if (element := elements.get(slot["id"])) is not None:
             slots.setdefault(slot["role"], []).append((slot, element))
     title, lines, date = content.title, list(content.lines), content.date
+    # Оформление строк идёт вместе с ними: строки раскладываются по слотам и снимаются с начала списка.
+    line_styles: list[TextStyle | None] = list(styles.lines)[: len(lines)]
+    line_styles += [None] * (len(lines) - len(line_styles))
 
     for index, (slot, element) in enumerate(slots.get("value", [])):
         if index:
             drop(elements, slot)
             continue
-        set_text(element, [content.value or date or f"{number:02d}"], slot=slot, fit=fit, scale=value_scale)
+        value_style = styles.value if content.value else styles.date
+        set_text(
+            element, [content.value or date or f"{number:02d}"], slot=slot, fit=fit, scale=value_scale, styles=[value_style]
+        )
         date = "" if not content.value else date
     for slot, element in slots.get("date", []):
-        set_text(element, [date or f"{number:02d}"], slot=slot, fit=fit)
+        set_text(element, [date or f"{number:02d}"], slot=slot, fit=fit, styles=[styles.date])
         date = ""
     for slot, element in slots.get("number", []):
         # В кружок номера помещается «01» или «Q4», но не «Шаг 1» — такая дата уходит в заголовок.
         fits = date and len(date) <= min(slot["chars"], 3)
-        set_text(element, [date if fits else f"{number:02d}"], slot=slot, fit=fit)
+        set_text(element, [date if fits else f"{number:02d}"], slot=slot, fit=fit, styles=[styles.date if fits else None])
         date = "" if fits else date
     if date:
         # Даты некуда поставить отдельно — она становится частью заголовка шага.
@@ -556,27 +603,29 @@ def _fill_item(
         if index:
             drop(elements, slot)
         elif slot["role"] == "title_text" or not text_capable:
-            set_text(element, lines, head=title, plain_head=plain_head, slot=slot, fit=fit)
-            lines = []
+            set_text(
+                element, lines, head=title, plain_head=plain_head, slot=slot, fit=fit, styles=[styles.title, *line_styles]
+            )
+            lines, line_styles = [], []
         else:
-            set_text(element, [title], slot=slot, fit=fit)
+            set_text(element, [title], slot=slot, fit=fit, styles=[styles.title])
     for index, (slot, element) in enumerate(texts):
         if index == 0 and lines:
-            set_text(element, lines, slot=slot, fit=fit)
-            lines = []
+            set_text(element, lines, slot=slot, fit=fit, styles=line_styles)
+            lines, line_styles = [], []
         else:
             drop(elements, slot)
     for index, (slot, element) in enumerate(line_slots):
         if not lines:
             drop(elements, slot)
         elif index == len(line_slots) - 1:
-            set_text(element, lines, slot=slot, fit=fit)
-            lines = []
+            set_text(element, lines, slot=slot, fit=fit, styles=line_styles)
+            lines, line_styles = [], []
         else:
-            set_text(element, [lines.pop(0)], slot=slot, fit=fit)
+            set_text(element, [lines.pop(0)], slot=slot, fit=fit, styles=[line_styles.pop(0)])
 
 
-def fill_table(frame, table: TableData) -> None:
+def fill_table(frame, table: TableData, spec: Slide | None = None) -> None:
     """Таблица шаблона под данные слайда: строки и столбцы клонируются из шаблонных, стиль сохраняется."""
     tbl = frame.find(f".//{qn('a:tbl')}")
     if tbl is None:
@@ -624,7 +673,11 @@ def fill_table(frame, table: TableData) -> None:
             for attr in ("gridSpan", "rowSpan", "hMerge", "vMerge"):
                 cell.attrib.pop(attr, None)
             # Столбец чисел — по правому краю вместе с шапкой: так сравнивают разряды.
-            set_body(cell.find(qn("a:txBody")), [text], autofit=False, align="r" if column in numeric else None)
+            body = cell.find(qn("a:txBody"))
+            set_body(body, [text], autofit=False, align="r" if column in numeric else None)
+            if spec is not None:
+                address = f"table.columns.{column}" if index == 0 else f"table.rows.{index - 1}.{column}"
+                style_body(body, [style_for(spec, address)])
         tbl.append(row)
 
     extent = frame.find(f"{qn('p:xfrm')}/{qn('a:ext')}")
@@ -692,6 +745,13 @@ def series_scale(unit_list: list[dict[str, Any]], content: PatternContent, fit: 
     return min(scales) if scales else None
 
 
+def body_styles(spec: Slide) -> list[TextStyle | None]:
+    """Оформление абзацев основного текста: тезисы по одному, у цитаты — текст и автор."""
+    if spec.kind == "quote":
+        return [style_for(spec, "quote.text"), style_for(spec, "quote.author")]
+    return [style_for(spec, f"bullets.{i}") for i in range(len(spec.bullets))]
+
+
 def fill_pattern(
     slide,
     pattern: dict[str, Any],
@@ -719,7 +779,7 @@ def fill_pattern(
 
     title = pattern.get("title")
     if title and (element := elements.get(title["id"])) is not None:
-        set_text(element, [content.title], slot=title, fit=fit)
+        set_text(element, [content.title], slot=title, fit=fit, styles=[style_for(spec, "title")])
         if "title" in elem_boxes and len(elem_boxes["title"]) == 4:
             _apply_shape_box(element, elem_boxes["title"], slide_w, slide_h)
             targets["title"] = elem_boxes["title"]
@@ -735,7 +795,14 @@ def fill_pattern(
         handled.update(slot["id"] for slot in unit["slots"])
         if index < len(content.items):
             _fill_item(
-                elements, unit, content.items[index], index + 1, plain_head=plain_head, fit=fit, value_scale=value_scale
+                elements,
+                unit,
+                content.items[index],
+                index + 1,
+                plain_head=plain_head,
+                fit=fit,
+                value_scale=value_scale,
+                styles=item_styles(spec, index),
             )
             unit_key = f"{prefix}.{index}" if prefix else None
             custom_box = elem_boxes.get(unit_key) if unit_key else None
@@ -765,7 +832,7 @@ def fill_pattern(
 
     table = pattern["frames"].get("table")
     if table and spec.table and (frame := elements.get(table["id"])) is not None:
-        fill_table(frame, spec.table)
+        fill_table(frame, spec.table, spec)
         targets["table"] = table["bbox"]
     chart = pattern["frames"].get("chart")
     if chart and spec.chart and fill_chart(slide, chart["id"], spec.chart, accents, background):
@@ -788,7 +855,7 @@ def fill_pattern(
             continue
         role = slot["role"]
         if slot is number_slot:
-            set_text(element, [content.subtitle.strip()], slot=slot, fit=fit)
+            set_text(element, [content.subtitle.strip()], slot=slot, fit=fit, styles=[style_for(spec, "subtitle")])
             filled.add("subtitle")
         elif (
             service
@@ -798,14 +865,14 @@ def fill_pattern(
             and number_slot is None
             and "subtitle" not in filled
         ):
-            set_text(element, [content.subtitle], slot=slot, fit=fit)
+            set_text(element, [content.subtitle], slot=slot, fit=fit, styles=[style_for(spec, "subtitle")])
             sub_box = elem_boxes.get("subtitle") or slot["bbox"]
             if "subtitle" in elem_boxes and len(elem_boxes["subtitle"]) == 4:
                 _apply_shape_box(element, elem_boxes["subtitle"], slide_w, slide_h)
             targets["subtitle"] = sub_box
             filled.add("subtitle")
         elif role == "body" and use_body and "body" not in filled:
-            set_text(element, content.body, slot=slot, fit=fit)
+            set_text(element, content.body, slot=slot, fit=fit, styles=body_styles(spec))
             body_key = "quote" if spec.kind == "quote" else "bullets"
             body_box = elem_boxes.get(body_key) or elem_boxes.get("content") or slot["bbox"]
             if (body_key in elem_boxes or "content" in elem_boxes) and len(body_box) == 4:
@@ -813,7 +880,7 @@ def fill_pattern(
             targets[body_key] = body_box
             filled.add("body")
         elif role == "subtitle" and content.subtitle and "subtitle" not in filled:
-            set_text(element, [content.subtitle], slot=slot, fit=fit)
+            set_text(element, [content.subtitle], slot=slot, fit=fit, styles=[style_for(spec, "subtitle")])
             sub_box = elem_boxes.get("subtitle") or slot["bbox"]
             if "subtitle" in elem_boxes and len(elem_boxes["subtitle"]) == 4:
                 _apply_shape_box(element, elem_boxes["subtitle"], slide_w, slide_h)

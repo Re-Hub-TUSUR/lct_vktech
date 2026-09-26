@@ -1,6 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   ArrowDown,
   ArrowLeft,
   ArrowUp,
@@ -13,6 +17,7 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  ImagePlus,
   Info,
   LayoutTemplate,
   Maximize2,
@@ -29,7 +34,6 @@ import {
   Trash2,
   Type,
   Undo2,
-  Upload,
   X,
   ZoomIn,
 } from 'lucide-react'
@@ -38,8 +42,19 @@ import { useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, usePresentation, useVariant } from '../api/queries'
-import type { RegenerateSlideResponse, ResolveResponse, Slide, SlideKind, SlidePattern, SlideShape, VariantDetail } from '../api/types'
+import type {
+  ContentFile,
+  RegenerateSlideResponse,
+  ResolveResponse,
+  Slide,
+  SlideKind,
+  SlidePattern,
+  SlideShape,
+  TextAlign,
+  VariantDetail,
+} from '../api/types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { ImagePickerModal } from '../components/ImagePickerModal'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
 import { SlideContentPanel } from '../components/SlideContentPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
@@ -48,6 +63,7 @@ import { Slideshow } from '../components/slides/Slideshow'
 import { useToast } from '../components/Toast'
 import { Button, ErrorState, FullPageSpinner, Select, type SelectOption } from '../components/ui'
 import { typographyTarget } from '../lib/exportSupport'
+import { boxForImage, loadImageSize } from '../lib/imageCrop'
 import { SLIDE_KIND_LABELS } from '../lib/labels'
 import {
   addChart,
@@ -56,6 +72,7 @@ import {
   fieldPatch,
   regenerateInstruction,
   removeChart,
+  removeSlideImage,
   selectLayout,
   selectPattern,
   setSlideImage,
@@ -92,12 +109,15 @@ export function PresentationEditorPage() {
       detail={variant.data}
       initialIndex={isNaN(initialSlideIndex) ? 0 : initialSlideIndex}
       canEdit={presentation.data.access_role !== 'viewer'}
+      contentFiles={presentation.data.files ?? []}
     />
   )
 }
 
 interface SlidesEditorProps {
   presentationId: string
+  /** Файлы контент-пакета: из них можно взять картинку на слайд. */
+  contentFiles: ContentFile[]
   detail: VariantDetail
   initialIndex: number
   canEdit: boolean
@@ -127,6 +147,12 @@ const SHAPE_KINDS: { kind: SlideShape['kind']; label: string; icon: ReactNode }[
   { kind: 'badge', label: 'Бейдж / плашка', icon: <span style={{ width: 14, height: 8, border: '1.5px solid currentColor', borderRadius: 4 }} /> },
   { kind: 'line', label: 'Линия-акцент', icon: <span style={{ width: 14, height: 2, background: 'currentColor' }} /> },
 ]
+const ALIGN_OPTIONS: { value: TextAlign; label: string; icon: ReactNode }[] = [
+  { value: 'left', label: 'По левому краю', icon: <AlignLeft size={14} /> },
+  { value: 'center', label: 'По центру', icon: <AlignCenter size={14} /> },
+  { value: 'right', label: 'По правому краю', icon: <AlignRight size={14} /> },
+  { value: 'justify', label: 'По ширине', icon: <AlignJustify size={14} /> },
+]
 const PRESET_COLORS = [
   '#000000', '#475569', '#94a3b8', '#e2e8f0', '#ffffff', '#ef4444', '#f97316', '#f59e0b',
   '#10b981', '#06b6d4', '#0077ff', '#6366f1', '#8b5cf6', '#ec4899',
@@ -135,7 +161,7 @@ const PRESET_COLORS = [
 const newId = () => Math.random().toString(36).slice(2, 10)
 const serialize = (slide: Slide) => JSON.stringify(slide)
 
-function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesEditorProps) {
+function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFiles }: SlidesEditorProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const notify = useToast()
@@ -154,7 +180,22 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
   const [activeElement, setActiveElement] = useState<string | null>(null)
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
   const [zoomMode, setZoomMode] = useState<ZoomMode>('fit')
-  const [notesOpen, setNotesOpen] = useState(false)
+  // Заметки докладчика: открыты или свёрнуты — запоминается в браузере.
+  const [notesOpen, setNotesOpenState] = useState(() => {
+    try {
+      return localStorage.getItem('studio.notesOpen') === '1'
+    } catch {
+      return false
+    }
+  })
+  const setNotesOpen = (open: boolean) => {
+    setNotesOpenState(open)
+    try {
+      localStorage.setItem('studio.notesOpen', open ? '1' : '0')
+    } catch {
+      // хранилище недоступно (приватный режим) — просто не запоминаем
+    }
+  }
   const [slideshowOpen, setSlideshowOpen] = useState(false)
   const [activeSidebarTab, setActiveSidebarTab] = useState<'content' | 'design' | 'ai'>('content')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -163,7 +204,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [colorTarget, setColorTarget] = useState<ColorTarget | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  // Окно выбора картинки: куда вставлять, фиксируется при открытии (пока файл грузится, слайд могут сменить).
+  const [imagePicker, setImagePicker] = useState<{ mode: 'slide' | 'floating' | 'shape'; slideId: string; shapeId?: string } | null>(null)
 
   // --- Что изменено относительно сервера ---------------------------------------------------------
 
@@ -287,8 +329,20 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
     notify('Положение блока сброшено к шаблону')
   }
 
-  const handleUpdateElementCrop = (target: string, crop: [number, number, number, number]) =>
-    updateCurrentSlide({ element_crops: { ...(currentSlide.element_crops || {}), [target]: crop } })
+  // Обрезка и суженная под неё рамка — одной правкой (модель PowerPoint, lib/imageCrop.ts).
+  const handleUpdateElementCrop = (
+    target: string,
+    crop: [number, number, number, number] | null,
+    box?: [number, number, number, number],
+  ) => {
+    const crops = { ...(currentSlide.element_crops || {}) }
+    if (crop) crops[target] = crop
+    else delete crops[target]
+    updateCurrentSlide({
+      element_crops: crops,
+      ...(box ? { element_boxes: { ...(currentSlide.element_boxes || {}), [target]: box } } : {}),
+    })
+  }
 
   // --- Слайды колоды -------------------------------------------------------------------------
 
@@ -445,17 +499,39 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
       formData.append('file', file)
       return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
     },
-    onSuccess: (result) => {
-      updateCurrentSlide(setSlideImage(currentSlide, result.url, `Изображение: ${result.filename}`))
-      notify('Изображение добавлено на слайд')
-    },
-    onError: (err) => notify(err.message, 'error'),
   })
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (file) uploadImageMutation.mutate(file)
+  const openImagePicker = (mode: 'slide' | 'floating' | 'shape') => {
+    if (!currentSlide || !canEdit) return
+    setImagePicker({ mode, slideId: currentSlide.id, shapeId: mode === 'shape' ? selectedShapeId ?? undefined : undefined })
+  }
+
+  /** Фигуры слайда: свои или, пока их не трогали, фигуры его слайда-примера. */
+  const shapesOf = (s: Slide): SlideShape[] =>
+    s.shapes?.length ? s.shapes : (s.pattern_id && theme.patterns?.find((p) => p.id === s.pattern_id)?.shapes) || []
+
+  // Картинка из окна выбора (контент-пакет или загрузка) — на тот слайд, где окно открыли.
+  const insertImage = async (url: string, filename: string, target: NonNullable<typeof imagePicker>) => {
+    const { mode, slideId, shapeId } = target
+    const patchTarget = (patch: (s: Slide) => SlidePatch) =>
+      commit((prev) => prev.map((s) => (s.id === slideId ? { ...s, ...patch(s) } : s)))
+    if (mode === 'floating') {
+      // Плавающее фото — с родными пропорциями картинки, по центру слайда.
+      const [x, y, width, height] = boxForImage(await loadImageSize(url), theme.aspect || 16 / 9)
+      const shape: SlideShape = { id: newId(), kind: 'image', image_url: url, x, y, width, height, color: 'transparent', opacity: 1, border: false }
+      patchTarget((s) => ({ shapes: [...shapesOf(s), shape] }))
+      if (slideId === currentSlide?.id) {
+        setSelectedShapeId(shape.id)
+        setActiveElement(null)
+      }
+      notify('Плавающее фото добавлено')
+    } else if (mode === 'shape' && shapeId) {
+      patchTarget((s) => ({ shapes: shapesOf(s).map((sh) => (sh.id === shapeId ? { ...sh, image_url: url, crop: null } : sh)) }))
+      notify('Изображение заменено')
+    } else {
+      patchTarget((s) => setSlideImage(s, url, `Изображение: ${filename}`, theme))
+      notify('Изображение добавлено на слайд')
+    }
   }
 
   // Модель правит сохранённую колоду, поэтому несохранённые правки сначала сохраняются.
@@ -478,9 +554,10 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
     onError: (err) => notify(err.message, 'error'),
   })
 
-  // --- Оформление: только то, что переносит экспорт ------------------------------------------
+  // --- Оформление текста: поле, блок (все его тексты) или весь слайд ---------------------------
 
   const typo = currentSlide ? typographyTarget(currentSlide, theme, activeElement, selectedShape) : null
+  const typoFields = typo?.elements ?? []
 
   const availableFonts = useMemo(
     () =>
@@ -488,35 +565,48 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
     [theme],
   )
   const fontOptions: SelectOption<string>[] = [
-    { value: '', label: `Шрифт: ${typo?.element && currentSlide.font_family ? currentSlide.font_family : theme.heading_font}` },
+    { value: '', label: `Шрифт: ${typoFields.length && currentSlide?.font_family ? currentSlide.font_family : theme.heading_font}` },
     ...availableFonts.map((f) => ({ value: f, label: f })),
   ]
+
+  /** Значение для всех выбранных полей: value — задать, null — вернуть к шаблону. */
+  function setForFields<T>(map: Record<string, T> | null | undefined, value: T | null): Record<string, T> {
+    const next = { ...(map || {}) }
+    for (const field of typoFields) {
+      if (value === null) delete next[field]
+      else next[field] = value
+    }
+    return next
+  }
+  const fieldsKey = typoFields.join(',')
 
   const handleFontChange = (font: string) => {
     if (!typo?.canFont) return
     if (selectedShape) handleUpdateShape(selectedShape.id, { font_family: font || null })
-    else if (typo.element) {
-      const fonts = { ...(currentSlide.element_fonts || {}) }
-      if (font) fonts[typo.element] = font
-      else delete fonts[typo.element]
-      updateCurrentSlide({ element_fonts: fonts })
-    } else updateCurrentSlide({ font_family: font || null })
+    else if (typoFields.length) updateCurrentSlide({ element_fonts: setForFields(currentSlide.element_fonts, font || null) })
+    else updateCurrentSlide({ font_family: font || null })
   }
 
   const handleScaleChange = (scale: number) => {
-    if (!typo?.canScale || !typo.element) return
-    updateCurrentSlide({ element_scales: { ...(currentSlide.element_scales || {}), [typo.element]: Math.round(scale * 100) / 100 } })
+    if (!typo?.canScale || !typoFields.length) return
+    const value = Math.round(scale * 100) / 100
+    updateCurrentSlide({ element_scales: setForFields(currentSlide.element_scales, value === 1 ? null : value) }, `scale:${fieldsKey}`)
   }
 
-  const isBold = Boolean(typo?.element && (currentSlide.element_bolds?.[typo.element] ?? (typo.element === 'title' ? true : currentSlide.is_bold)))
   const handleToggleBold = () => {
-    if (!typo?.canBold || !typo.element) return
-    updateCurrentSlide({ element_bolds: { ...(currentSlide.element_bolds || {}), [typo.element]: !isBold } })
+    if (!typo?.canBold || !typoFields.length) return
+    updateCurrentSlide({ element_bolds: setForFields(currentSlide.element_bolds, !typo.bold) })
+  }
+
+  const handleAlign = (align: TextAlign) => {
+    if (!typo?.canAlign || !typoFields.length) return
+    // Повторный клик по выбранному выравниванию возвращает выравнивание шаблона.
+    updateCurrentSlide({ element_aligns: setForFields(currentSlide.element_aligns, typo.align === align ? null : align) })
   }
 
   const currentColor = (target: ColorTarget): string => {
     if (target === 'fill') return selectedShape?.color || theme.accent
-    return (typo?.element && currentSlide.element_colors?.[typo.element]) || currentSlide.text_color || theme.text
+    return typo?.color || theme.text
   }
 
   const handleColorChange = (color: string | null) => {
@@ -524,11 +614,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
       if (selectedShape) handleUpdateShape(selectedShape.id, { color: color || theme.accent })
       return
     }
-    if (typo?.element) {
-      const colors = { ...(currentSlide.element_colors || {}) }
-      if (color) colors[typo.element] = color
-      else delete colors[typo.element]
-      updateCurrentSlide({ element_colors: colors }, `color:${typo.element}`)
+    if (typoFields.length) {
+      updateCurrentSlide({ element_colors: setForFields(currentSlide.element_colors, color) }, `color:${fieldsKey}`)
     } else {
       updateCurrentSlide({ text_color: color }, 'color:slide')
     }
@@ -599,14 +686,6 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
 
   return (
     <div className="gslides-app">
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-        onChange={handleFileChange}
-      />
-
       {/* 1. Верхняя панель */}
       <header className="gslides-header">
         <div className="gslides-header__left">
@@ -717,7 +796,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             'insert',
             'Вставка',
             <>
-              {item('Изображение…', () => fileInputRef.current?.click(), { icon: <ImageIcon size={13} /> })}
+              {item('Изображение…', () => openImagePicker('slide'), { icon: <ImageIcon size={13} /> })}
+              {item('Плавающее фото…', () => openImagePicker('floating'), { icon: <ImagePlus size={13} /> })}
               {SHAPE_KINDS.map((shape) => item(shape.label, () => handleAddShape(shape.kind), { icon: <Shapes size={13} /> }))}
               <div className="gslides-dropdown-divider" />
               {item('Диаграмма', openChart, { icon: <BarChart3 size={13} /> })}
@@ -804,10 +884,23 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
               </>
             )}
             {typo.canBold && (
-              <button type="button" className={clsx('gslides-tool-btn', isBold && 'is-active')} onClick={handleToggleBold} title="Жирный">
+              <button type="button" className={clsx('gslides-tool-btn', typo.bold && 'is-active')} onClick={handleToggleBold} title="Жирный">
                 <Bold size={14} />
               </button>
             )}
+            {typo.canAlign &&
+              ALIGN_OPTIONS.map(({ value, label, icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={clsx('gslides-tool-btn', typo.align === value && 'is-active')}
+                  onClick={() => handleAlign(value)}
+                  title={label}
+                  aria-pressed={typo.align === value}
+                >
+                  {icon}
+                </button>
+              ))}
             {typo.canColor && (
               <button
                 type="button"
@@ -830,9 +923,28 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
                 <div className="gslides-color-swatch-bar" style={{ backgroundColor: currentColor('fill') }} />
               </button>
             )}
+            {selectedShape && (
+              <ShapeBar
+                shape={selectedShape}
+                onChange={(patch) => handleUpdateShape(selectedShape.id, patch)}
+                onDuplicate={() => {
+                  const copy: SlideShape = {
+                    ...selectedShape,
+                    id: newId(),
+                    template_shape_id: null,
+                    x: Math.min(0.9, selectedShape.x + 0.04),
+                    y: Math.min(0.9, selectedShape.y + 0.04),
+                  }
+                  updateCurrentSlide({ shapes: [...effectiveShapes, copy] })
+                  setSelectedShapeId(copy.id)
+                }}
+                onReplaceImage={() => openImagePicker('shape')}
+                onDelete={selectedShape.template_shape_id == null ? () => handleDeleteShape(selectedShape.id) : undefined}
+              />
+            )}
             {!typo.canFont && !typo.canScale && !typo.canBold && !typo.canColor && !selectedShape && (
               <span className="gslides-tool-hint">
-                <Info size={13} /> Оформление как в шаблоне
+                <Info size={13} /> {typo.hint ?? 'Оформление как в шаблоне'}
               </span>
             )}
           </div>
@@ -859,12 +971,19 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             <button
               type="button"
               className="gslides-tool-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadImageMutation.isPending}
-              title="Загрузить изображение на слайд"
+              onClick={() => openImagePicker('slide')}
+              title="Картинка на слайд: из контент-пакета или с компьютера"
             >
-              <Upload size={14} />
-              <span>{uploadImageMutation.isPending ? 'Загрузка…' : 'Фото'}</span>
+              <ImageIcon size={14} />
+              <span>Фото</span>
+            </button>
+            <button
+              type="button"
+              className="gslides-tool-btn"
+              onClick={() => openImagePicker('floating')}
+              title="Плавающее фото поверх слайда"
+            >
+              <ImagePlus size={14} />
             </button>
             <button type="button" className="gslides-tool-btn" onClick={openChart} title="Диаграмма">
               <BarChart3 size={14} />
@@ -1010,7 +1129,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
                 }}
                 onImageClick={() => {
                   setActiveElement('image')
-                  fileInputRef.current?.click()
+                  openImagePicker('slide')
                 }}
               />
             </div>
@@ -1148,6 +1267,34 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
         />
       )}
 
+      {imagePicker && (
+        <ImagePickerModal
+          isOpen
+          presentationId={detail.presentation.id}
+          contentFiles={contentFiles}
+          currentImageUrl={
+            imagePicker.mode === 'shape'
+              ? shapesOf(slides.find((s) => s.id === imagePicker.slideId) ?? currentSlide).find((sh) => sh.id === imagePicker.shapeId)?.image_url
+              : imagePicker.mode === 'slide'
+                ? slides.find((s) => s.id === imagePicker.slideId)?.image?.url
+                : undefined
+          }
+          onClose={() => setImagePicker(null)}
+          onSelectImage={(url, filename) => void insertImage(url, filename, imagePicker)}
+          onUploadImage={async (file) => {
+            const target = imagePicker
+            const result = await uploadImageMutation.mutateAsync(file)
+            await insertImage(result.url, result.filename, target)
+          }}
+          onRemoveImage={
+            imagePicker.mode === 'slide' && slides.find((s) => s.id === imagePicker.slideId)?.image?.url
+              ? () => patchSlide(imagePicker.slideId, removeSlideImage(slides.find((s) => s.id === imagePicker.slideId)!))
+              : undefined
+          }
+          isUploading={uploadImageMutation.isPending}
+        />
+      )}
+
       {showLeaveDialog && (
         <ConfirmDialog
           title="Выйти без сохранения?"
@@ -1217,6 +1364,80 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+const SHAPE_KIND_OPTIONS: { value: SlideShape['kind']; label: string }[] = [
+  { value: 'rect', label: 'Прямоугольник' },
+  { value: 'circle', label: 'Круг' },
+  { value: 'badge', label: 'Бейдж' },
+  { value: 'pill', label: 'Капсула' },
+  { value: 'line', label: 'Линия' },
+]
+
+/** Свойства выбранной фигуры: тип, текст, контур, дублирование, замена фото, удаление (цвет — отдельной кнопкой). */
+function ShapeBar({
+  shape,
+  onChange,
+  onDuplicate,
+  onReplaceImage,
+  onDelete,
+}: {
+  shape: SlideShape
+  onChange: (patch: Partial<SlideShape>) => void
+  onDuplicate: () => void
+  onReplaceImage: () => void
+  onDelete?: () => void
+}) {
+  const isImage = shape.kind === 'image'
+  const template = shape.template_shape_id != null
+  return (
+    <div className="gslides-shape-bar">
+      {isImage ? (
+        <button type="button" className="gslides-tool-btn" onClick={onReplaceImage} title="Заменить фото">
+          <ImageIcon size={14} />
+          <span>Заменить</span>
+        </button>
+      ) : (
+        !template && (
+          <select
+            className="gslides-shape-bar__select"
+            value={shape.kind}
+            title="Тип фигуры"
+            onChange={(e) => onChange({ kind: e.target.value as SlideShape['kind'] })}
+          >
+            {SHAPE_KIND_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )
+      )}
+      {!isImage && shape.kind !== 'line' && (
+        <input
+          className="gslides-shape-bar__text"
+          value={shape.text || ''}
+          placeholder="Текст фигуры"
+          title="Текст фигуры (или двойной клик по фигуре)"
+          onChange={(e) => onChange({ text: e.target.value || null })}
+        />
+      )}
+      {!isImage && !template && (
+        <label className="gslides-shape-bar__check" title="Контур фигуры">
+          <input type="checkbox" checked={!!shape.border} onChange={(e) => onChange({ border: e.target.checked })} />
+          Контур
+        </label>
+      )}
+      <button type="button" className="gslides-tool-btn" onClick={onDuplicate} title="Дублировать">
+        <Copy size={14} />
+      </button>
+      {onDelete && (
+        <button type="button" className="gslides-tool-btn" onClick={onDelete} title="Удалить фигуру">
+          <Trash2 size={14} />
+        </button>
       )}
     </div>
   )

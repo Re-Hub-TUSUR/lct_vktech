@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { Check, Crop, Move, RotateCcw, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { flushSync } from 'react-dom'
 
 export type HandleType = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 type CropRect = [number, number, number, number]
@@ -13,18 +14,29 @@ export interface TransformFrameProps {
   isImage?: boolean
   canCrop?: boolean
   isCropping?: boolean
-  crop?: CropRect | null // [top, right, bottom, left] 0..1
+  /** Есть сохранённая обрезка — в режиме кадрирования показывается «Вернуть исходник». */
+  crop?: CropRect | null
   label?: string
   hasCustomPosition?: boolean
   /** false — блок только сдвигается (сборка переносит положение, но не размер). */
   resizable?: boolean
   /** Тянуть можно за всё тело рамки, а не только за ручку (фигуры, картинки). */
   dragAnywhere?: boolean
+  /** Угловые ручки сохраняют пропорции (картинки); с Shift — свободно. */
+  lockAspect?: boolean
+  /** Какие ручки размера показывать (у линии — только боковые). По умолчанию все восемь. */
+  handleSet?: HandleType[]
   onDoubleClick?: () => void
   onUpdateBox: (newBox: BoxRect) => void
   /** data-element-id or shape:<id>; used for an imperative drag preview. */
   previewTarget?: string
-  onUpdateCrop?: (newCrop: [number, number, number, number]) => void
+  /**
+   * Кадрирование по «Готово»: насколько срезаны края рамки [top, right, bottom, left] в долях рамки.
+   * Родитель сужает рамку до видимой части (модель PowerPoint, lib/imageCrop.ts).
+   */
+  onUpdateCrop?: (frameCrop: [number, number, number, number]) => void
+  /** Снять обрезку картинки. */
+  onResetCrop?: () => void
   onResetBox?: () => void
   onDelete?: () => void
   onToggleCrop?: () => void
@@ -53,6 +65,8 @@ export function TransformFrame({
   hasCustomPosition = false,
   resizable = true,
   dragAnywhere = false,
+  lockAspect = false,
+  handleSet,
   onDoubleClick,
   onUpdateBox,
   previewTarget,
@@ -61,15 +75,16 @@ export function TransformFrame({
   onDelete,
   onToggleCrop,
   onCloseCrop,
+  onResetCrop,
   children,
 }: TransformFrameProps) {
   const frameRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [draftBox, setDraftBox] = useState(box)
-  const [draftCrop, setDraftCrop] = useState<CropRect>(crop || EMPTY_CROP)
+  const [draftCrop, setDraftCrop] = useState<CropRect>(EMPTY_CROP)
   const interactionRef = useRef<'move' | 'resize' | 'crop' | null>(null)
   const draftBoxRef = useRef(box)
-  const draftCropRef = useRef<CropRect>(crop || EMPTY_CROP)
+  const draftCropRef = useRef<CropRect>(EMPTY_CROP)
   const previewElementRef = useRef<HTMLElement | null>(null)
   const previewTransformRef = useRef('')
   const previewTransformOriginRef = useRef('')
@@ -86,10 +101,17 @@ export function TransformFrame({
   }, [box])
 
   useEffect(() => {
-    const next: CropRect = crop || EMPTY_CROP
-    draftCropRef.current = next
-    if (!interactionRef.current) setDraftCrop(next)
-  }, [crop])
+    // Каждый заход в кадрирование начинается с текущей рамки: срез считается от её краёв.
+    draftCropRef.current = EMPTY_CROP
+    setDraftCrop(EMPTY_CROP)
+  }, [isCropping])
+
+  const hasSavedCrop = Boolean(crop && crop.some((v) => v > 0))
+  const finishCrop = () => {
+    const frameCrop = draftCropRef.current
+    if (frameCrop.some((v) => v > 0.001)) onUpdateCrop?.(frameCrop)
+    onCloseCrop?.()
+  }
 
   const [x, y, w, h] = draftBox
   const [cropTop, cropRight, cropBottom, cropLeft] = draftCrop
@@ -113,6 +135,17 @@ export function TransformFrame({
     previewHeightRef.current = ''
     previewMaxWidthRef.current = ''
     previewOverflowRef.current = ''
+  }
+
+  /**
+   * Конец перетаскивания. Превью двигало DOM-узел напрямую; сначала возвращаем ему исходные стили, затем
+   * синхронно отдаём новую рамку React — он записывает свои значения поверх, в том же кадре, без мигания.
+   * (Раньше превью сбрасывалось в requestAnimationFrame после коммита и, если React успевал раньше,
+   * возвращало старые width/height — объект «откатывался» к прежнему размеру.)
+   */
+  const finishPreview = (commit: boolean) => {
+    resetMovePreview()
+    if (commit) flushSync(() => onUpdateBox(draftBoxRef.current))
   }
 
   const applyMovePreview = (
@@ -185,15 +218,11 @@ export function TransformFrame({
     setIsDragging(true)
 
     const cleanup = (commit: boolean) => {
-      if (commit && hasMoved) onUpdateBox(draftBoxRef.current)
-      if (!commit) {
+      finishPreview(commit && hasMoved)
+      if (!commit || !hasMoved) {
         draftBoxRef.current = box
         setDraftBox(box)
       }
-      if (commit && hasMoved) window.requestAnimationFrame(() => {
-        if (!interactionRef.current) resetMovePreview()
-      })
-      else resetMovePreview()
       interactionRef.current = null
       setIsDragging(false)
       window.removeEventListener('pointermove', onPointerMove)
@@ -256,15 +285,11 @@ export function TransformFrame({
     setIsDragging(true)
 
     const cleanup = (commit: boolean) => {
-      if (commit && hasMoved) onUpdateBox(draftBoxRef.current)
-      if (!commit) {
+      finishPreview(commit && hasMoved)
+      if (!commit || !hasMoved) {
         draftBoxRef.current = box
         setDraftBox(box)
       }
-      if (commit && hasMoved) window.requestAnimationFrame(() => {
-        if (!interactionRef.current) resetMovePreview()
-      })
-      else resetMovePreview()
       interactionRef.current = null
       setIsDragging(false)
       window.removeEventListener('pointermove', onPointerMove)
@@ -272,7 +297,10 @@ export function TransformFrame({
       window.removeEventListener('pointercancel', onPointerCancel)
     }
 
+    const corner = handle.length === 2
     const onPointerMove = (moveEv: PointerEvent) => {
+      // Порог, как у перемещения: клик по ручке без движения ничего не меняет.
+      if (!hasMoved && Math.hypot(moveEv.clientX - startClientX, moveEv.clientY - startClientY) < 4) return
       hasMoved = true
       const dx = (moveEv.clientX - startClientX) / container.width
       const dy = (moveEv.clientY - startClientY) / container.height
@@ -313,6 +341,17 @@ export function TransformFrame({
           newY = startY + (startH - minH)
           newH = minH
         }
+      }
+
+      // Пропорции картинки: высота следует за шириной, рамка не выходит за слайд.
+      if (lockAspect && corner && !moveEv.shiftKey && startW > 0 && startH > 0) {
+        const ratio = startH / startW
+        const maxW = handle.includes('w') ? startX + startW : 1 - startX
+        const maxH = handle.includes('n') ? startY + startH : 1 - startY
+        newW = Math.min(newW, maxW, maxH / ratio)
+        newH = newW * ratio
+        newX = handle.includes('w') ? startX + startW - newW : startX
+        newY = handle.includes('n') ? startY + startH - newH : startY
       }
 
       const next: [number, number, number, number] = [
@@ -356,10 +395,10 @@ export function TransformFrame({
     setIsDragging(true)
 
     const cleanup = (commit: boolean) => {
-      if (commit && hasMoved) onUpdateCrop?.(draftCropRef.current)
-      if (!commit) {
-        draftCropRef.current = crop || EMPTY_CROP
-        setDraftCrop(crop || EMPTY_CROP)
+      // Срез применяется целиком по «Готово»; отмена жеста возвращает окно к началу жеста.
+      if (!commit || !hasMoved) {
+        draftCropRef.current = [startT, startR, startB, startL]
+        setDraftCrop([startT, startR, startB, startL])
       }
       interactionRef.current = null
       setIsDragging(false)
@@ -451,7 +490,7 @@ export function TransformFrame({
       } else if (e.key === 'Escape') {
         if (isCropping) {
           e.preventDefault()
-          onCloseCrop?.()
+          finishCrop()
         }
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && onDelete) {
         e.preventDefault()
@@ -517,20 +556,23 @@ export function TransformFrame({
           {/* Панель управления кадрированием */}
           <div className="transform-frame__crop-toolbar" onPointerDown={(e) => e.stopPropagation()}>
             <span className="transform-frame__crop-title">Режим кадрирования</span>
-            {onUpdateCrop && (cropTop > 0 || cropRight > 0 || cropBottom > 0 || cropLeft > 0) && (
+            {hasSavedCrop && onResetCrop && (
               <button
                 type="button"
                 className="transform-frame__btn"
-                onClick={() => onUpdateCrop([0, 0, 0, 0])}
-                title="Сбросить обрезку"
+                onClick={() => {
+                  onResetCrop()
+                  onCloseCrop?.()
+                }}
+                title="Показать картинку целиком (рамка остаётся прежней)"
               >
-                Сбросить
+                Вернуть исходник
               </button>
             )}
             <button
               type="button"
               className="transform-frame__btn transform-frame__btn--primary"
-              onClick={onCloseCrop}
+              onClick={finishCrop}
               title="Применить кадрирование"
             >
               <Check size={13} />
@@ -558,7 +600,7 @@ export function TransformFrame({
           </div>
 
           {/* 8 маркеров изменения размера */}
-          {resizable && handles.map((hName) => (
+          {resizable && (handleSet ?? handles).map((hName) => (
             <span
               key={hName}
               className={clsx('transform-frame__handle', `handle--${hName}`)}

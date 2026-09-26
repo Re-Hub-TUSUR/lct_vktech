@@ -149,6 +149,8 @@ class Slide(BaseModel):
     element_backgrounds: dict[str, str] = Field(default_factory=dict)
     is_bold: bool | None = None
     element_bolds: dict[str, bool] = Field(default_factory=dict)
+    # Выравнивание текста поля: left | center | right | justify.
+    element_aligns: dict[str, str] = Field(default_factory=dict)
 
 
 class SlideUpdate(BaseModel):
@@ -180,6 +182,7 @@ class SlideUpdate(BaseModel):
     element_backgrounds: dict[str, str] | None = None
     is_bold: bool | None = None
     element_bolds: dict[str, bool] | None = None
+    element_aligns: dict[str, str] | None = None
     image: ImageSpec | None = None
     layout_key: str | None = None
     layout_name: str | None = None

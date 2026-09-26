@@ -168,10 +168,18 @@ function contentFor(slide: Slide, kind: SlideKind, count?: number): SlidePatch {
 /** Положения блоков относятся к раскладке конкретного паттерна или макета: при их смене сбрасываются. */
 const RESET_BOXES: SlidePatch = { element_boxes: {}, element_crops: {} }
 
+/** Фигуры, добавленные пользователем (у фигур слайда-примера есть template_shape_id). */
+const ownShapes = (slide: Slide) => (slide.shapes || []).filter((shape) => shape.template_shape_id == null)
+
 export function changeKind(slide: Slide, kind: SlideKind): SlidePatch {
   if (kind === slide.kind) return {}
-  // Паттерн собран под свой тип содержимого — со сменой типа слайд верстается на макете.
-  return { kind, ...contentFor(slide, kind), ...(slide.pattern_id ? { pattern_id: null, shapes: [], ...RESET_BOXES } : {}) }
+  // Паттерн собран под свой тип содержимого — со сменой типа слайд верстается на макете. Декор
+  // слайда-примера уходит вместе с ним, а свои фигуры и плавающие фото пользователь сохраняет.
+  return {
+    kind,
+    ...contentFor(slide, kind),
+    ...(slide.pattern_id ? { pattern_id: null, shapes: ownShapes(slide), ...RESET_BOXES } : {}),
+  }
 }
 
 function patternKind(pattern: SlidePattern, current: SlideKind): SlideKind {
@@ -202,13 +210,13 @@ export function selectPattern(slide: Slide, pattern: SlidePattern, theme: SlideT
     pattern_id: pattern.id,
     layout_key: pattern.layout_key,
     layout_name: pattern.layout_name || (pattern.layout_key && theme.layouts?.[pattern.layout_key]?.name) || pattern.layout_key,
-    shapes: pattern.shapes?.length ? pattern.shapes : [],
+    shapes: [...(pattern.shapes || []), ...ownShapes(slide)],
     ...RESET_BOXES,
   }
 }
 
 export function selectLayout(slide: Slide, layoutKey: string, layoutName: string, theme: SlideTheme): SlidePatch {
-  const patch: SlidePatch = { layout_key: layoutKey, layout_name: layoutName, pattern_id: null, shapes: [], ...RESET_BOXES }
+  const patch: SlidePatch = { layout_key: layoutKey, layout_name: layoutName, pattern_id: null, shapes: ownShapes(slide), ...RESET_BOXES }
   const role = Object.entries(theme.roles || {}).find(([, key]) => key === layoutKey)?.[0]
   if (role && role in SLIDE_KIND_LABELS && role !== slide.kind) {
     Object.assign(patch, contentFor(slide, role as SlideKind), { kind: role as SlideKind })
@@ -216,13 +224,16 @@ export function selectLayout(slide: Slide, layoutKey: string, layoutName: string
   return patch
 }
 
-/** Картинка в тело слайда: слайды без места под картинку становятся «текст с изображением». */
-export function setSlideImage(slide: Slide, url: string, prompt: string): SlidePatch {
-  const patch: SlidePatch = { image: { prompt, url, status: 'generated' } }
-  if (slide.kind !== 'image_text' && slide.kind !== 'title') {
-    Object.assign(patch, changeKind(slide, 'image_text'))
-  }
-  return patch
+/**
+ * Картинка на слайд. Обложка и «текст с изображением» принимают её как есть, слайд-пример с местом под фото —
+ * тоже (сборка кладёт её в это место). Остальные становятся «текстом с изображением»: иначе картинке
+ * негде встать и она ложится поверх содержимого.
+ */
+export function setSlideImage(slide: Slide, url: string, prompt: string, theme: SlideTheme): SlidePatch {
+  const image = { prompt, url, status: 'generated' as const }
+  const pattern = slide.pattern_id ? theme.patterns?.find((p) => p.id === slide.pattern_id) : undefined
+  if (slide.kind === 'image_text' || slide.kind === 'title' || pattern?.images?.length) return { image }
+  return { image, ...changeKind(slide, 'image_text') }
 }
 
 /** Картинка убрана: «текст с изображением» возвращается к тезисам. */
