@@ -68,7 +68,7 @@ def model(monkeypatch):
 
     real_client = httpx.Client
     monkeypatch.setattr(llm.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
-    monkeypatch.setattr(llm, "RETRY_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(llm, "RETRY_DELAYS", [0, 0, 0])
     monkeypatch.setattr(settings, "llm_base_url", "http://llm.test/v1")
     monkeypatch.setattr(settings, "llm_model", "qwen3.8-27b")
     return state
@@ -222,3 +222,17 @@ def test_editor_keeps_pattern_minimum(model):
                              "kpis": [{"value": "84", "label": "презентации"}, {"value": "3", "label": "команды"}]})
     result = edit_slide(slide, "Сократи", deck=[slide], title="Т", purpose="", brief="", sources="", pattern=pattern)
     assert [kpi.value for kpi in result.slide.kpis] == ["84", "3", "42"]
+
+
+def test_relayout_after_edit_touches_only_edited_slide():
+    """После правки моделью вёрстка подбирается только правленому слайду; соседние сохраняют паттерн и макет."""
+    from app.api.routes.variants import relayout_edited_slide
+
+    slides = deck()
+    for slide in slides:
+        slide.pattern_id, slide.layout_key = "s9", "0:5"
+    edited = slides[1]
+    # Паттернов нет — правленый слайд уходит на макет своей роли, остальные не меняются.
+    relayout_edited_slide(edited, [], {"content": "0:2", "title": "0:0"}, [{"key": "0:2", "name": "Контент"}])
+    assert (edited.pattern_id, edited.layout_key, edited.layout_name) == (None, "0:2", "Контент")
+    assert all((s.pattern_id, s.layout_key) == ("s9", "0:5") for s in slides if s is not edited)

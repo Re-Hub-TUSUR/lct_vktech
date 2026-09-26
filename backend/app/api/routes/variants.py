@@ -605,11 +605,10 @@ async def regenerate_slide(
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
     slides[target_idx] = result.slide
-    if template is not None:
-        # Новый текст мог перестать помещаться в паттерн слайда — тогда подбирается другой.
-        names = {layout["key"]: layout["name"] for layout in template.layouts or []}
-        assign_layouts(slides, template.layout_roles or {}, names)
-        assign_patterns(slides, template.patterns, position=variant.position, layout_names=names, keep=True)
+    if template is not None and not payload.keep_pattern:
+        relayout_edited_slide(
+            result.slide, template.patterns, template.layout_roles or {}, template.layouts or [], position=variant.position
+        )
     variant.slides = [s.model_dump(mode="json") for s in slides]
     await refresh_audit(db, variant, ctx)
     await schedule_render(db, arq, variant, template, audit=True)
@@ -622,6 +621,14 @@ async def regenerate_slide(
         report=await audit_report(db, variant),
         variant=await _variant_payload(db, variant, presentation),
     )
+
+
+def relayout_edited_slide(slide: Slide, patterns, roles: dict, layouts: list, *, position: int = 0) -> None:
+    """После правки моделью новый текст мог перестать помещаться в паттерн — тогда слайду подбирается другой.
+    Остальные слайды колоды не менялись, их вёрстку не трогаем. Не вызывается, если паттерн выбрал пользователь."""
+    names = {layout["key"]: layout["name"] for layout in layouts}
+    assign_layouts([slide], roles, names)
+    assign_patterns([slide], patterns, position=position, layout_names=names, keep=True)
 
 
 DEFAULT_INSTRUCTION = "Улучши слайд: заголовок — вывод, тезисы короче и конкретнее, без воды"

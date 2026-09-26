@@ -1,11 +1,10 @@
-import { BarChart3, Check, ChevronDown, Copy, ImagePlus, LayoutTemplate, Minus, Plus, Redo2, RotateCcw, Trash2, Type, Undo2, X } from 'lucide-react'
+import { BarChart3, Check, ChevronDown, Copy, ImagePlus, LayoutTemplate, ListTree, Plus, Redo2, RotateCcw, Trash2, Type, Undo2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
-import type { Column, Kpi, Slide, SlideKind, SlideShape, SlideTheme, SlideUpdate, TableData, TimelineItem } from '../api/types'
+import type { Slide, SlideKind, SlideShape, SlideTheme, SlideUpdate } from '../api/types'
 import { typographyTarget } from '../lib/exportSupport'
 import { SLIDE_KIND_LABELS } from '../lib/labels'
 import { addChart, changeKind, removeSlideImage } from '../lib/slideEdits'
-import { SlideChartEditor } from './SlideChartEditor'
 import { Button } from './ui'
 
 interface SlideEditToolbarProps {
@@ -25,6 +24,8 @@ interface SlideEditToolbarProps {
   canUndo?: boolean
   canRedo?: boolean
   onOpenDesignModal: () => void
+  /** Открыть вкладку «Содержимое» (пункты, карточки, таблица, данные диаграммы). */
+  onOpenContent?: () => void
   onClose: () => void
   isSaving: boolean
   isUploading: boolean
@@ -48,12 +49,12 @@ export function SlideEditToolbar({
   canUndo = false,
   canRedo = false,
   onOpenDesignModal,
+  onOpenContent,
   onClose,
   isSaving,
   isUploading,
   hasChanges,
 }: SlideEditToolbarProps) {
-  const [showChartModal, setShowChartModal] = useState(false)
   const [showInsertMenu, setShowInsertMenu] = useState(false)
   const insertMenuRef = useRef<HTMLDivElement>(null)
 
@@ -170,94 +171,7 @@ export function SlideEditToolbar({
 
   const handleAddChart = () => {
     onChange(addChart(slide))
-    setShowChartModal(true)
-  }
-
-  // --- Управление элементами структуры слайда ---
-  const handleAddBullet = () => {
-    const next = [...(slide.bullets || []), 'Новый тезис']
-    onChange({ bullets: next })
-  }
-
-  const handleRemoveBullet = () => {
-    if (!slide.bullets || slide.bullets.length <= 1) return
-    onChange({ bullets: slide.bullets.slice(0, -1) })
-  }
-
-  const handleAddCard = () => {
-    const next: Column[] = [
-      ...(slide.columns || []),
-      { title: `Карточка ${(slide.columns?.length || 0) + 1}`, bullets: ['Описание или тезис'] },
-    ]
-    onChange({ columns: next })
-  }
-
-  const handleRemoveCard = () => {
-    if (!slide.columns || slide.columns.length <= 1) return
-    onChange({ columns: slide.columns.slice(0, -1) })
-  }
-
-  const handleAddKpi = () => {
-    const next: Kpi[] = [...(slide.kpis || []), { value: '100+', label: 'Новый показатель' }]
-    onChange({ kpis: next })
-  }
-
-  const handleRemoveKpi = () => {
-    if (!slide.kpis || slide.kpis.length <= 1) return
-    onChange({ kpis: slide.kpis.slice(0, -1) })
-  }
-
-  const handleAddTimeline = () => {
-    const next: TimelineItem[] = [
-      ...(slide.timeline || []),
-      { date: '2026', title: 'Новый этап', text: 'Описание этапа' },
-    ]
-    onChange({ timeline: next })
-  }
-
-  const handleRemoveTimeline = () => {
-    if (!slide.timeline || slide.timeline.length <= 1) return
-    onChange({ timeline: slide.timeline.slice(0, -1) })
-  }
-
-  // Управление таблицей
-  const handleAddTableRow = () => {
-    if (!slide.table) return
-    const colCount = Math.max(slide.table.columns.length, 1)
-    const newRow = Array(colCount).fill('—')
-    const nextTable: TableData = {
-      columns: slide.table.columns,
-      rows: [...slide.table.rows, newRow],
-    }
-    onChange({ table: nextTable })
-  }
-
-  const handleRemoveTableRow = () => {
-    if (!slide.table || slide.table.rows.length <= 1) return
-    const nextTable: TableData = {
-      columns: slide.table.columns,
-      rows: slide.table.rows.slice(0, -1),
-    }
-    onChange({ table: nextTable })
-  }
-
-  const handleAddTableCol = () => {
-    if (!slide.table) return
-    const newColName = `Колонка ${slide.table.columns.length + 1}`
-    const nextTable: TableData = {
-      columns: [...slide.table.columns, newColName],
-      rows: slide.table.rows.map((r) => [...r, '—']),
-    }
-    onChange({ table: nextTable })
-  }
-
-  const handleRemoveTableCol = () => {
-    if (!slide.table || slide.table.columns.length <= 1) return
-    const nextTable: TableData = {
-      columns: slide.table.columns.slice(0, -1),
-      rows: slide.table.rows.map((r) => r.slice(0, -1)),
-    }
-    onChange({ table: nextTable })
+    onOpenContent?.()
   }
 
   const getBadgeLabel = () => {
@@ -371,7 +285,7 @@ export function SlideEditToolbar({
               onClick={onOpenDesignModal}
               title="Выбрать готовый шаблон слайда из темы оформления"
             >
-              Шаблон дизайна
+              Шаблон слайда
             </Button>
           </div>
 
@@ -454,11 +368,7 @@ export function SlideEditToolbar({
                   className="slide-edit-shape-menu__item"
                   onClick={() => {
                     setShowInsertMenu(false)
-                    if (slide.chart) {
-                      setShowChartModal(true)
-                    } else {
-                      handleAddChart()
-                    }
+                    handleAddChart()
                   }}
                 >
                   <BarChart3 size={15} color="var(--color-primary)" />
@@ -692,67 +602,12 @@ export function SlideEditToolbar({
             </div>
           )}
 
-          {/* Кнопки таблицы */}
-          {slide.table && (
+          {/* Состав слайда (пункты, карточки, этапы, таблица, данные диаграммы) правится во вкладке «Содержимое» */}
+          {onOpenContent && (
             <div className="slide-edit-topbar__item">
-              <div className="row row--xs">
-                <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleAddTableRow} title="Добавить строку">
-                  Строка
-                </Button>
-                <Button size="sm" variant="ghost" icon={<Minus size={13} />} onClick={handleRemoveTableRow} title="Удалить строку" />
-                <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleAddTableCol} title="Добавить колонку">
-                  Колонка
-                </Button>
-                <Button size="sm" variant="ghost" icon={<Minus size={13} />} onClick={handleRemoveTableCol} title="Удалить колонку" />
-              </div>
-            </div>
-          )}
-
-          {/* Кнопки карточек */}
-          {slide.kind === 'cards' && (
-            <div className="slide-edit-topbar__item">
-              <div className="row row--xs">
-                <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleAddCard}>
-                  Карточка
-                </Button>
-                <Button size="sm" variant="ghost" icon={<Minus size={13} />} onClick={handleRemoveCard} />
-              </div>
-            </div>
-          )}
-
-          {/* Кнопки KPI */}
-          {slide.kind === 'kpi' && (
-            <div className="slide-edit-topbar__item">
-              <div className="row row--xs">
-                <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleAddKpi}>
-                  Показатель
-                </Button>
-                <Button size="sm" variant="ghost" icon={<Minus size={13} />} onClick={handleRemoveKpi} />
-              </div>
-            </div>
-          )}
-
-          {/* Кнопки Timeline */}
-          {slide.kind === 'timeline' && (
-            <div className="slide-edit-topbar__item">
-              <div className="row row--xs">
-                <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleAddTimeline}>
-                  Этап
-                </Button>
-                <Button size="sm" variant="ghost" icon={<Minus size={13} />} onClick={handleRemoveTimeline} />
-              </div>
-            </div>
-          )}
-
-          {/* Кнопки тезисов для списков */}
-          {(slide.kind === 'bullets' || slide.kind === 'agenda') && (
-            <div className="slide-edit-topbar__item">
-              <div className="row row--xs">
-                <Button size="sm" variant="ghost" icon={<Plus size={13} />} onClick={handleAddBullet}>
-                  Тезис
-                </Button>
-                <Button size="sm" variant="ghost" icon={<Minus size={13} />} onClick={handleRemoveBullet} />
-              </div>
+              <Button size="sm" variant="ghost" icon={<ListTree size={14} />} onClick={onOpenContent} title="Пункты, карточки, этапы, таблица и данные диаграммы">
+                Содержимое
+              </Button>
             </div>
           )}
 
@@ -822,15 +677,6 @@ export function SlideEditToolbar({
         </div>
       </div>
 
-      {showChartModal && slide.chart && (
-        <SlideChartEditor
-          chart={slide.chart}
-          onChange={(updatedChart) => {
-            onChange({ chart: updatedChart })
-          }}
-          onClose={() => setShowChartModal(false)}
-        />
-      )}
     </>
   )
 }

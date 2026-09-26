@@ -38,10 +38,10 @@ import { useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, usePresentation, useVariant } from '../api/queries'
-import type { Column, Kpi, RegenerateSlideResponse, ResolveResponse, Slide, SlideKind, SlideShape, VariantDetail } from '../api/types'
+import type { RegenerateSlideResponse, ResolveResponse, Slide, SlideKind, SlidePattern, SlideShape, VariantDetail } from '../api/types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
-import { SlideChartEditor } from '../components/SlideChartEditor'
+import { SlideContentPanel } from '../components/SlideContentPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
 import { getElementLabel, SlideView, slideRender } from '../components/slides/SlideView'
 import { Slideshow } from '../components/slides/Slideshow'
@@ -51,8 +51,10 @@ import { typographyTarget } from '../lib/exportSupport'
 import { SLIDE_KIND_LABELS } from '../lib/labels'
 import {
   addChart,
+  canvasListAction,
   changeKind,
   fieldPatch,
+  regenerateInstruction,
   removeChart,
   selectLayout,
   selectPattern,
@@ -154,11 +156,10 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
   const [zoomMode, setZoomMode] = useState<ZoomMode>('fit')
   const [notesOpen, setNotesOpen] = useState(false)
   const [slideshowOpen, setSlideshowOpen] = useState(false)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'design' | 'ai'>('design')
+  const [activeSidebarTab, setActiveSidebarTab] = useState<'content' | 'design' | 'ai'>('content')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [filmstripCollapsed, setFilmstripCollapsed] = useState(false)
   const [showDesignModal, setShowDesignModal] = useState(false)
-  const [showChartModal, setShowChartModal] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [colorTarget, setColorTarget] = useState<ColorTarget | null>(null)
@@ -458,10 +459,15 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
   }
 
   // Модель правит сохранённую колоду, поэтому несохранённые правки сначала сохраняются.
+  // deck — колода, которую нужно сохранить перед запросом (например, со свежепримененным шаблоном);
+  // keepPattern — шаблон выбран пользователем, сервер не подбирает другой.
   const regenerateMutation = useMutation({
-    mutationFn: async ({ slideId, instruction }: { slideId: string; instruction: string }) => {
-      if (hasChangesRef.current) await saveMutation.mutateAsync(slides)
-      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, { instruction })
+    mutationFn: async ({ slideId, instruction, deck, keepPattern = false }: { slideId: string; instruction: string; deck?: Slide[]; keepPattern?: boolean }) => {
+      if (deck || hasChangesRef.current) await saveMutation.mutateAsync(deck ?? slides)
+      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, {
+        instruction,
+        keep_pattern: keepPattern,
+      })
     },
     onSuccess: (result) => {
       applyServerResult(result)
@@ -565,9 +571,30 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
       {opts.checked && <Check size={12} />}
     </button>
   )
+  // Данные диаграммы правятся во вкладке «Содержимое».
   const openChart = () => {
     updateCurrentSlide(addChart(currentSlide))
-    setShowChartModal(true)
+    setActiveSidebarTab('content')
+    setSidebarCollapsed(false)
+  }
+
+  // Окно «Шаблон слайда»: переписать текст моделью под выбранный (или тот же) слайд-пример.
+  const regenerateWithTemplate = async (pattern: SlidePattern | null, wish: string) => {
+    const instruction = regenerateInstruction(pattern, wish)
+    if (!pattern) {
+      await regenerateMutation.mutateAsync({ slideId: currentSlide.id, instruction, keepPattern: true })
+      return
+    }
+    const deck = slides.map((s) => (s.id === currentSlide.id ? { ...s, ...selectPattern(s, pattern, theme) } : s))
+    commit(() => deck)
+    await regenerateMutation.mutateAsync({ slideId: currentSlide.id, instruction, deck, keepPattern: true })
+  }
+
+  const handleListItem = (field: string, action: 'insert' | 'remove', text: string) => {
+    const result = canvasListAction(currentSlide, field, action, text)
+    if (!result) return undefined
+    updateCurrentSlide(result.patch)
+    return result.focus
   }
 
   return (
@@ -845,11 +872,9 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             </button>
             <button type="button" className="gslides-tool-btn" onClick={() => setShowDesignModal(true)} title="Макет или слайд-пример шаблона">
               <LayoutTemplate size={14} />
-              <span>Макет</span>
+              <span>Шаблон</span>
             </button>
           </div>
-
-          <StructureButtons slide={currentSlide} onChange={updateCurrentSlide} />
 
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
@@ -978,6 +1003,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
                 onResetElementBox={handleResetElementBox}
                 onUpdateElementCrop={handleUpdateElementCrop}
                 onFieldChange={handleFieldChange}
+                onListItem={handleListItem}
                 onDeleteChart={() => {
                   updateCurrentSlide(removeChart(currentSlide))
                   notify('Диаграмма удалена со слайда')
@@ -1014,10 +1040,17 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             <div className="gslides-sidebar__tabs">
               <button
                 type="button"
+                className={clsx('gslides-sidebar__tab', activeSidebarTab === 'content' && 'is-active')}
+                onClick={() => setActiveSidebarTab('content')}
+              >
+                Содержимое
+              </button>
+              <button
+                type="button"
                 className={clsx('gslides-sidebar__tab', activeSidebarTab === 'design' && 'is-active')}
                 onClick={() => setActiveSidebarTab('design')}
               >
-                Макет
+                Шаблон
               </button>
               <button
                 type="button"
@@ -1029,6 +1062,20 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             </div>
 
             <div className="gslides-sidebar__body">
+              {activeSidebarTab === 'content' && (
+                <SlideContentPanel
+                  slide={currentSlide}
+                  theme={theme}
+                  onChange={updateCurrentSlide}
+                  onOpenTemplates={() => setShowDesignModal(true)}
+                  selectedElement={activeElement}
+                  onSelectElement={(field) => {
+                    setActiveElement(field)
+                    setSelectedShapeId(null)
+                  }}
+                />
+              )}
+
               {activeSidebarTab === 'design' && (
                 <div className="gslides-sidebar-section">
                   <span className="gslides-sidebar-section__title">Макет и шаблон</span>
@@ -1045,7 +1092,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
                     onClick={() => setShowDesignModal(true)}
                     style={{ marginTop: 8 }}
                   >
-                    Открыть галерею шаблонов
+                    Шаблон слайда
                   </Button>
                   <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>
                     Выделено: <strong>{elementLabel}</strong>
@@ -1086,19 +1133,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit }: SlidesE
             updateCurrentSlide(selectLayout(currentSlide, key, name, theme))
             setShowDesignModal(false)
           }}
+          onRegenerate={regenerateWithTemplate}
           onClose={() => setShowDesignModal(false)}
-        />
-      )}
-
-      {showChartModal && currentSlide.chart && (
-        <SlideChartEditor
-          chart={currentSlide.chart}
-          onChange={(chart) => updateCurrentSlide({ chart }, `chart:${currentSlide.id}`)}
-          onDelete={() => {
-            updateCurrentSlide(removeChart(currentSlide))
-            setShowChartModal(false)
-          }}
-          onClose={() => setShowChartModal(false)}
         />
       )}
 
@@ -1202,81 +1238,4 @@ function HexInput({ value, onCommit }: { value: string; onCommit: (color: string
       }}
     />
   )
-}
-
-/** Кнопки состава слайда: пункты списка, карточки, показатели, строки таблицы. */
-function StructureButtons({ slide, onChange }: { slide: Slide; onChange: (patch: SlidePatch) => void }) {
-  const group = (addLabel: string, add: () => void, remove: (() => void) | null, removeTitle: string) => (
-    <>
-      <div className="gslides-tool-divider" />
-      <div className="gslides-tool-group">
-        <button type="button" className="gslides-tool-btn" onClick={add} title={`Добавить: ${addLabel.toLowerCase()}`}>
-          <Plus size={13} /> {addLabel}
-        </button>
-        <button type="button" className="gslides-tool-btn" disabled={!remove} onClick={remove ?? undefined} title={removeTitle}>
-          <Minus size={13} />
-        </button>
-      </div>
-    </>
-  )
-
-  if (slide.kind === 'bullets' || slide.kind === 'agenda' || slide.kind === 'image_text') {
-    return group(
-      'Тезис',
-      () => onChange({ bullets: [...(slide.bullets || []), 'Новый тезис'] }),
-      slide.bullets.length > 1 ? () => onChange({ bullets: slide.bullets.slice(0, -1) }) : null,
-      'Удалить последний пункт',
-    )
-  }
-  if (slide.kind === 'cards' || slide.kind === 'two_columns') {
-    const add: Column = { title: `Карточка ${slide.columns.length + 1}`, bullets: ['Описание'] }
-    return group(
-      'Карточка',
-      () => onChange({ columns: [...slide.columns, add] }),
-      slide.columns.length > 1 ? () => onChange({ columns: slide.columns.slice(0, -1) }) : null,
-      'Удалить последнюю карточку',
-    )
-  }
-  if (slide.kind === 'kpi') {
-    const add: Kpi = { value: '100+', label: 'Новый показатель' }
-    return group(
-      'KPI',
-      () => onChange({ kpis: [...slide.kpis, add] }),
-      slide.kpis.length > 1 ? () => onChange({ kpis: slide.kpis.slice(0, -1) }) : null,
-      'Удалить последний показатель',
-    )
-  }
-  if (slide.kind === 'timeline') {
-    return group(
-      'Этап',
-      () => onChange({ timeline: [...slide.timeline, { date: 'Этап', title: 'Новый этап', text: null }] }),
-      slide.timeline.length > 1 ? () => onChange({ timeline: slide.timeline.slice(0, -1) }) : null,
-      'Удалить последний этап',
-    )
-  }
-  if (slide.kind === 'table' && slide.table) {
-    const table = slide.table
-    return (
-      <>
-        {group(
-          'Строка',
-          () => onChange({ table: { ...table, rows: [...table.rows, Array(Math.max(table.columns.length, 1)).fill('—')] } }),
-          table.rows.length > 1 ? () => onChange({ table: { ...table, rows: table.rows.slice(0, -1) } }) : null,
-          'Удалить последнюю строку',
-        )}
-        {group(
-          'Колонка',
-          () =>
-            onChange({
-              table: { columns: [...table.columns, `Колонка ${table.columns.length + 1}`], rows: table.rows.map((r) => [...r, '—']) },
-            }),
-          table.columns.length > 1
-            ? () => onChange({ table: { columns: table.columns.slice(0, -1), rows: table.rows.map((r) => r.slice(0, -1)) } })
-            : null,
-          'Удалить последнюю колонку',
-        )}
-      </>
-    )
-  }
-  return null
 }

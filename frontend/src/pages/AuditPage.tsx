@@ -46,6 +46,7 @@ import { ImagePickerModal } from '../components/ImagePickerModal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
+import { SlideContentPanel } from '../components/SlideContentPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
 import { SlideEditToolbar } from '../components/SlideEditToolbar'
 import { SlideView, slideRender, type Highlights } from '../components/slides/SlideView'
@@ -53,7 +54,17 @@ import { Slideshow } from '../components/slides/Slideshow'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
-import { changeKind, fieldPatch, mergeDraft, removeSlideImage, selectLayout, selectPattern, setSlideImage } from '../lib/slideEdits'
+import {
+  canvasListAction,
+  changeKind,
+  fieldPatch,
+  mergeDraft,
+  regenerateInstruction,
+  removeSlideImage,
+  selectLayout,
+  selectPattern,
+  setSlideImage,
+} from '../lib/slideEdits'
 import { CHECK_METHOD_LABELS, CHECK_STATUS_LABELS, SEVERITY_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 
 const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
@@ -177,6 +188,7 @@ function AuditWorkspace({
   const [imagePickerMode, setImagePickerMode] = useState<'slide' | 'floating' | 'shape'>('slide')
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
   const [showDesignModal, setShowDesignModal] = useState(false)
+  const [editPanelTab, setEditPanelTab] = useState<'content' | 'ai'>('content')
   const [showImagePicker, setShowImagePicker] = useState(false)
   const [showDiscardDialog, setShowDiscardDialog] = useState(false)
   const [draftHistory, setDraftHistory] = useState<
@@ -391,13 +403,31 @@ function AuditWorkspace({
 
   // Правка слайда моделью по сообщению из чата; ответ модели показывает ассистент, ошибку — тоже он.
   const regenerateSlideMutation = useMutation({
-    mutationFn: async ({ slideId, instruction }: { slideId: string; instruction: string }) => {
+    // draft — черновик, который нужно сохранить (например, с только что применённым шаблоном);
+    // keepPattern — шаблон выбран пользователем, сервер не подбирает другой.
+    mutationFn: async ({
+      slideId,
+      instruction,
+      draft,
+      keepPattern = false,
+    }: {
+      slideId: string
+      instruction: string
+      draft?: SlideUpdate
+      keepPattern?: boolean
+    }) => {
       // Модель правит сохранённый слайд: сначала сохраняем черновик, иначе ручные правки пропадут.
-      const draft = slideEdits[slideId]
-      if (hasDraftChanges(draft)) {
-        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, { ...draft, shapes: activeSlide.shapes })
+      const pending = draft ?? slideEdits[slideId]
+      if (hasDraftChanges(pending)) {
+        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, {
+          ...pending,
+          shapes: pending?.shapes ?? activeSlide.shapes,
+        })
       }
-      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, { instruction })
+      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, {
+        instruction,
+        keep_pattern: keepPattern,
+      })
     },
     onSuccess: (result, { slideId }) => {
       applyResult(result)
@@ -415,17 +445,25 @@ function AuditWorkspace({
     },
   })
 
-  const handleSlideChange = (updates: SlideUpdate) => {
+  // Ввод в одно поле подряд (coalesceKey) — один шаг истории, а не шаг на каждую букву.
+  const lastChangeRef = useRef<{ key: string; at: number } | null>(null)
+  const handleSlideChange = (updates: SlideUpdate, coalesceKey?: string) => {
     if (!currentSlide || saveInProgressRef.current) return
     const slideId = currentSlide.id
     const currentDraft = slideEdits[slideId] || {}
-    setDraftHistory((prev) => ({
-      ...prev,
-      [slideId]: {
-        past: [...(prev[slideId]?.past || []), currentDraft].slice(-40),
-        future: [],
-      },
-    }))
+    const now = Date.now()
+    const key = coalesceKey ? `${slideId}:${coalesceKey}` : null
+    const merge = Boolean(key && lastChangeRef.current?.key === key && now - lastChangeRef.current.at < 1200)
+    lastChangeRef.current = key ? { key, at: now } : null
+    if (!merge) {
+      setDraftHistory((prev) => ({
+        ...prev,
+        [slideId]: {
+          past: [...(prev[slideId]?.past || []), currentDraft].slice(-40),
+          future: [],
+        },
+      }))
+    }
     setSlideEdits((prev) => ({
       ...prev,
       [slideId]: {
@@ -572,10 +610,32 @@ function AuditWorkspace({
     handleSlideChange(selectLayout(activeSlide, layoutKey, layoutName, theme))
   }
 
+  // Окно «Шаблон слайда»: переписать текст моделью под выбранный (или тот же) слайд-пример.
+  const handleRegenerateWithTemplate = async (pattern: SlidePattern | null, wish: string) => {
+    if (!currentSlide) return
+    const instruction = regenerateInstruction(pattern, wish)
+    if (!pattern) {
+      await regenerateSlideMutation.mutateAsync({ slideId: currentSlide.id, instruction, keepPattern: true })
+      return
+    }
+    const patch = selectPattern(activeSlide, pattern, theme)
+    handleSlideChange(patch)
+    const draft = { ...(slideEdits[currentSlide.id] || {}), ...patch } as SlideUpdate
+    await regenerateSlideMutation.mutateAsync({ slideId: currentSlide.id, instruction, draft, keepPattern: true })
+  }
+
+  const handleListItem = (field: string, action: 'insert' | 'remove', text: string) => {
+    if (!currentSlide || saveInProgressRef.current) return undefined
+    const result = canvasListAction(activeSlide, field, action, text)
+    if (!result) return undefined
+    handleSlideChange(result.patch)
+    return result.focus
+  }
+
   const handleFieldChange = (path: string, value: string) => {
     if (!currentSlide || saveInProgressRef.current) return
     const patch = fieldPatch(activeSlide, path, value)
-    if (patch) handleSlideChange(patch)
+    if (patch) handleSlideChange(patch, path === 'notes' ? 'notes' : undefined)
   }
 
   useEffect(() => {
@@ -763,6 +823,7 @@ function AuditWorkspace({
             canUndo={Boolean(currentSlide && draftHistory[currentSlide.id]?.past.length)}
             canRedo={Boolean(currentSlide && draftHistory[currentSlide.id]?.future.length)}
             onOpenDesignModal={() => setShowDesignModal(true)}
+            onOpenContent={() => setEditPanelTab('content')}
             onClose={handleCloseEdit}
             isSaving={updateSlideMutation.isPending || isSavingAll}
             isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
@@ -908,6 +969,7 @@ function AuditWorkspace({
                       if (el) setSelectedShapeId(null)
                     }}
                     onFieldChange={handleFieldChange}
+                    onListItem={handleListItem}
                     onImageClick={() => {
                       setActiveElement('image')
                       setSelectedShapeId(null)
@@ -1090,17 +1152,51 @@ function AuditWorkspace({
 
         <aside className="audit-panel">
           {canEdit && isEditing && currentSlide ? (
-            <SlideAssistantPanel
-              slide={activeSlide}
-              theme={theme}
-              slideIndex={slideIndex}
-              onRegenerate={async (instruction) =>
-                (await regenerateSlideMutation.mutateAsync({ slideId: activeSlide.id, instruction })).reply}
-              onChangeKind={handleChangeKind}
-              onSelectPattern={handleSelectPattern}
-              onOpenDesignModal={() => setShowDesignModal(true)}
-              isRegenerating={regenerateSlideMutation.isPending}
-            />
+            <>
+              <div className="audit-panel-tabs">
+                <button
+                  type="button"
+                  className={clsx('audit-panel-tab', editPanelTab === 'content' && 'is-active')}
+                  onClick={() => setEditPanelTab('content')}
+                >
+                  <span>Содержимое</span>
+                </button>
+                <button
+                  type="button"
+                  className={clsx('audit-panel-tab', editPanelTab === 'ai' && 'is-active')}
+                  onClick={() => setEditPanelTab('ai')}
+                >
+                  <span>AI-ассистент</span>
+                </button>
+              </div>
+              {editPanelTab === 'content' ? (
+                <div className="audit-panel-content">
+                  <SlideContentPanel
+                    slide={activeSlide}
+                    theme={theme}
+                    onChange={handleSlideChange}
+                    onOpenTemplates={() => setShowDesignModal(true)}
+                    selectedElement={activeElement}
+                    onSelectElement={(field) => {
+                      setActiveElement(field)
+                      setSelectedShapeId(null)
+                    }}
+                  />
+                </div>
+              ) : (
+                <SlideAssistantPanel
+                  slide={activeSlide}
+                  theme={theme}
+                  slideIndex={slideIndex}
+                  onRegenerate={async (instruction) =>
+                    (await regenerateSlideMutation.mutateAsync({ slideId: activeSlide.id, instruction })).reply}
+                  onChangeKind={handleChangeKind}
+                  onSelectPattern={handleSelectPattern}
+                  onOpenDesignModal={() => setShowDesignModal(true)}
+                  isRegenerating={regenerateSlideMutation.isPending}
+                />
+              )}
+            </>
           ) : (
             <>
               <div className="audit-panel-tabs">
@@ -1397,6 +1493,7 @@ function AuditWorkspace({
           theme={theme}
           onSelectPattern={handleSelectPattern}
           onSelectLayout={handleSelectLayout}
+          onRegenerate={canEdit ? handleRegenerateWithTemplate : undefined}
           onClose={() => setShowDesignModal(false)}
         />
       )}
