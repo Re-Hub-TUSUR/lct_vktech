@@ -240,3 +240,213 @@ export function removeChart(slide: Slide): SlidePatch {
   const kind: SlideKind = slide.bullets?.length ? 'bullets' : slide.columns?.length ? 'cards' : 'bullets'
   return { chart: null, ...changeKind({ ...slide, kind: 'chart' }, kind) }
 }
+
+// --- Элементы списков: тезисы, карточки и их строки, показатели, этапы, строки таблицы ---------
+
+/** Адрес списка: bullets, columns, kpis, timeline, columns.1.bullets, table.rows. */
+export type ListPath = string
+
+function readList(slide: Slide, path: ListPath): unknown[] | null {
+  const parts = path.split('.')
+  if (parts[0] === 'table' && parts[1] === 'rows') return slide.table?.rows ?? null
+  if (parts[0] === 'columns' && parts[2] === 'bullets') return slide.columns?.[parseInt(parts[1], 10)]?.bullets ?? null
+  const list = (slide as unknown as Record<string, unknown>)[parts[0]]
+  return Array.isArray(list) ? list : null
+}
+
+function writeList(slide: Slide, path: ListPath, items: unknown[]): SlidePatch {
+  const parts = path.split('.')
+  if (parts[0] === 'table' && slide.table) return { table: { ...slide.table, rows: items as string[][] } }
+  if (parts[0] === 'columns' && parts[2] === 'bullets') {
+    const ci = parseInt(parts[1], 10)
+    return { columns: slide.columns.map((c, i) => (i === ci ? { ...c, bullets: items as string[] } : c)) }
+  }
+  return { [parts[0]]: items } as SlidePatch
+}
+
+/** Новый элемент списка: пустой — на холсте его сразу заполняют, из панели — с понятной заготовкой. */
+export function blankItem(slide: Slide, path: ListPath, withText = true): unknown {
+  const root = path.split('.')[0]
+  if (root === 'columns' && path.includes('.bullets')) return withText ? 'Текст' : ''
+  if (root === 'columns') return { title: withText ? 'Новая карточка' : '', bullets: [withText ? 'Описание' : ''] }
+  if (root === 'kpis') return { value: withText ? '0' : '', label: withText ? 'Показатель' : '' }
+  if (root === 'timeline') return { date: '', title: withText ? 'Новый этап' : '', text: null }
+  if (root === 'table') return Array(Math.max(slide.table?.columns.length ?? 1, 1)).fill('')
+  return withText ? 'Новый пункт' : ''
+}
+
+/** Правки, привязанные к элементу списка по номеру: положение, обрезка и оформление пункта. */
+const INDEXED_MAPS = ['element_boxes', 'element_crops', 'element_fonts', 'element_scales', 'element_colors', 'element_bolds', 'element_backgrounds'] as const
+
+/**
+ * Номера элементов списка сменились (вставка, удаление, перестановка): ключи вида bullets.2 или
+ * columns.1.title переезжают вслед за своим элементом. to(i) — новый номер, null — элемент удалён.
+ */
+function reindex(slide: Slide, path: ListPath, to: (index: number) => number | null): SlidePatch {
+  const pattern = new RegExp(`^${path.replace(/\./g, '\\.')}\\.(\\d+)(\\..*)?$`)
+  const patch: Record<string, unknown> = {}
+  for (const name of INDEXED_MAPS) {
+    const map = slide[name] as Record<string, unknown> | null | undefined
+    if (!map) continue
+    let changed = false
+    const next: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(map)) {
+      const match = key.match(pattern)
+      if (!match) {
+        next[key] = value
+        continue
+      }
+      changed = true
+      const target = to(Number(match[1]))
+      if (target !== null) next[`${path}.${target}${match[2] ?? ''}`] = value
+    }
+    if (changed) patch[name] = next
+  }
+  return patch as SlidePatch
+}
+
+export function insertItem(slide: Slide, path: ListPath, index: number, item: unknown = blankItem(slide, path)): SlidePatch {
+  const list = readList(slide, path)
+  if (!list) return {}
+  const at = Math.max(0, Math.min(index, list.length))
+  return {
+    ...writeList(slide, path, [...list.slice(0, at), item, ...list.slice(at)]),
+    ...reindex(slide, path, (i) => (i >= at ? i + 1 : i)),
+  }
+}
+
+export function removeItem(slide: Slide, path: ListPath, index: number): SlidePatch {
+  const list = readList(slide, path)
+  if (!list || index < 0 || index >= list.length) return {}
+  return {
+    ...writeList(slide, path, list.filter((_, i) => i !== index)),
+    ...reindex(slide, path, (i) => (i === index ? null : i > index ? i - 1 : i)),
+  }
+}
+
+export function moveItem(slide: Slide, path: ListPath, from: number, to: number): SlidePatch {
+  const list = readList(slide, path)
+  if (!list || from === to || from < 0 || from >= list.length || to < 0 || to >= list.length) return {}
+  const order = list.map((_, i) => i)
+  const [moved] = order.splice(from, 1)
+  order.splice(to, 0, moved)
+  return {
+    ...writeList(slide, path, order.map((i) => list[i])),
+    ...reindex(slide, path, (i) => order.indexOf(i)),
+  }
+}
+
+/** Колонка таблицы: вставка перед index или удаление — вместе с ячейками всех строк. */
+export function insertTableColumn(slide: Slide, index: number): SlidePatch {
+  if (!slide.table) return {}
+  const at = Math.max(0, Math.min(index, slide.table.columns.length))
+  const insert = <T,>(row: T[], value: T) => [...row.slice(0, at), value, ...row.slice(at)]
+  return {
+    table: { columns: insert(slide.table.columns, `Колонка ${slide.table.columns.length + 1}`), rows: slide.table.rows.map((r) => insert(r, '')) },
+  }
+}
+
+export function removeTableColumn(slide: Slide, index: number): SlidePatch {
+  if (!slide.table || slide.table.columns.length <= 1) return {}
+  const drop = <T,>(row: T[]) => row.filter((_, i) => i !== index)
+  return { table: { columns: drop(slide.table.columns), rows: slide.table.rows.map(drop) } }
+}
+
+/** Таблица из буфера обмена (TSV из Excel или Google Таблиц): первая строка — шапка. */
+export function parseTsv(text: string): string[][] {
+  return text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((line) => line.trim())
+    .map((line) => line.split('\t').map((cell) => cell.trim()))
+}
+
+/** Поле холста → элемент списка, к которому относятся Enter и Backspace. */
+export function listItemOf(field: string): { path: ListPath; index: number; removable: boolean } | null {
+  let match = field.match(/^bullets\.(\d+)$/)
+  if (match) return { path: 'bullets', index: +match[1], removable: true }
+  match = field.match(/^(columns\.\d+\.bullets)\.(\d+)$/)
+  if (match) return { path: match[1], index: +match[2], removable: true }
+  match = field.match(/^kpis\.(\d+)\.label$/)
+  if (match) return { path: 'kpis', index: +match[1], removable: false }
+  match = field.match(/^timeline\.(\d+)\.(title|text)$/)
+  if (match) return { path: 'timeline', index: +match[1], removable: false }
+  return null
+}
+
+/** Первое поле элемента списка — туда встаёт курсор после вставки. */
+export function firstFieldOf(path: ListPath, index: number): string {
+  if (path === 'kpis') return `kpis.${index}.value`
+  if (path === 'timeline') return `timeline.${index}.title`
+  return `${path}.${index}`
+}
+
+// --- Подбор шаблона ------------------------------------------------------------------------
+
+/** Тип содержимого слайда → типы паттернов, в которые оно ложится (как layout/matcher.py KIND_TYPES). */
+const KIND_TYPES: Partial<Record<SlideKind, string[]>> = {
+  bullets: ['text'],
+  agenda: ['agenda', 'text'],
+  cards: ['cards', 'two_columns'],
+  two_columns: ['two_columns', 'cards'],
+  kpi: ['kpi'],
+  timeline: ['timeline', 'cards'],
+  table: ['table'],
+  image_text: ['image_text', 'text'],
+  chart: ['chart'],
+}
+const SERVICE_CATEGORY: Partial<Record<SlideKind, string>> = { title: 'cover', section: 'section', closing: 'closing' }
+
+/** Паттерн подходит содержимому слайда без смены типа (и вмещает все его элементы). */
+export function patternSuits(slide: Slide, pattern: SlidePattern): boolean {
+  const service = SERVICE_CATEGORY[slide.kind]
+  if (service) return pattern.category === service
+  if (!KIND_TYPES[slide.kind]?.includes(pattern.type)) return false
+  const count = itemCount(slide)
+  return count === null || !pattern.items?.length || pattern.items.length >= count
+}
+
+/** Число элементов слайда, которые раскладываются по местам паттерна; null — у типа нет элементов. */
+export function itemCount(slide: Slide): number | null {
+  if (slide.kind === 'cards' || slide.kind === 'two_columns') return slide.columns.length
+  if (slide.kind === 'kpi') return slide.kpis.length
+  if (slide.kind === 'timeline') return slide.timeline.length
+  if (slide.kind === 'agenda') return slide.bullets.length
+  return null
+}
+
+/** Инструкция модели для «перегенерировать» и «применить и переписать». */
+export function regenerateInstruction(pattern: SlidePattern | null, userText: string): string {
+  const wish = userText.trim()
+  if (!pattern) return wish || 'Перепиши слайд заново: заголовок — вывод, текст короче и конкретнее'
+  const places = pattern.items?.length ? `, ${pattern.items.length} элементов` : ''
+  const base = `Слайд перенесён на другую вёрстку шаблона${places}. Перепиши содержимое так, чтобы оно естественно легло в неё, сохранив смысл и факты`
+  return wish ? `${base}. ${wish}` : base
+}
+
+/**
+ * Enter и Backspace в пункте списка на холсте: текст поля и вставка (удаление) — одной правкой,
+ * иначе вторая перезапишет первую. focus — поле, куда встаёт курсор; null — действие не применимо.
+ */
+export function canvasListAction(
+  slide: Slide,
+  field: string,
+  action: 'insert' | 'remove',
+  text: string,
+): { patch: SlidePatch; focus: string | null } | null {
+  const item = listItemOf(field)
+  if (!item) return null
+  const edited = applyFieldChange(slide, field, text)
+  if (action === 'insert') {
+    return {
+      patch: insertItem(edited, item.path, item.index + 1, blankItem(edited, item.path, false)),
+      focus: firstFieldOf(item.path, item.index + 1),
+    }
+  }
+  const list = readList(edited, item.path)
+  if (!item.removable || text !== '' || !list || list.length <= 1) return null
+  return {
+    patch: removeItem(edited, item.path, item.index),
+    focus: item.index > 0 ? firstFieldOf(item.path, item.index - 1) : firstFieldOf(item.path, 0),
+  }
+}

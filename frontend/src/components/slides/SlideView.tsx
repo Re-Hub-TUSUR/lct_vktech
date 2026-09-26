@@ -12,7 +12,7 @@ import {
 } from 'react'
 
 import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
-import { exportView, frameTarget } from '../../lib/exportSupport'
+import { capacity, exportView, frameTarget } from '../../lib/exportSupport'
 import { fitFontSize } from '../../lib/fit'
 import { SlideChart } from './SlideChart'
 import { SlideShapesLayer } from './SlideShapesLayer'
@@ -46,6 +46,11 @@ interface SlideViewProps {
   selectedElementId?: string | null
   onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
+  /**
+   * Enter (insert) или Backspace в пустом (remove) в пункте списка на холсте. Возвращает поле,
+   * куда поставить курсор; undefined — действие не применимо (Enter тогда просто завершает правку).
+   */
+  onListItem?: (field: string, action: 'insert' | 'remove', text: string) => string | null | undefined
   onImageClick?: () => void
   onSelectShape?: (shapeId: string | null) => void
   onUpdateShape?: (shapeId: string, patch: Partial<SlideShape>) => void
@@ -133,6 +138,30 @@ function getDroppedTemplateShapeIds(pattern: SlidePattern | undefined, slide: Sl
   }
 
   return dropped
+}
+
+/**
+ * Рамки элементов из последней сборки годятся, только пока список тот же по составу: после вставки
+ * или удаления пункта у нового элемента рамки нет, а номера остальных сдвинулись. Тогда рамки
+ * отдельных пунктов отбрасываются, и список раскладывается потоком в рамке всего блока.
+ */
+function matchingTargets(targets: Record<string, FrameRect> | undefined, slide: Slide) {
+  if (!targets) return undefined
+  const lists: Array<[string, number]> = [
+    ['bullets', slide.bullets?.length ?? 0],
+    ['columns', slide.columns?.length ?? 0],
+    ['kpis', slide.kpis?.length ?? 0],
+    ['timeline', slide.timeline?.length ?? 0],
+  ]
+  let result = targets
+  for (const [list, count] of lists) {
+    const unit = new RegExp(`^${list}\\.(\\d+)$`)
+    const keys = Object.keys(targets).filter((key) => unit.test(key))
+    if (keys.length && keys.length !== count) {
+      result = Object.fromEntries(Object.entries(result).filter(([key]) => !unit.test(key)))
+    }
+  }
+  return result
 }
 
 const COVER_ROLES = { title: 'cover', section: 'section', closing: 'closing' } as const
@@ -230,6 +259,22 @@ interface EditCtx {
   editable?: boolean
   onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
+  onListItem?: SlideViewProps['onListItem']
+  /** Поле, которое должно получить фокус после вставки или удаления пункта. */
+  focusRef?: { current: string | null }
+  /** Элементы списка с этого номера не попадут в экспорт: в слайде-примере меньше мест. */
+  overflowFrom?: number
+}
+
+const itemText = (node: HTMLElement) => (node.textContent || '').replace(/\u00a0/g, ' ')
+
+function placeCaretAtEnd(node: HTMLElement) {
+  node.focus()
+  const range = document.createRange()
+  range.selectNodeContents(node)
+  range.collapse(false)
+  window.getSelection()?.removeAllRanges()
+  window.getSelection()?.addRange(range)
 }
 
 type EditableTextProps = Omit<HTMLAttributes<HTMLElement>, 'children'> & {
@@ -249,13 +294,21 @@ type EditableTextProps = Omit<HTMLAttributes<HTMLElement>, 'children'> & {
  */
 function EditableText({ as: Tag = 'span', field, value, placeholder, edit, children, ...rest }: EditableTextProps) {
   const ref = useRef<HTMLElement>(null)
-  const { editable, onElementSelect, onFieldChange } = edit
+  const { editable, onElementSelect, onFieldChange, onListItem, focusRef } = edit
 
   useLayoutEffect(() => {
     const node = ref.current
     if (!node || !editable) return
     if (document.activeElement !== node && node.textContent !== value) node.textContent = value
   }, [editable, value])
+
+  // Курсор в только что вставленный (или соседний с удалённым) пункт.
+  useLayoutEffect(() => {
+    if (ref.current && focusRef?.current === field) {
+      focusRef.current = null
+      placeCaretAtEnd(ref.current)
+    }
+  })
 
   if (!editable) {
     return (
@@ -282,6 +335,16 @@ function EditableText({ as: Tag = 'span', field, value, placeholder, edit, child
       onFocus={select}
       onClick={select}
       onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
+        const text = itemText(e.currentTarget)
+        // В пунктах списков Enter добавляет следующий пункт, Backspace в пустом — удаляет пункт.
+        if (onListItem && ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Backspace' && text === ''))) {
+          const focus = onListItem(field, e.key === 'Enter' ? 'insert' : 'remove', text)
+          if (focus !== undefined) {
+            e.preventDefault()
+            if (focusRef) focusRef.current = focus
+            return
+          }
+        }
         if (e.key === 'Enter' || e.key === 'Escape') {
           e.preventDefault()
           e.currentTarget.blur()
@@ -293,12 +356,18 @@ function EditableText({ as: Tag = 'span', field, value, placeholder, edit, child
         document.execCommand('insertText', false, text)
       }}
       onBlur={(e: React.FocusEvent<HTMLElement>) => {
-        const text = (e.currentTarget.textContent || '').replace(/ /g, ' ')
+        const text = itemText(e.currentTarget)
         if (text !== value) onFieldChange?.(field, text)
       }}
     />
   )
 }
+
+/** Элемент сверх мест слайда-примера: сборка его отбросит, поэтому на холсте он приглушён. */
+const overflowClass = (edit: EditCtx, index: number) =>
+  edit.overflowFrom !== undefined && index >= edit.overflowFrom ? 'slide__item--overflow' : undefined
+const overflowTitle = (edit: EditCtx, index: number) =>
+  overflowClass(edit, index) ? 'Не попадёт в экспорт: в слайде-примере шаблона меньше мест' : undefined
 
 /** Выбор блока (карточки, списка) кликом по нему, а не по тексту внутри. */
 function selectBlock(edit: EditCtx, target: string, ownOnly = false) {
@@ -347,6 +416,7 @@ function InteractiveSlideView({
   selectedElementId,
   onElementSelect,
   onFieldChange,
+  onListItem,
   onImageClick,
   onSelectShape,
   onUpdateShape,
@@ -372,8 +442,15 @@ function InteractiveSlideView({
     lastKnownTargetsRef.current = { ...lastKnownTargetsRef.current, ...referenceRender.targets }
   }
 
-  const effectiveTargets =
-    referenceRender?.targets || (Object.keys(lastKnownTargetsRef.current).length > 0 ? lastKnownTargetsRef.current : undefined)
+  const effectiveTargets = useMemo(
+    () =>
+      matchingTargets(
+        referenceRender?.targets || (Object.keys(lastKnownTargetsRef.current).length > 0 ? lastKnownTargetsRef.current : undefined),
+        slide,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [referenceRender, slide.bullets, slide.columns, slide.kpis, slide.timeline],
+  )
   const referenceBodyTarget = contentTargetForKind(slide.kind)
   const referenceBodyBox = useMemo(() => {
     if (!effectiveTargets || !referenceBodyTarget) return undefined
@@ -509,7 +586,16 @@ function InteractiveSlideView({
     displaySlide.element_boxes?.['title'] || displaySlide.element_boxes?.['content'] || displaySlide.element_boxes?.['subtitle'],
   )
 
-  const edit: EditCtx = { editable, onElementSelect, onFieldChange }
+  const focusRef = useRef<string | null>(null)
+  const cap = capacity(slide, theme)
+  const edit: EditCtx = {
+    editable,
+    onElementSelect,
+    onFieldChange,
+    onListItem,
+    focusRef,
+    overflowFrom: cap?.unit === 'items' && cap.used > cap.max ? cap.max : undefined,
+  }
   const framed = skin?.frames?.title ? skin : undefined
   return (
     <div
@@ -876,7 +962,8 @@ function BulletList({
           <li
             key={i}
             data-element-id={field}
-            className={clsx(flag(field), itemBox && 'slide__bullet--custom')}
+            className={clsx(flag(field), itemBox && 'slide__bullet--custom', overflowClass(edit, i))}
+            title={overflowTitle(edit, i)}
             style={placed(itemBox, listBox || containerBox)}
           >
             <span className="slide__agenda-num">{String(i + 1).padStart(2, '0')}</span>
@@ -991,7 +1078,8 @@ function SlideContent({
               <div
                 key={ci}
                 data-element-id={`columns.${ci}`}
-                className={clsx(cards && 'slide__card', flag(`columns.${ci}`))}
+                className={clsx(cards && 'slide__card', flag(`columns.${ci}`), overflowClass(edit, ci))}
+                title={overflowTitle(edit, ci)}
                 style={{ ...placed(unitBox, containerBox), ...(hasLeftIcon ? { paddingLeft: '5.5cqw' } : {}) }}
                 onClick={selectBlock(edit, `columns.${ci}`)}
               >
@@ -1091,7 +1179,8 @@ function SlideContent({
             <div
               key={i}
               data-element-id={`kpis.${i}`}
-              className={clsx('slide__kpi', flag(`kpis.${i}`))}
+              className={clsx('slide__kpi', flag(`kpis.${i}`), overflowClass(edit, i))}
+              title={overflowTitle(edit, i)}
               style={placed(custom(`kpis.${i}`), containerBox)}
               onClick={selectBlock(edit, `kpis.${i}`)}
             >
@@ -1109,7 +1198,8 @@ function SlideContent({
             <div
               key={i}
               data-element-id={`timeline.${i}`}
-              className={flag(`timeline.${i}`)}
+              className={clsx(flag(`timeline.${i}`), overflowClass(edit, i))}
+              title={overflowTitle(edit, i)}
               style={placed(custom(`timeline.${i}`), containerBox)}
               onClick={selectBlock(edit, `timeline.${i}`)}
             >

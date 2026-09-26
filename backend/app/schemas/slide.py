@@ -211,5 +211,7 @@ def slide_key(slide: Slide, salt: str = "") -> str:
 class RegenerateSlideRequest(BaseModel):
     instruction: str | None = None
     style: str | None = None
+    # Паттерн выбран пользователем (окно «Шаблон слайда»): модель пишет текст под него, подбор паттерна не трогает.
+    keep_pattern: bool = False
 
 

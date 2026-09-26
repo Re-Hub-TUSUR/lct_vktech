@@ -1,441 +1,311 @@
 import clsx from 'clsx'
-import { Check, Eye, LayoutTemplate, Sparkles } from 'lucide-react'
+import { Check, LayoutTemplate, LoaderCircle, RefreshCw, Sparkles, WandSparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { Slide, SlidePattern, SlideTheme } from '../api/types'
 import { PATTERN_CATEGORY_LABELS, PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS, patternLabel } from '../lib/labels'
+import { itemCount, patternSuits, selectLayout, selectPattern } from '../lib/slideEdits'
 import { Modal } from './Modal'
+import { SlideView } from './slides/SlideView'
 import { Badge, Button } from './ui'
-
-const EMPTY_PATTERNS: SlidePattern[] = []
 
 interface SlideDesignModalProps {
   isOpen: boolean
   slide: Slide
   theme: SlideTheme
+  /** Применить слайд-пример без модели: содержимое подгоняется правилами (отменяется Ctrl+Z). */
   onSelectPattern: (pattern: SlidePattern) => void
   onSelectLayout: (layoutKey: string, layoutName: string) => void
+  /**
+   * Перегенерировать текст моделью: pattern — новый слайд-пример (сначала применяется, потом текст
+   * переписывается под него), null — тот же шаблон. Без обработчика кнопки модели не показываются.
+   */
+  onRegenerate?: (pattern: SlidePattern | null, instruction: string) => Promise<void>
   onClose: () => void
 }
 
-export function SlideDesignModal({
-  isOpen,
-  slide,
-  theme,
-  onSelectPattern,
-  onSelectLayout,
-  onClose,
-}: SlideDesignModalProps) {
-  const [activeTab, setActiveTab] = useState<'patterns' | 'layouts'>('patterns')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
+type Tab = 'patterns' | 'layouts'
 
-  const patterns = theme.patterns ?? EMPTY_PATTERNS
-  const firstPatternId = patterns[0]?.id ?? null
-  const layouts = useMemo(() => {
-    return Object.entries(theme.layouts || {}).map(([key, skin]) => ({
-      key,
-      skin,
-      name: skin.name || key,
-    }))
-  }, [theme.layouts])
-  const firstLayoutKey = layouts[0]?.key ?? null
+const typeLabel = (type: string) =>
+  PATTERN_TYPE_LABELS[type] ||
+  PATTERN_CATEGORY_LABELS[type as keyof typeof PATTERN_CATEGORY_LABELS] ||
+  (SLIDE_KIND_LABELS as Record<string, string>)[type] ||
+  type
 
-  const [selectedPatternId, setSelectedPatternId] = useState<string | null>(
-    slide.pattern_id || firstPatternId
-  )
-  const [selectedLayoutKey, setSelectedLayoutKey] = useState<string | null>(
-    slide.layout_key || firstLayoutKey
+export function SlideDesignModal({ isOpen, slide, theme, onSelectPattern, onSelectLayout, onRegenerate, onClose }: SlideDesignModalProps) {
+  const patterns = useMemo(() => (theme.patterns ?? []).filter((p) => !p.error), [theme.patterns])
+  const layouts = useMemo(
+    () => Object.entries(theme.layouts || {}).map(([key, skin]) => ({ key, skin, name: skin.name || key })),
+    [theme.layouts],
   )
 
-  // The component stays mounted while the audit page changes slides. Reset the
-  // gallery selection when the dialog opens for another slide, otherwise the
-  // preview and the Apply action keep pointing at the previous slide's choice.
+  const [tab, setTab] = useState<Tab>('patterns')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [patternId, setPatternId] = useState<string | null>(null)
+  const [layoutKey, setLayoutKey] = useState<string | null>(null)
+  const [instruction, setInstruction] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Окно переиспользуется для разных слайдов: выбор сбрасывается при открытии.
   useEffect(() => {
     if (!isOpen) return
-    setActiveTab('patterns')
+    setTab('patterns')
     setTypeFilter('all')
-    setSelectedPatternId(slide.pattern_id || firstPatternId)
-    setSelectedLayoutKey(slide.layout_key || firstLayoutKey)
-  }, [isOpen, slide.id, slide.pattern_id, slide.layout_key, theme.template_id, firstPatternId, firstLayoutKey])
+    setPatternId(slide.pattern_id || patterns.find((p) => patternSuits(slide, p))?.id || patterns[0]?.id || null)
+    setLayoutKey(slide.layout_key || layouts[0]?.key || null)
+    setInstruction('')
+    setError(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, slide.id])
 
-  const availablePatternTypes = useMemo(() => {
-    const types = new Set<string>()
-    for (const p of patterns) {
-      if (p.type) types.add(p.type)
-      if (p.category) types.add(p.category)
-    }
-    return Array.from(types)
-  }, [patterns])
+  const suitable = useMemo(() => patterns.filter((p) => patternSuits(slide, p)), [patterns, slide])
+  const types = useMemo(() => Array.from(new Set(patterns.map((p) => p.type))), [patterns])
+  const others = patterns.filter((p) => !suitable.includes(p) && (typeFilter === 'all' || p.type === typeFilter))
 
-  const filteredPatterns = useMemo(() => {
-    if (typeFilter === 'all') return patterns
-    return patterns.filter((p) => (p.type as string) === typeFilter || p.category === typeFilter)
-  }, [patterns, typeFilter])
+  const pattern = patterns.find((p) => p.id === patternId)
+  const layout = layouts.find((l) => l.key === layoutKey)
+  const isCurrentPattern = Boolean(pattern && slide.pattern_id === pattern.id)
 
-  const activePattern = useMemo(() => {
-    return filteredPatterns.find((p) => p.id === selectedPatternId) || filteredPatterns[0]
-  }, [patterns, filteredPatterns, selectedPatternId])
-
-  const activeLayout = useMemo(() => {
-    return layouts.find((l) => l.key === selectedLayoutKey) || layouts[0]
-  }, [layouts, selectedLayoutKey])
+  // Живой предпросмотр: слайд пользователя после применения (без модели).
+  const preview = useMemo<Slide | null>(() => {
+    if (tab === 'patterns' && pattern) return { ...slide, ...selectPattern(slide, pattern, theme) }
+    if (tab === 'layouts' && layout) return { ...slide, ...selectLayout(slide, layout.key, layout.name, theme) }
+    return null
+  }, [tab, pattern, layout, slide, theme])
 
   if (!isOpen) return null
 
-  const getPatternImageUrl = (pattern: SlidePattern): string | undefined => {
-    if (pattern.render_url) return pattern.render_url
-    if (theme.template_id) {
-      const filename = pattern.render || `${Math.max(pattern.slide_index, 0) + 1}.jpg`
-      return `/api/templates/${theme.template_id}/slides/${filename}`
+  const imageOf = (p: SlidePattern) =>
+    p.render_url ||
+    (theme.template_id ? `/api/templates/${theme.template_id}/slides/${p.render || `${Math.max(p.slide_index, 0) + 1}.jpg`}` : undefined)
+
+  const count = itemCount(slide)
+
+  const regenerate = async (target: SlidePattern | null) => {
+    if (!onRegenerate || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onRegenerate(target, instruction)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Модель не ответила — попробуйте ещё раз')
+    } finally {
+      setBusy(false)
     }
-    return undefined
   }
 
-  const handleApplyCurrent = () => {
-    if (activeTab === 'patterns' && activePattern) {
-      onSelectPattern(activePattern)
-      onClose()
-    } else if (activeTab === 'layouts' && activeLayout) {
-      onSelectLayout(activeLayout.key, activeLayout.name)
-      onClose()
-    }
+  const apply = () => {
+    if (tab === 'patterns' && pattern) onSelectPattern(pattern)
+    else if (tab === 'layouts' && layout) onSelectLayout(layout.key, layout.name)
+    onClose()
+  }
+
+  const card = (p: SlidePattern) => {
+    const current = slide.pattern_id === p.id
+    const image = imageOf(p)
+    return (
+      <button
+        type="button"
+        key={p.id}
+        className={clsx('slide-design-card', patternId === p.id && 'is-selected', current && 'is-current')}
+        aria-pressed={patternId === p.id}
+        onClick={() => setPatternId(p.id)}
+        onDoubleClick={() => {
+          onSelectPattern(p)
+          onClose()
+        }}
+        title="Выбрать; двойной клик — применить"
+      >
+        <div className="slide-design-card__preview">
+          {image ? (
+            <img src={image} alt="" className="slide-design-card__img" loading="lazy" />
+          ) : (
+            <div className="slide-design-card__placeholder">
+              <LayoutTemplate size={22} />
+            </div>
+          )}
+          <span className="slide-design-card__badge">{typeLabel(p.type)}</span>
+        </div>
+        <div className="slide-design-card__header">
+          <span className="slide-design-card__title">{patternLabel(p)}</span>
+          {current ? (
+            <span className="badge badge-success" style={{ fontSize: 10 }}>
+              <Check size={10} /> Сейчас
+            </span>
+          ) : p.items?.length ? (
+            <span
+              className={clsx('badge', count !== null && count > p.items.length ? 'badge-warning' : 'badge-neutral')}
+              style={{ fontSize: 10 }}
+              title="Мест под элементы в слайде-примере"
+            >
+              {p.items.length} мест
+            </span>
+          ) : null}
+        </div>
+      </button>
+    )
   }
 
   return (
     <Modal
-      title={(
+      title={
         <span className="slide-design-modal__title">
           <span className="badge badge-primary" aria-hidden="true">
             <LayoutTemplate size={16} />
           </span>
           <span className="slide-design-modal__title-copy">
-            <span>Шаблоны дизайна слайдов</span>
-            <small>Выберите готовый слайд-пример из шаблона или смените базовый макет</small>
+            <span>Шаблон слайда</span>
+            <small>Выберите слайд-пример шаблона: примените как есть или попросите модель переписать текст под него</small>
           </span>
         </span>
-      )}
-      onClose={onClose}
+      }
+      onClose={() => !busy && onClose()}
       wide
       className="slide-design-modal"
     >
       <div className="slide-design-modal__content">
-
-        <div className="row row--sm" style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 12 }}>
-          <div className="tabs" style={{ margin: 0 }}>
-            <button
-              type="button"
-              className={clsx(activeTab === 'patterns' && 'is-active')}
-              onClick={() => setActiveTab('patterns')}
-            >
-              Слайды-примеры шаблона <Badge>{patterns.length}</Badge>
-            </button>
-            <button
-              type="button"
-              className={clsx(activeTab === 'layouts' && 'is-active')}
-              onClick={() => setActiveTab('layouts')}
-            >
-              Макеты оформления <Badge>{layouts.length}</Badge>
-            </button>
-          </div>
+        <div className="tabs" style={{ margin: 0 }}>
+          <button type="button" className={clsx(tab === 'patterns' && 'is-active')} onClick={() => setTab('patterns')}>
+            Слайды-примеры <Badge>{patterns.length}</Badge>
+          </button>
+          <button type="button" className={clsx(tab === 'layouts' && 'is-active')} onClick={() => setTab('layouts')}>
+            Макеты <Badge>{layouts.length}</Badge>
+          </button>
         </div>
-
-        {activeTab === 'patterns' && (
-          <div className="row row--xs" style={{ flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
-            <button
-              type="button"
-              className={clsx('btn btn-sm', typeFilter === 'all' ? 'btn-primary' : 'btn-ghost')}
-              onClick={() => setTypeFilter('all')}
-            >
-              Все ({patterns.length})
-            </button>
-            {availablePatternTypes.map((t) => {
-              const count = patterns.filter((p) => (p.type as string) === t || p.category === t).length
-              if (count === 0) return null
-              const label = PATTERN_TYPE_LABELS[t] || PATTERN_CATEGORY_LABELS[t as keyof typeof PATTERN_CATEGORY_LABELS] || (SLIDE_KIND_LABELS as Record<string, string>)[t] || t
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  className={clsx('btn btn-sm', typeFilter === t ? 'btn-primary' : 'btn-ghost')}
-                  onClick={() => setTypeFilter(t)}
-                >
-                  {label} ({count})
-                </button>
-              )
-            })}
-          </div>
-        )}
 
         <div className="slide-design-modal__layout">
-          {/* Левая колонка: сетка галереи */}
           <div className="slide-design-modal__gallery">
-            {activeTab === 'patterns' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>
-                {filteredPatterns.map((pattern) => {
-                  const isCurrent = slide.pattern_id === pattern.id
-                  const isSelected = activePattern?.id === pattern.id
-                  const patternTypeLabel = PATTERN_TYPE_LABELS[pattern.type] || (SLIDE_KIND_LABELS as Record<string, string>)[pattern.type] || pattern.type
-                  const imgUrl = getPatternImageUrl(pattern)
-
-                  return (
-                    <button
-                      type="button"
-                      key={pattern.id}
-                      className={clsx(
-                        'slide-design-card',
-                        isSelected && 'is-selected',
-                        isCurrent && 'is-current'
-                      )}
-                      aria-pressed={isSelected}
-                      aria-label={`Слайд-пример ${patternLabel(pattern)}${isCurrent ? ', активен' : ''}`}
-                      onClick={() => setSelectedPatternId(pattern.id)}
-                      onDoubleClick={() => {
-                        onSelectPattern(pattern)
-                        onClose()
-                      }}
-                      title="Выбрать для предпросмотра; дважды нажать для применения"
-                    >
-                      <div className="slide-design-card__preview">
-                        {imgUrl ? (
-                          <img
-                            src={imgUrl}
-                            alt={`Слайд ${pattern.slide_index + 1}`}
-                            className="slide-design-card__img"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="slide-design-card__placeholder">
-                            <LayoutTemplate size={24} />
-                            <span>{patternLabel(pattern)}</span>
-                          </div>
-                        )}
-                        <span className="slide-design-card__badge">{patternTypeLabel}</span>
-                      </div>
-
-                      <div className="slide-design-card__header">
-                        <span className="slide-design-card__title">
-                          {pattern.origin === 'layout' ? 'Макет шаблона' : 'Слайд-пример'} {patternLabel(pattern)}
-                        </span>
-                        {isCurrent && (
-                          <span className="badge badge-success" style={{ fontSize: 10 }}>
-                            <Check size={10} /> Активен
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="slide-design-card__body">
-                        {(pattern.layout_name || pattern.layout_key) && (
-                          <div className="text-sm muted" style={{ fontSize: 11, marginBottom: 2 }}>
-                            «{pattern.layout_name || pattern.layout_key}»
-                          </div>
-                        )}
-                        <div className="row row--xs muted text-sm" style={{ fontSize: 11, gap: 4 }}>
-                          {pattern.items_count > 0 && <span>{pattern.items_count} эл.</span>}
-                          {pattern.shapes && pattern.shapes.length > 0 && (
-                            <span>· {pattern.shapes.length} декор.</span>
-                          )}
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
+            {tab === 'patterns' ? (
+              <>
+                {suitable.length > 0 && (
+                  <section className="slide-design-group">
+                    <h4>
+                      Подходят к содержимому
+                      <small>
+                        {SLIDE_KIND_LABELS[slide.kind]}
+                        {count !== null && ` · ${count} эл.`}
+                      </small>
+                    </h4>
+                    <div className="slide-design-grid">{suitable.map(card)}</div>
+                  </section>
+                )}
+                <section className="slide-design-group">
+                  <h4>{suitable.length ? 'Другие слайды-примеры' : 'Слайды-примеры шаблона'}</h4>
+                  <div className="row row--xs" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {['all', ...types].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        className={clsx('btn btn-sm', typeFilter === t ? 'btn-primary' : 'btn-ghost')}
+                        onClick={() => setTypeFilter(t)}
+                      >
+                        {t === 'all' ? 'Все' : typeLabel(t)}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="slide-design-grid">{others.map(card)}</div>
+                  {others.length === 0 && <p className="muted text-sm">Других слайдов-примеров этого типа нет</p>}
+                </section>
+              </>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>
-                {layouts.map(({ key, skin, name }) => {
-                  const isCurrent = slide.layout_key === key
-                  const isSelected = activeLayout?.key === key
-                  return (
-                    <button
-                      type="button"
-                      key={key}
-                      className={clsx(
-                        'slide-design-card',
-                        isSelected && 'is-selected',
-                        isCurrent && 'is-current'
+              <div className="slide-design-grid">
+                {layouts.map(({ key, skin, name }) => (
+                  <button
+                    type="button"
+                    key={key}
+                    className={clsx('slide-design-card', layoutKey === key && 'is-selected', slide.layout_key === key && !slide.pattern_id && 'is-current')}
+                    onClick={() => setLayoutKey(key)}
+                    onDoubleClick={() => {
+                      onSelectLayout(key, name)
+                      onClose()
+                    }}
+                  >
+                    <div className="slide-design-card__preview">
+                      {skin.image ? (
+                        <img src={skin.image} alt="" className="slide-design-card__img" loading="lazy" />
+                      ) : (
+                        <div className="slide-design-card__placeholder" style={{ backgroundColor: skin.background }} />
                       )}
-                      aria-pressed={isSelected}
-                      aria-label={`Макет ${name}${isCurrent ? ', активен' : ''}`}
-                      onClick={() => setSelectedLayoutKey(key)}
-                      onDoubleClick={() => {
-                        onSelectLayout(key, name)
-                        onClose()
-                      }}
-                      title="Выбрать для предпросмотра; дважды нажать для применения"
-                    >
-                      <div className="slide-design-card__preview">
-                        {skin.image ? (
-                          <img src={skin.image} alt={name} className="slide-design-card__img" loading="lazy" />
-                        ) : (
-                          <div
-                            className="slide-design-card__placeholder"
-                            style={{ backgroundColor: skin.background || '#ffffff' }}
-                          >
-                            <span style={{ color: skin.text || '#000000', fontSize: 11 }}>{name}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="slide-design-card__header">
-                        <span className="slide-design-card__title">Макет «{name}»</span>
-                        {isCurrent && (
-                          <span className="badge badge-success" style={{ fontSize: 10 }}>
-                            <Check size={10} /> Активен
-                          </span>
-                        )}
-                      </div>
-                      <div className="slide-design-card__body">
-                        <div className="row row--xs" style={{ alignItems: 'center', gap: 6 }}>
-                          <span
-                            style={{
-                              width: 14,
-                              height: 14,
-                              borderRadius: 3,
-                              backgroundColor: skin.background || '#ffffff',
-                              border: '1px solid var(--color-border)',
-                            }}
-                          />
-                          <span className="text-sm muted" style={{ fontSize: 11 }}>
-                            Фон: {skin.background}
-                          </span>
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })}
+                    </div>
+                    <div className="slide-design-card__header">
+                      <span className="slide-design-card__title">{name}</span>
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Правая колонка: Детальный предпросмотр */}
-          <div className="slide-design-modal__sidebar">
-            <div className="row row--xs" style={{ alignItems: 'center', gap: 6 }}>
-              <Eye size={16} className="text-primary" />
-              <strong style={{ fontSize: 14 }}>Предпросмотр</strong>
-            </div>
-
-            {activeTab === 'patterns' && activePattern && (
-              <>
-                <div className="slide-design-detail-preview">
-                  {getPatternImageUrl(activePattern) ? (
-                    <img
-                      src={getPatternImageUrl(activePattern)}
-                      alt="Превью"
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#0b0c0f' }}
-                    />
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                      <span className="muted text-sm">Превью недоступно</span>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Слайд шаблона:</span>
-                    <strong>{patternLabel(activePattern)}</strong>
-                  </div>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Тип структуры:</span>
-                    <span className="badge badge-primary" style={{ fontSize: 11 }}>
-                      {PATTERN_TYPE_LABELS[activePattern.type] || (SLIDE_KIND_LABELS as Record<string, string>)[activePattern.type] || activePattern.type}
-                    </span>
-                  </div>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Количество блоков:</span>
-                    <span>{activePattern.items_count || '1'}</span>
-                  </div>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Элементов декора:</span>
-                    <span>{activePattern.shapes?.length || 0}</span>
-                  </div>
-                  {activePattern.layout_name && (
-                    <div className="row" style={{ justifyContent: 'space-between' }}>
-                      <span className="muted">Базовый макет:</span>
-                      <span>«{activePattern.layout_name}»</span>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    icon={<Sparkles size={14} />}
-                    style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
-                    onClick={handleApplyCurrent}
-                  >
-                    {slide.pattern_id === activePattern.id ? 'Применить повторно' : 'Применить к слайду'}
-                  </Button>
-                  <p className="muted text-sm" style={{ fontSize: 11, margin: 0, textAlign: 'center' }}>
-                    Контент слайда автоматически адаптируется под структуру выбранного шаблона
-                  </p>
-                </div>
-              </>
+          <aside className="slide-design-modal__sidebar">
+            {tab === 'patterns' && pattern && imageOf(pattern) && (
+              <figure className="slide-design-preview">
+                <figcaption>Как в шаблоне</figcaption>
+                <img src={imageOf(pattern)} alt="" />
+              </figure>
             )}
+            {preview && (
+              <figure className="slide-design-preview">
+                <figcaption>Ваш слайд {isCurrentPattern ? '' : 'после применения'}</figcaption>
+                <SlideView slide={preview} theme={theme} preferInteractive />
+              </figure>
+            )}
+            {tab === 'patterns' && pattern?.items?.length && count !== null && count > pattern.items.length ? (
+              <p className="slide-design-warning">
+                В слайде-примере {pattern.items.length} мест, а на слайде {count} элементов — лишние не попадут в экспорт.
+                Модель при переписывании сократит их.
+              </p>
+            ) : null}
 
-            {activeTab === 'layouts' && activeLayout && (
-              <>
-                <div className="slide-design-detail-preview">
-                  {activeLayout.skin.image ? (
-                    <img
-                      src={activeLayout.skin.image}
-                      alt="Превью макета"
-                      style={{ width: '100%', height: '100%', objectFit: 'contain', background: '#0b0c0f' }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '100%',
-                        backgroundColor: activeLayout.skin.background || '#f1f5f9',
-                      }}
+            {onRegenerate && tab === 'patterns' && (
+              <label className="slide-design-instruction">
+                <span>Пожелание к тексту (необязательно)</span>
+                <textarea
+                  rows={2}
+                  value={instruction}
+                  disabled={busy}
+                  placeholder="Например: акцент на цифрах, короче"
+                  onChange={(e) => setInstruction(e.target.value)}
+                />
+              </label>
+            )}
+            {error && <p className="slide-design-error">{error}</p>}
+
+            <div className="slide-design-actions">
+              {tab === 'patterns' && isCurrentPattern ? (
+                onRegenerate && (
+                  <Button
+                    variant="primary"
+                    icon={busy ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />}
+                    disabled={busy}
+                    onClick={() => regenerate(null)}
+                  >
+                    {busy ? 'Модель пишет…' : 'Перегенерировать текст'}
+                  </Button>
+                )
+              ) : (
+                <>
+                  <Button variant="primary" icon={<Check size={14} />} disabled={busy || !preview} onClick={apply}>
+                    Применить
+                  </Button>
+                  {onRegenerate && tab === 'patterns' && pattern && (
+                    <Button
+                      variant="secondary"
+                      icon={busy ? <LoaderCircle size={14} className="spin" /> : <WandSparkles size={14} />}
+                      disabled={busy}
+                      onClick={() => regenerate(pattern)}
                     >
-                      <span style={{ color: activeLayout.skin.text || '#000' }}>{activeLayout.name}</span>
-                    </div>
+                      {busy ? 'Модель пишет…' : 'Применить и переписать текст'}
+                    </Button>
                   )}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Имя макета:</span>
-                    <strong>«{activeLayout.name}»</strong>
-                  </div>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Цвет фона:</span>
-                    <span>{activeLayout.skin.background}</span>
-                  </div>
-                  <div className="row" style={{ justifyContent: 'space-between' }}>
-                    <span className="muted">Цвет текста:</span>
-                    <span>{activeLayout.skin.text}</span>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    icon={<Check size={14} />}
-                    style={{ width: '100%', justifyContent: 'center', padding: '10px' }}
-                    onClick={handleApplyCurrent}
-                  >
-                    {slide.layout_key === activeLayout.key ? 'Применить повторно' : 'Применить макет'}
-                  </Button>
-                  <p className="muted text-sm" style={{ fontSize: 11, margin: 0, textAlign: 'center' }}>
-                    Старые декоративные фигуры очистятся, макет станет чистой основой слайда
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 14 }}>
-          <Button variant="ghost" onClick={onClose}>
-            Закрыть
-          </Button>
+                </>
+              )}
+              <p className="muted text-sm" style={{ margin: 0 }}>
+                <Sparkles size={12} /> «Применить» раскладывает текущий текст по шаблону сразу, без модели; отменяется Ctrl+Z.
+              </p>
+            </div>
+          </aside>
         </div>
       </div>
     </Modal>

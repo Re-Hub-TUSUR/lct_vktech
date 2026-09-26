@@ -174,3 +174,41 @@ export function typographyTarget(
 export const UNSUPPORTED_STYLE_HINT =
   'Слайд собран из слайда-примера шаблона: в экспорт попадают текст, положение блоков, картинки и фигуры, а шрифты и цвета остаются шаблонными'
 export const UNSUPPORTED_ELEMENT_HINT = 'Для этого элемента оформление в экспорт не переносится'
+
+export interface Capacity {
+  /** Сколько мест в слайде-примере (элементов) или знаков в его текстовом блоке. */
+  max: number
+  used: number
+  unit: 'items' | 'chars'
+  /** Список, чьи элементы раскладываются по местам (для подсветки лишних). */
+  list: string | null
+}
+
+const UNIT_LISTS: Partial<Record<Slide['kind'], string>> = {
+  cards: 'columns',
+  two_columns: 'columns',
+  kpi: 'kpis',
+  timeline: 'timeline',
+  agenda: 'bullets',
+}
+
+/**
+ * Вместимость слайда-примера. Сборка кладёт элементы по местам паттерна и молча отбрасывает лишние
+ * (pattern_fill.fill_pattern), а длинный текст ужимает кеглем — поэтому редактор предупреждает заранее.
+ */
+export function capacity(slide: Slide, theme: SlideTheme): Capacity | null {
+  const pattern = slide.pattern_id ? theme.patterns?.find((p) => p.id === slide.pattern_id) : undefined
+  if (!pattern) return null
+  const list = UNIT_LISTS[slide.kind]
+  if (list && pattern.items?.length) {
+    const items = (slide as unknown as Record<string, unknown[]>)[list] || []
+    return { max: pattern.items.length, used: items.length, unit: 'items', list }
+  }
+  const body = pattern.slots.filter((slot) => slot.role === 'body').reduce((sum, slot) => sum + slot.chars, 0)
+  if (body > 0 && (slide.kind === 'bullets' || slide.kind === 'image_text' || slide.kind === 'quote')) {
+    const text = slide.kind === 'quote' ? slide.quote?.text || '' : slide.bullets.join('')
+    // Как в matcher.py: до 1.6 ёмкости текст ужимается автоподбором кегля, дальше — вылезает.
+    return { max: Math.round(body * 1.6), used: text.length, unit: 'chars', list: null }
+  }
+  return null
+}
