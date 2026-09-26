@@ -65,6 +65,10 @@ export function TransformFrame({
   const previewElementRef = useRef<HTMLElement | null>(null)
   const previewTransformRef = useRef('')
   const previewTransformOriginRef = useRef('')
+  const previewWidthRef = useRef('')
+  const previewHeightRef = useRef('')
+  const previewMaxWidthRef = useRef('')
+  const previewOverflowRef = useRef('')
 
   // Не отправляем состояние в родителя на каждом pointermove. Частые React-
   // перерисовки во время drag ломают native contentEditable и размеры SVG.
@@ -89,20 +93,28 @@ export function TransformFrame({
     if (previewElementRef.current) {
       previewElementRef.current.style.transform = previewTransformRef.current
       previewElementRef.current.style.transformOrigin = previewTransformOriginRef.current
+      previewElementRef.current.style.width = previewWidthRef.current
+      previewElementRef.current.style.height = previewHeightRef.current
+      previewElementRef.current.style.maxWidth = previewMaxWidthRef.current
+      previewElementRef.current.style.overflow = previewOverflowRef.current
     }
     previewElementRef.current = null
     previewTransformRef.current = ''
     previewTransformOriginRef.current = ''
+    previewWidthRef.current = ''
+    previewHeightRef.current = ''
+    previewMaxWidthRef.current = ''
+    previewOverflowRef.current = ''
   }
 
   const applyMovePreview = (
     next: BoxRect,
     baseX: number,
     baseY: number,
-    baseW: number,
-    baseH: number,
+    _baseW: number,
+    _baseH: number,
     container: DOMRect,
-    allowScale: boolean,
+    isResize: boolean,
   ) => {
     if (!previewTarget || !frameRef.current) return
     const slide = frameRef.current.closest('.slide')
@@ -110,23 +122,40 @@ export function TransformFrame({
     const selector = previewTarget.startsWith('shape:')
       ? `[data-shape-id="${previewTarget.slice(6)}"]`
       : `[data-element-id="${previewTarget}"]`
-    const target = slide.querySelector(selector) as HTMLElement | null
+    let target = slide.querySelector(selector) as HTMLElement | null
     if (!target) return
+
+    // Если элемент обёрнут в .slide__custom-block, позиционируется и трансформируется контейнер-блок
+    if (target.parentElement && target.parentElement.classList.contains('slide__custom-block')) {
+      target = target.parentElement
+    }
+
     if (previewElementRef.current !== target) {
       resetMovePreview()
       previewElementRef.current = target
       previewTransformRef.current = target.style.transform
       previewTransformOriginRef.current = target.style.transformOrigin
+      previewWidthRef.current = target.style.width
+      previewHeightRef.current = target.style.height
+      previewMaxWidthRef.current = target.style.maxWidth
+      previewOverflowRef.current = target.style.overflow
       target.style.transformOrigin = 'top left'
     }
+
     const dx = (next[0] - baseX) * container.width
     const dy = (next[1] - baseY) * container.height
-    const scaleX = allowScale && baseW > 0 ? next[2] / baseW : 1
-    const scaleY = allowScale && baseH > 0 ? next[3] / baseH : 1
-    const scale = Math.abs(scaleX - 1) > 0.001 || Math.abs(scaleY - 1) > 0.001
-      ? ` scale(${scaleX}, ${scaleY})`
-      : ''
-    const delta = `translate(${dx}px, ${dy}px)${scale}`
+
+    if (isResize) {
+      const newW = Math.max(16, next[2] * container.width)
+      const newH = Math.max(12, next[3] * container.height)
+      target.style.width = `${newW}px`
+      target.style.maxWidth = `${newW}px`
+      target.style.height = `${newH}px`
+      // Предотвращаем обрезку текста во время интерактивного изменения границ
+      target.style.overflow = 'visible'
+    }
+
+    const delta = `translate(${dx}px, ${dy}px)`
     target.style.transform = previewTransformRef.current ? `${delta} ${previewTransformRef.current}` : delta
   }
 

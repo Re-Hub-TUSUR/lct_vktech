@@ -897,7 +897,7 @@ function FlowSlide({
             {titleNode}
           </div>
         ) : null}
-        {customSubtitleBox ? (
+        {customSubtitleBox && subtitleNode ? (
           <div className="slide__custom-block" style={box(customSubtitleBox)}>
             {subtitleNode}
           </div>
@@ -907,7 +907,20 @@ function FlowSlide({
             {titleNode}
             {subtitleNode}
           </div>
-        ) : null}
+        ) : (
+          <>
+            {!customTitleBox && titleNode ? (
+              <div className="slide__cover">
+                {titleNode}
+              </div>
+            ) : null}
+            {!customSubtitleBox && subtitleNode ? (
+              <div className="slide__cover">
+                {subtitleNode}
+              </div>
+            ) : null}
+          </>
+        )}
       </>
     )
   }
@@ -980,7 +993,20 @@ function FlowSlide({
             {sectionNumNode}
             {titleNode}
           </div>
-        ) : null}
+        ) : (
+          <>
+            {!customSubtitleBox && sectionNumNode ? (
+              <div className="slide__cover">
+                {sectionNumNode}
+              </div>
+            ) : null}
+            {!customTitleBox && titleNode ? (
+              <div className="slide__cover">
+                {titleNode}
+              </div>
+            ) : null}
+          </>
+        )}
       </>
     )
   }
