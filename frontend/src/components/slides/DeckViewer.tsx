@@ -60,7 +60,7 @@ export function DeckViewer({
   if (!slide) return null
 
   return (
-    <Modal title={title} onClose={onClose} wide>
+    <Modal title={title} onClose={onClose} wide className="deck-viewer-modal">
       <div className="deck-viewer">
         <div className="deck-viewer__stage">
           <button

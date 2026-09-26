@@ -1,8 +1,8 @@
 import clsx from 'clsx'
 import { ImageIcon } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-import type { FrameRect, LayoutSkin, Severity, Slide, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
+import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
 import { fitFontSize } from '../../lib/fit'
 import { SlideChart } from './SlideChart'
 import { SlideShapesLayer } from './SlideShapesLayer'
@@ -27,6 +27,8 @@ interface SlideViewProps {
   render?: SlideRender
   /** Режим ручного визуального редактирования (Canva-style). */
   editable?: boolean
+  /** Всегда показывать интерактивный векторный DOM-слой (на главной сцене), не подменяя его растром. */
+  preferInteractive?: boolean
   /** Текстовые элементы, которые уже изменены поверх raster-render. */
   editedElementIds?: string[]
   /** После первого подтверждённого изменения можно безопасно показать весь DOM. */
@@ -78,6 +80,60 @@ function contentTargetForKind(kind: Slide['kind']): string | null {
   if (kind === 'chart') return 'chart'
   if (kind === 'table') return 'table'
   return null
+}
+
+/**
+ * Идентификаторы шаблонных фигур, которые принадлежат неиспользованным слотам или юнитам.
+ * В PPTX-экспорте (pattern_fill.py drop()) они удаляются, поэтому не должны рисоваться в DOM.
+ */
+function getDroppedTemplateShapeIds(pattern: SlidePattern | undefined, slide: Slide): Set<number> {
+  const dropped = new Set<number>()
+  if (!pattern) return dropped
+
+  const itemsCount = slide.kind === 'two_columns' || slide.kind === 'cards'
+    ? (slide.columns?.length || 0)
+    : slide.kind === 'kpi'
+    ? (slide.kpis?.length || 0)
+    : slide.kind === 'timeline'
+    ? (slide.timeline?.length || 0)
+    : (slide.bullets?.length || 0)
+
+  const units = (pattern as any).items || (pattern as any).units || []
+  if (Array.isArray(units)) {
+    units.forEach((unit: any, idx: number) => {
+      if (idx >= itemsCount) {
+        (unit.shapes || []).forEach((sid: number) => dropped.add(sid))
+        (unit.slots || []).forEach((slot: any) => {
+          dropped.add(slot.id);
+          (slot.companions || []).forEach((cid: number) => dropped.add(cid))
+        })
+      }
+    })
+  }
+
+  const hasSubtitle = Boolean(slide.subtitle && slide.subtitle.trim())
+  const hasBody = Boolean((slide.bullets && slide.bullets.length > 0) || slide.kind === 'quote')
+  const isMultiItemKind = ['two_columns', 'cards', 'kpi', 'timeline'].includes(slide.kind)
+
+  const slots = pattern.slots || []
+  for (const slot of slots) {
+    let isUsed = false
+    if (slot.role === 'title') {
+      isUsed = Boolean(slide.title)
+    } else if (slot.role === 'subtitle') {
+      isUsed = hasSubtitle
+    } else if (slot.role === 'body') {
+      isUsed = !isMultiItemKind && hasBody
+    } else if (slot.role === 'decor_text') {
+      isUsed = false
+    }
+    if (!isUsed) {
+      dropped.add(slot.id);
+      ((slot as any).companions || []).forEach((cid: number) => dropped.add(cid))
+    }
+  }
+
+  return dropped
 }
 
 const COVER_ROLES = { title: 'cover', section: 'section', closing: 'closing' } as const
@@ -194,8 +250,19 @@ export function getElementLabel(target: string): string {
 export const normalizeElementTarget = normalizeTarget
 
 export function SlideView(props: SlideViewProps) {
-  // В обычном режиме показываем точный рендер экспортированного .pptx, если он готов
-  if (props.render && !props.editable) {
+  // На рабочей сцене аудита/редактора, либо если слайд имеет кастомные позиции/правки,
+  // всегда показываем живой векторный DOM (InteractiveSlideView), чтобы после завершения
+  // фонового перерендера PPTX слайд не прыгал и не подменялся растровым скриншотом.
+  const hasCustomPositions = Boolean(
+    props.slide.element_boxes && Object.keys(props.slide.element_boxes).length > 0
+  )
+  const shouldUseInteractive =
+    props.preferInteractive ||
+    props.editable ||
+    props.hasEdits ||
+    hasCustomPositions
+
+  if (!shouldUseInteractive && props.render) {
     return (
       <RenderedSlide
         slide={props.slide}
@@ -220,8 +287,8 @@ function InteractiveSlideView({
   activeTarget,
   className,
   editable = false,
-  editedElementIds = [],
-  hasEdits = false,
+  editedElementIds: _editedElementIds = [],
+  hasEdits: _hasEdits = false,
   selectedShapeId,
   selectedElementId,
   onElementSelect,
@@ -237,44 +304,89 @@ function InteractiveSlideView({
 }: SlideViewProps) {
   const [isCroppingImage, setIsCroppingImage] = useState(false)
   const normalizedTarget = normalizeTarget(selectedElementId)
-  const normalizedEditedTargets = useMemo(
-    () => Array.from(new Set(editedElementIds.map(normalizeTarget).filter((target): target is string => !!target))),
-    [editedElementIds],
-  )
   const slideRef = useRef<HTMLDivElement>(null)
   const [measuredBox, setMeasuredBox] = useState<[number, number, number, number] | null>(null)
 
-  // Редактор должен использовать геометрию уже собранного слайда. Иначе
-  // CSS-макет редактора начинает жить отдельно от презентации сразу после
-  // первого изменения текста.
+  // Редактор должен использовать геометрию уже собранного слайда. Кэшируем
+  // targets последнего рендера, чтобы геометрия не сбрасывалась при ожидании
+  // фонового перерендера PPTX после сохранения.
+  const lastKnownTargetsRef = useRef<Record<string, FrameRect>>({})
+  if (referenceRender?.targets) {
+    lastKnownTargetsRef.current = {
+      ...lastKnownTargetsRef.current,
+      ...referenceRender.targets,
+    }
+  }
+
+  const effectiveTargets = referenceRender?.targets || (Object.keys(lastKnownTargetsRef.current).length > 0 ? lastKnownTargetsRef.current : undefined)
   const referenceBodyTarget = contentTargetForKind(slide.kind)
   const referenceBodyBox = useMemo(() => {
-    if (!referenceRender || !referenceBodyTarget) return undefined
+    if (!effectiveTargets || !referenceBodyTarget) return undefined
     return slide.kind === 'image_text'
-      ? unionRects(targetRect(referenceRender.targets, 'bullets'), targetRect(referenceRender.targets, 'image'))
-      : targetRect(referenceRender.targets, referenceBodyTarget)
-  }, [referenceBodyTarget, referenceRender, slide.kind])
-  const displaySlide = referenceRender && editable
-    ? {
-        ...slide,
-        element_boxes: {
-          ...(referenceBodyBox ? { content: referenceBodyBox } : {}),
-          ...referenceRender.targets,
-          ...(slide.element_boxes || {}),
-        },
+      ? unionRects(targetRect(effectiveTargets, 'bullets'), targetRect(effectiveTargets, 'image'))
+      : targetRect(effectiveTargets, referenceBodyTarget)
+  }, [referenceBodyTarget, effectiveTargets, slide.kind])
+
+  // Нормализуем сохранённые боксы, отсекая аномальные смещения (например, 0.055 при целевом 0.46)
+  const cleanSlideBoxes = useMemo(() => {
+    if (!slide.element_boxes) return undefined
+    const clean: Record<string, FrameRect> = {}
+    for (const [k, b] of Object.entries(slide.element_boxes)) {
+      if (!Array.isArray(b) || b.length < 4) continue
+      const targetBox = effectiveTargets?.[k]
+      if (targetBox && targetBox[0] > 0.35 && b[0] < 0.12 && Math.abs(b[0] - targetBox[0]) > 0.3) {
+        clean[k] = targetBox
+      } else {
+        clean[k] = b as FrameRect
       }
-    : slide
+    }
+    return clean
+  }, [slide.element_boxes, effectiveTargets])
+
+  const displaySlide = useMemo(() => {
+    if (!effectiveTargets && !cleanSlideBoxes) return slide
+    return {
+      ...slide,
+      element_boxes: {
+        ...(referenceBodyBox ? { content: referenceBodyBox } : {}),
+        ...(effectiveTargets || {}),
+        ...(cleanSlideBoxes || {}),
+      },
+    }
+  }, [slide, effectiveTargets, referenceBodyBox, cleanSlideBoxes])
 
   const pattern = slide.pattern_id && theme?.patterns ? theme.patterns.find((p) => p.id === slide.pattern_id) : undefined
+  const droppedShapeIds = useMemo(() => getDroppedTemplateShapeIds(pattern, slide), [pattern, slide])
+
   const layoutKey = slide.layout_key || pattern?.layout_key || undefined
   const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
   const skin =
     (layoutKey && theme.layouts?.[layoutKey]) ||
     (roleKey && theme.layouts?.[roleKey]) ||
     undefined
-  const effectiveShapes = slide.shapes !== undefined && slide.shapes !== null
-    ? slide.shapes
-    : (slide.pattern_id ? (pattern?.shapes || []) : [])
+
+  const effectiveShapes = useMemo(() => {
+    const raw = slide.shapes !== undefined && slide.shapes !== null
+      ? slide.shapes
+      : (slide.pattern_id ? (pattern?.shapes || []) : [])
+    if (!droppedShapeIds.size) return raw
+    return raw.filter((s) => s.template_shape_id == null || !droppedShapeIds.has(s.template_shape_id))
+  }, [slide.shapes, slide.pattern_id, pattern, droppedShapeIds])
+
+  // Отрисовка шаблонных декоративных иконок/пиктограмм из рендера
+  const templatePictures = useMemo(() => {
+    if (!referenceRender?.facts?.pictures) return []
+    const iconsList = theme.icons || (theme as any)?.design?.icons || []
+    return referenceRender.facts.pictures
+      .filter((pic) => !pic.user)
+      .map((pic) => {
+        const match = iconsList.find((ic: any) => ic.file?.startsWith(pic.image) || ic.id?.startsWith(pic.image))
+        const filename = match ? match.file : (pic.image ? `${pic.image}4fa6.png` : null)
+        const url = filename && theme.template_id ? `/api/templates/${theme.template_id}/icons/${filename}` : null
+        return { ...pic, url }
+      })
+      .filter((pic): pic is typeof pic & { url: string } => Boolean(pic.url))
+  }, [referenceRender, theme])
 
   const surface = surfaceFor(slide, theme, skin)
   const headingFont = slide.font_family ? `"${slide.font_family}", "${theme.heading_font}", var(--font-sans)` : `"${theme.heading_font}", var(--font-sans)`
@@ -304,7 +416,7 @@ function InteractiveSlideView({
       return slide.element_boxes[target] as [number, number, number, number]
     }
     if (target === 'content' && referenceBodyBox) return referenceBodyBox
-    const referenceBox = referenceRender ? targetRect(referenceRender.targets, target) : undefined
+    const referenceBox = effectiveTargets ? targetRect(effectiveTargets, target) : undefined
     if (referenceBox) return referenceBox
     const cover = isCover(slide)
     if (target === 'title') {
@@ -344,10 +456,10 @@ function InteractiveSlideView({
       return
     }
 
-    if (referenceRender) {
+    if (effectiveTargets) {
       const referenceBox = normalizedTarget === 'content'
         ? referenceBodyBox
-        : targetRect(referenceRender.targets, normalizedTarget)
+        : targetRect(effectiveTargets, normalizedTarget)
       if (referenceBox) {
         setMeasuredBox(referenceBox)
         return
@@ -392,34 +504,15 @@ function InteractiveSlideView({
     }
 
     setMeasuredBox(getFallbackBox(normalizedTarget))
-  }, [editable, normalizedTarget, referenceBodyBox, referenceRender, slide, selectedElementId])
-
-  // В reference-editor DOM-слой остаётся hit-area поверх точного raster-render.
-  // Помечаем выбранный узел и ближайший визуальный контейнер, чтобы поверх
-  // картинки показывался только активный слой для редактирования.
-  useEffect(() => {
-    const root = slideRef.current
-    if (!root) return
-    root.querySelectorAll('[data-editor-selected], [data-editor-visible]').forEach((node) => {
-      node.removeAttribute('data-editor-selected')
-      node.removeAttribute('data-editor-visible')
-    })
-    if (!editable || !referenceRender) return
-    const visibleTargets = new Set(normalizedEditedTargets)
-    if (normalizedTarget) visibleTargets.add(normalizedTarget)
-    visibleTargets.forEach((target) => {
-      const selected = root.querySelector(`[data-element-id="${target}"]`)
-      if (!(selected instanceof HTMLElement)) return
-      if (target === normalizedTarget) selected.setAttribute('data-editor-selected', 'true')
-      let ancestor: HTMLElement | null = selected
-      while (ancestor && ancestor !== root) {
-        if (ancestor.hasAttribute('data-element-id')) ancestor.setAttribute('data-editor-visible', 'true')
-        ancestor = ancestor.parentElement
-      }
-    })
-  }, [editable, normalizedEditedTargets, normalizedTarget, referenceRender])
+  }, [editable, effectiveTargets, normalizedTarget, referenceBodyBox, slide, selectedElementId])
 
   const effectiveBox = (slide.element_boxes?.[normalizedTarget || ''] as [number, number, number, number] | undefined) || measuredBox
+
+  const hasCustomBoxes = Boolean(
+    displaySlide.element_boxes?.['title'] ||
+    displaySlide.element_boxes?.['content'] ||
+    displaySlide.element_boxes?.['subtitle']
+  )
 
   const framed = skin?.frames?.title ? skin : undefined
   return (
@@ -430,8 +523,6 @@ function InteractiveSlideView({
         `slide--${slide.kind}`,
         skin?.image && 'slide--skinned',
         editable && 'slide--editable',
-        editable && referenceRender && 'slide--reference-editor',
-        editable && referenceRender && hasEdits && 'slide--reference-editor-dom',
         flag('slide'),
         className
       )}
@@ -466,32 +557,40 @@ function InteractiveSlideView({
       }
     >
       {skin?.image && <img className="slide__bg" src={skin.image} alt="" draggable={false} loading="lazy" />}
-      {editable && referenceRender && (
+      {templatePictures.map((pic, idx) => (
         <img
-          className="slide__edit-reference"
-          src={referenceRender.image}
+          key={'tpl-pic-' + idx}
+          src={pic.url}
           alt=""
-          aria-hidden="true"
           draggable={false}
+          style={{
+            position: 'absolute',
+            ...box(pic.bbox),
+            objectFit: 'contain',
+            pointerEvents: 'none',
+            zIndex: 3,
+          }}
         />
-      )}
+      ))}
       {framed ? (
         <FramedSlide
           slide={displaySlide}
           skin={framed}
           theme={theme}
           flag={flag}
+          render={referenceRender}
           editable={editable}
           onElementSelect={onElementSelect}
           onFieldChange={onFieldChange}
           onImageClick={onImageClick}
         />
       ) : (
-        <div className="slide__inner">
+        <div className={clsx('slide__inner', hasCustomBoxes && 'slide__inner--custom-layout')}>
           <FlowSlide
             slide={displaySlide}
             theme={theme}
             flag={flag}
+            render={referenceRender}
             editable={editable}
             onElementSelect={onElementSelect}
             onFieldChange={onFieldChange}
@@ -589,6 +688,7 @@ function FramedSlide({
   skin,
   theme,
   flag,
+  render,
   editable,
   onElementSelect,
   onFieldChange,
@@ -598,6 +698,7 @@ function FramedSlide({
   skin: LayoutSkin
   theme: SlideTheme
   flag: Flag
+  render?: SlideRender
   editable?: boolean
   onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
@@ -702,6 +803,7 @@ function FramedSlide({
             theme={theme}
             flag={flag}
             containerBox={bodyRect}
+            render={render}
             editable={editable}
             onElementSelect={onElementSelect}
             onFieldChange={onFieldChange}
@@ -718,6 +820,7 @@ function FlowSlide({
   slide,
   theme,
   flag,
+  render,
   editable,
   onElementSelect,
   onFieldChange,
@@ -726,6 +829,7 @@ function FlowSlide({
   slide: Slide
   theme: SlideTheme
   flag: Flag
+  render?: SlideRender
   editable?: boolean
   onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
@@ -912,6 +1016,7 @@ function FlowSlide({
       theme={theme}
       flag={flag}
       containerBox={customContentBox || [0, 0, 1, 1]}
+      render={render}
       editable={editable}
       onElementSelect={onElementSelect}
       onFieldChange={onFieldChange}
@@ -967,6 +1072,7 @@ function SlideContent({
   theme,
   flag,
   containerBox = [0, 0, 1, 1],
+  render,
   editable,
   onElementSelect,
   onFieldChange,
@@ -976,6 +1082,7 @@ function SlideContent({
   theme: SlideTheme
   flag: Flag
   containerBox?: FrameRect
+  render?: SlideRender
   editable?: boolean
   onElementSelect?: (elementId: string | null) => void
   onFieldChange?: (path: string, newText: string) => void
@@ -1142,6 +1249,14 @@ function SlideContent({
         <div className={clsx('slide__columns', flag('columns'))}>
           {slide.columns.map((column, ci) => {
             const customColBox = slide.element_boxes?.[`columns.${ci}`] as FrameRect | undefined
+            const hasLeftIcon = (render?.facts?.pictures || []).some(
+              (pic) =>
+                !pic.user &&
+                customColBox &&
+                Math.abs(pic.bbox[1] - customColBox[1]) < 0.1 &&
+                pic.bbox[0] >= customColBox[0] - 0.05 &&
+                pic.bbox[0] < customColBox[0] + 0.15
+            )
             return (
               <div
                 key={ci}
@@ -1149,6 +1264,7 @@ function SlideContent({
                 className={flag(`columns.${ci}`)}
                 style={{
                   ...(customColBox ? { position: 'absolute', ...boxInContainer(customColBox, containerBox), zIndex: 12 } : {}),
+                  ...(hasLeftIcon ? { paddingLeft: '5.5cqw' } : {}),
                 }}
                 onClick={(e) => {
                   if (editable) {

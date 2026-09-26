@@ -384,6 +384,14 @@ input[type='checkbox'] {
   padding: var(--space-6) var(--space-5) var(--space-7);
 }
 
+.page:has(.audit-layout),
+.page--audit {
+  max-width: min(98vw, 1780px);
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-5);
+  padding-inline: max(16px, 1.5vw);
+}
+
 .stack {
   display: flex;
   flex-direction: column;
@@ -2312,44 +2320,77 @@ a:hover > .template-card,
 }
 
 /* ===== Просмотр колоды ===== */
+.modal.deck-viewer-modal {
+  width: min(1200px, 94vw);
+  max-width: 94vw;
+  max-height: 92vh;
+  height: min(92vh, 840px);
+}
+.modal.deck-viewer-modal .modal__body {
+  padding: 12px 20px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
 .deck-viewer {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+  gap: 8px;
+  justify-content: space-between;
 }
 .deck-viewer__stage {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.deck-viewer__nav {
+  flex-shrink: 0;
 }
 .deck-viewer__slide {
-  flex: 1;
+  max-height: 100%;
+  width: auto;
+  max-width: calc(100% - 90px);
+  aspect-ratio: var(--slide-aspect, 16 / 9);
   border-radius: 8px;
   box-shadow: var(--shadow-md);
+  object-fit: contain;
 }
 .deck-viewer__meta {
   display: flex;
   justify-content: space-between;
   gap: var(--space-3);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text-muted);
-  padding: 0 44px;
+  padding: 0 16px;
+  flex-shrink: 0;
 }
 .deck-viewer__notes {
-  margin: 0 44px;
-  padding: 10px 12px;
+  margin: 0 16px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text-muted);
+  max-height: 48px;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 .deck-viewer__strip {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 120px;
+  grid-auto-columns: 100px;
   gap: 8px;
   overflow-x: auto;
-  padding: 4px 44px 8px;
+  padding: 4px 16px 6px;
+  flex-shrink: 0;
 }
 
 /* ===== Аудит: Верхняя сводка ===== */
@@ -2359,10 +2400,10 @@ a:hover > .template-card,
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 24px;
-  min-height: 72px;
-  border-radius: 16px;
+  gap: 12px;
+  padding: 8px 18px;
+  min-height: 46px;
+  border-radius: 12px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
@@ -2541,20 +2582,20 @@ a:hover > .template-card,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 36px;
+  gap: 16px;
 }
 
 .audit-count,
 .audit-stat-item {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
 }
 
 .audit-stat-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2581,18 +2622,20 @@ a:hover > .template-card,
 
 .audit-stat-text {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 5px;
   line-height: 1.15;
 }
 
 .audit-stat-val {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--color-text);
 }
 
 .audit-stat-lbl {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--color-text-muted);
   font-weight: 500;
 }
@@ -2601,9 +2644,9 @@ a:hover > .template-card,
 .audit-status-badge {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  border-radius: 12px;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 8px;
   background: var(--color-success-soft);
   border: 1px solid var(--color-success);
 }
@@ -2614,8 +2657,8 @@ a:hover > .template-card,
 }
 
 .audit-status-badge__icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--color-success);
   color: #ffffff;
@@ -2636,7 +2679,7 @@ a:hover > .template-card,
 }
 
 .audit-status-badge__title {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-success);
 }
@@ -2646,7 +2689,7 @@ a:hover > .template-card,
 }
 
 .audit-status-badge__sub {
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--color-success);
   font-weight: 500;
 }
@@ -2658,17 +2701,18 @@ a:hover > .template-card,
 .audit-summary-left {
   display: flex;
   align-items: center;
-  gap: 36px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
 .audit-summary-counts-detail {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   font-size: 11.5px;
   color: var(--color-text-muted);
-  padding-left: 20px;
+  padding-left: 16px;
   border-left: 1px solid var(--color-border);
 }
 
@@ -2689,20 +2733,22 @@ a:hover > .template-card,
 .audit-refresh-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   background: transparent;
-  border: none;
+  border: 1px solid var(--color-border);
   color: var(--color-primary);
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
-  padding: 8px 14px;
+  padding: 4px 12px;
+  height: 32px;
   border-radius: 8px;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .audit-refresh-btn:hover {
   background: var(--color-primary-soft);
+  border-color: var(--color-primary);
   color: var(--color-primary-hover);
 }
 
@@ -2721,9 +2767,9 @@ a:hover > .template-card,
 
 .audit-layout {
   display: grid;
-  grid-template-columns: 125px minmax(0, 1fr) 420px;
+  grid-template-columns: 96px minmax(0, 1fr) 340px;
   grid-template-rows: auto 1fr;
-  gap: var(--space-4);
+  gap: 14px;
   align-items: start;
   transition: grid-template-columns 0.2s ease;
 }
@@ -2738,7 +2784,7 @@ a:hover > .template-card,
    поэтому в фокусе всё сводим в одну колонку. */
 .audit-layout.is-zen {
   grid-template-columns: minmax(0, 1fr);
-  max-width: 1400px;
+  max-width: 1540px;
   margin: 0 auto;
   width: 100%;
 }
@@ -2752,7 +2798,7 @@ a:hover > .template-card,
 }
 .audit-layout.is-zen .audit-stage {
   grid-column: 1;
-  max-width: 1100px;
+  max-width: 1480px;
   margin: 0 auto;
   width: 100%;
 }
@@ -2764,8 +2810,8 @@ a:hover > .template-card,
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: 8px 16px;
+  gap: var(--space-2);
+  padding: 5px 14px;
   border-radius: var(--radius-pill);
   background: var(--color-surface);
   border: 1px solid var(--color-border-strong);
@@ -3114,9 +3160,9 @@ a:hover > .template-card,
 /* Заметки докладчика */
 .audit-speaker-notes-box {
   background: var(--color-surface-muted);
-  border-radius: 12px;
-  padding: 12px 18px;
-  min-height: 52px;
+  border-radius: 8px;
+  padding: 6px 14px;
+  min-height: 36px;
   display: flex;
   flex-direction: column;
   justify-content: center;

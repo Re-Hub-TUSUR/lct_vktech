@@ -1112,9 +1112,9 @@ function AuditWorkspace({
             <div className="audit-summary-left">
               <div className="audit-summary-stats">
                 {/* Ошибки */}
-                <div className="audit-stat-item">
+                <div className="audit-stat-item" title="Ошибки">
                   <div className="audit-stat-circle audit-stat-circle--error">
-                    <CircleAlert size={17} />
+                    <CircleAlert size={14} />
                   </div>
                   <div className="audit-stat-text">
                     <span className="audit-stat-val">{summary.by_severity.error ?? 0}</span>
@@ -1123,9 +1123,9 @@ function AuditWorkspace({
                 </div>
 
                 {/* Предупреждения */}
-                <div className="audit-stat-item">
+                <div className="audit-stat-item" title="Предупреждения">
                   <div className="audit-stat-circle audit-stat-circle--warning">
-                    <TriangleAlert size={17} />
+                    <TriangleAlert size={14} />
                   </div>
                   <div className="audit-stat-text">
                     <span className="audit-stat-val">{summary.by_severity.warning ?? 0}</span>
@@ -1134,9 +1134,9 @@ function AuditWorkspace({
                 </div>
 
                 {/* Советы */}
-                <div className="audit-stat-item">
+                <div className="audit-stat-item" title="Советы">
                   <div className="audit-stat-circle audit-stat-circle--info">
-                    <Check size={17} />
+                    <Check size={14} />
                   </div>
                   <div className="audit-stat-text">
                     <span className="audit-stat-val">{summary.by_severity.info ?? 0}</span>
@@ -1145,23 +1145,23 @@ function AuditWorkspace({
                 </div>
               </div>
 
-              {/* Счётчики детерминированных и контекстуальных проверок перенесены влево ближе к статам */}
+              {/* Счётчики проверок в компактную строку */}
               <div className="audit-summary-counts-detail">
-                <div className="audit-summary-dot-row">
-                  <span className="audit-summary-bullet-dot" />
-                  <span>{summary.by_kind.deterministic ?? 0} детерминированных</span>
-                </div>
-                <div className="audit-summary-dot-row">
-                  <span className="audit-summary-bullet-dot" />
-                  <span>{summary.by_kind.contextual ?? 0} контекстуальных</span>
-                </div>
-                <div className="audit-summary-dot-row" title="Модель, которая выполняет контекстуальные проверки">
-                  <span className="audit-summary-bullet-dot" />
-                  <span>
-                    {report.judge ? `Судья: ${report.judge}` : 'Модель-судья не подключена'}
-                    {summary.checks_pending > 0 && ` · ждут ${countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}`}
-                  </span>
-                </div>
+                <span title="Детерминированные проверки">{summary.by_kind.deterministic ?? 0} детерминированных</span>
+                <span className="audit-summary-bullet-dot" />
+                <span title="Контекстуальные проверки">{summary.by_kind.contextual ?? 0} контекстуальных</span>
+                {report.judge && (
+                  <>
+                    <span className="audit-summary-bullet-dot" />
+                    <span title="Модель-судья">{report.judge}</span>
+                  </>
+                )}
+                {summary.checks_pending > 0 && (
+                  <>
+                    <span className="audit-summary-bullet-dot" />
+                    <span className="text-warning">ждут {countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1175,8 +1175,8 @@ function AuditWorkspace({
                   rerun.mutate()
                 }}
               >
-                <RefreshCw size={15} className={clsx(rerun.isPending && 'spin')} />
-                <span>{rerun.isPending ? 'Запуск аудита…' : 'Перезапустить аудит'}</span>
+                <RefreshCw size={13} className={clsx(rerun.isPending && 'spin')} />
+                <span>{rerun.isPending ? 'Запуск…' : 'Перезапустить аудит'}</span>
               </button>
             )}
           </div>
@@ -1228,11 +1228,9 @@ function AuditWorkspace({
                     slide={activeSlide}
                     theme={theme}
                     number={slideIndex + 1}
+                    preferInteractive
                     highlights={isEditing ? undefined : highlights}
                     activeTarget={isEditing ? undefined : activeTarget}
-                    // До первого изменения сохраняем точный raster-вид. После
-                    // blur SlideView переключается на DOM с геометрией render.targets,
-                    // поэтому старый raster-текст не дублируется под новым.
                     render={slideRender(variant, slideIndex)}
                     editable={isEditing}
                     editedElementIds={editedElementIds}

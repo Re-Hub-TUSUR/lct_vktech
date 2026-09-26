@@ -183,9 +183,20 @@
 }
 .slide__columns h3 {
   font-family: var(--slide-heading-font);
-  font-size: 2.1cqw;
-  color: var(--slide-accent);
-  margin: 0 0 1.2cqw;
+  font-size: 1.8cqw;
+  color: var(--slide-text);
+  margin: 0 0 0.6cqw;
+  line-height: 1.25;
+}
+.slide__columns .slide__bullets {
+  list-style: none;
+  padding-left: 0;
+  gap: 0.4cqw;
+  font-size: calc(1.35cqw * var(--slide-font-scale, 1));
+  opacity: 0.9;
+}
+.slide__columns .slide__bullets li {
+  line-height: 1.35;
 }
 
 /* Карточки */
@@ -479,72 +490,36 @@
   /* Ручки и плавающая панель выделения выходят за границы холста. */
   overflow: visible;
 }
-.slide--reference-editor .slide__edit-reference {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  z-index: 1;
-  pointer-events: none;
-}
-/* Raster-render остаётся визуальной основой редактора. DOM-слой выше него
-   используется как hit-area, а выбранная ветка возвращается поверх картинки. */
-.slide--reference-editor .slide__inner,
-.slide--reference-editor .slide__frame,
-.slide--reference-editor .slide__custom-block,
-.slide--reference-editor .slide-shapes-layer {
-  opacity: 1;
-}
-.slide--reference-editor .slide__number {
-  opacity: 0;
-}
-.slide--reference-editor .slide__bg {
-  opacity: 0;
-}
-.slide--reference-editor [data-element-id] {
-  opacity: 0;
-  pointer-events: auto;
-}
-.slide--reference-editor [data-element-id][data-editor-visible="true"],
-.slide--reference-editor [data-editor-selected="true"] {
-  opacity: 1;
-}
-.slide--reference-editor [data-editor-selected="true"] [data-element-id] {
-  opacity: 1;
-}
-.slide--reference-editor .slide-shape-item {
-  opacity: 0;
-}
-.slide--reference-editor .slide-shape-item.is-selected {
-  opacity: 1;
+/* Полноценный WYSIWYG редактор слайда без дублирования и смещения слоёв */
+.slide--editable {
+  user-select: text;
 }
 
-/* После первого подтверждённого изменения raster больше не должен оставаться
-   под редактируемым DOM: иначе старый текст дублируется под новым. Геометрия
-   DOM уже зафиксирована координатами render.targets в SlideView. */
-.slide--reference-editor-dom .slide__edit-reference {
-  display: none;
+.slide--editable [contenteditable='true'] {
+  outline: none;
+  cursor: text;
+  border-radius: 4px;
+  transition: outline 0.15s ease, background-color 0.15s ease;
+  pointer-events: auto;
 }
-.slide--reference-editor-dom .slide__bg,
-.slide--reference-editor-dom .slide__number,
-.slide--reference-editor-dom [data-element-id],
-.slide--reference-editor-dom .slide-shape-item,
-.slide--reference-editor-dom .slide-shapes-layer {
-  opacity: 1;
+
+.slide--editable [contenteditable='true']:hover {
+  outline: 1px dashed rgba(0, 119, 255, 0.4);
+  background-color: rgba(0, 119, 255, 0.03);
 }
-.slide--reference-editor-dom .slide__number {
-  color: var(--slide-text);
+
+.slide--editable [contenteditable='true']:focus {
+  outline: 2px solid var(--color-primary, #0077ff);
+  background-color: rgba(0, 119, 255, 0.06);
 }
-.slide--editable [contenteditable='true'],
+
 .slide--editable .slide__image,
 .slide--editable .slide__chart-box {
   pointer-events: auto;
 }
-.slide--reference-editor .slide__frame[data-element-id],
-.slide--reference-editor .slide__custom-block[data-element-id] {
-  pointer-events: auto;
+
+.slide__inner--custom-layout {
+  padding: 0;
 }
 .slide-shape-item {
   position: absolute;
@@ -654,12 +629,48 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  min-height: 480px;
+  min-height: 0;
+  padding: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+  gap: 10px;
+  background: var(--color-surface);
 }
 
 .slide-assistant-panel__header {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.slide-assistant-tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.slide-assistant-tabs button {
+  background: transparent;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.slide-assistant-tabs button:hover {
+  color: var(--color-text, #0f172a);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.slide-assistant-tabs button.is-active {
+  color: var(--color-primary, #0077ff);
+  background: var(--color-primary-light, #eff6ff);
 }
 
 .slide-assistant-chat {
@@ -672,12 +683,12 @@
 
 .slide-assistant-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 4px 2px;
-  max-height: 380px;
+  padding: 4px 6px 4px 2px;
 }
 
 .slide-assistant-bubble {
@@ -751,6 +762,7 @@
   flex-wrap: wrap;
   gap: 6px;
   padding: 6px 0;
+  flex-shrink: 0;
 }
 
 .slide-assistant-chip {
@@ -783,6 +795,7 @@
   align-items: flex-end;
   padding-top: 8px;
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 
 .slide-assistant-textarea {
@@ -813,6 +826,16 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.slide-assistant-design {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* Мини-элемент выбора паттерна в ассистенте */

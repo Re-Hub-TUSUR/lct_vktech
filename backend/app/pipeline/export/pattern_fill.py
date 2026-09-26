@@ -463,6 +463,34 @@ def set_text(
     )
 
 
+def _apply_shape_box(element, box: list[float], slide_w: int, slide_h: int) -> None:
+    """Устанавливает координаты и размеры фигуры в EMUs по долям слайда [x, y, w, h]."""
+    xfrm = element.find(f".//{qn('a:xfrm')}")
+    if xfrm is None:
+        return
+    off = xfrm.find(qn("a:off"))
+    ext = xfrm.find(qn("a:ext"))
+    if off is not None:
+        off.set("x", str(int(box[0] * slide_w)))
+        off.set("y", str(int(box[1] * slide_h)))
+    if ext is not None:
+        ext.set("cx", str(int(box[2] * slide_w)))
+        ext.set("cy", str(int(box[3] * slide_h)))
+
+
+def _shift_shape(element, dx: int, dy: int) -> None:
+    """Смещает фигуру на dx, dy в EMUs."""
+    xfrm = element.find(f".//{qn('a:xfrm')}")
+    if xfrm is None:
+        return
+    off = xfrm.find(qn("a:off"))
+    if off is not None:
+        curr_x = int(off.get("x", "0"))
+        curr_y = int(off.get("y", "0"))
+        off.set("x", str(curr_x + dx))
+        off.set("y", str(curr_y + dy))
+
+
 def remove(element) -> None:
     parent = element.getparent()
     if parent is not None:
@@ -684,10 +712,19 @@ def fill_pattern(
     targets: dict[str, list[float]] = {}
     handled: set[int] = set()
 
+    prs_obj = getattr(slide.part.package.presentation_part, "presentation", None)
+    slide_w = prs_obj.slide_width if prs_obj else 12192000
+    slide_h = prs_obj.slide_height if prs_obj else 6858000
+    elem_boxes = getattr(spec, "element_boxes", {}) or {}
+
     title = pattern.get("title")
     if title and (element := elements.get(title["id"])) is not None:
         set_text(element, [content.title], slot=title, fit=fit)
-        targets["title"] = title["bbox"]
+        if "title" in elem_boxes and len(elem_boxes["title"]) == 4:
+            _apply_shape_box(element, elem_boxes["title"], slide_w, slide_h)
+            targets["title"] = elem_boxes["title"]
+        else:
+            targets["title"] = title["bbox"]
         handled.add(title["id"])
 
     prefix = ITEM_TARGETS.get(spec.kind)
@@ -700,9 +737,23 @@ def fill_pattern(
             _fill_item(
                 elements, unit, content.items[index], index + 1, plain_head=plain_head, fit=fit, value_scale=value_scale
             )
-            kept.append(unit["bbox"])
-            if prefix:
-                targets[f"{prefix}.{index}"] = unit["bbox"]
+            unit_key = f"{prefix}.{index}" if prefix else None
+            custom_box = elem_boxes.get(unit_key) if unit_key else None
+            if custom_box and len(custom_box) == 4:
+                dx = int((custom_box[0] - unit["bbox"][0]) * slide_w)
+                dy = int((custom_box[1] - unit["bbox"][1]) * slide_h)
+                for shape_id in unit.get("shapes", []):
+                    if (shape_el := elements.get(shape_id)) is not None:
+                        _shift_shape(shape_el, dx, dy)
+                if unit.get("group") and (group_el := elements.get(unit["group"])) is not None:
+                    _shift_shape(group_el, dx, dy)
+                kept.append(custom_box)
+                if prefix:
+                    targets[f"{prefix}.{index}"] = custom_box
+            else:
+                kept.append(unit["bbox"])
+                if prefix:
+                    targets[f"{prefix}.{index}"] = unit["bbox"]
         elif unit.get("group") and (group := elements.get(unit["group"])) is not None:
             remove(group)
         else:
@@ -748,15 +799,25 @@ def fill_pattern(
             and "subtitle" not in filled
         ):
             set_text(element, [content.subtitle], slot=slot, fit=fit)
-            targets["subtitle"] = slot["bbox"]
+            sub_box = elem_boxes.get("subtitle") or slot["bbox"]
+            if "subtitle" in elem_boxes and len(elem_boxes["subtitle"]) == 4:
+                _apply_shape_box(element, elem_boxes["subtitle"], slide_w, slide_h)
+            targets["subtitle"] = sub_box
             filled.add("subtitle")
         elif role == "body" and use_body and "body" not in filled:
             set_text(element, content.body, slot=slot, fit=fit)
-            targets["quote" if spec.kind == "quote" else "bullets"] = slot["bbox"]
+            body_key = "quote" if spec.kind == "quote" else "bullets"
+            body_box = elem_boxes.get(body_key) or elem_boxes.get("content") or slot["bbox"]
+            if (body_key in elem_boxes or "content" in elem_boxes) and len(body_box) == 4:
+                _apply_shape_box(element, body_box, slide_w, slide_h)
+            targets[body_key] = body_box
             filled.add("body")
         elif role == "subtitle" and content.subtitle and "subtitle" not in filled:
             set_text(element, [content.subtitle], slot=slot, fit=fit)
-            targets["subtitle"] = slot["bbox"]
+            sub_box = elem_boxes.get("subtitle") or slot["bbox"]
+            if "subtitle" in elem_boxes and len(elem_boxes["subtitle"]) == 4:
+                _apply_shape_box(element, elem_boxes["subtitle"], slide_w, slide_h)
+            targets["subtitle"] = sub_box
             filled.add("subtitle")
         elif role == "decor_text" and NUMBERING_RX.match(slot["sample"]):
             continue  # номера пунктов — часть оформления

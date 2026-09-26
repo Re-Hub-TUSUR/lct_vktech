@@ -152,6 +152,7 @@ def template_theme(template: Template | None) -> dict[str, Any]:
     theme["template_id"] = str(template.id)
     # Токены дизайн-системы для сборки .pptx: стиль таблиц, цвета диаграмм, типографика, обвязка.
     tokens = template.tokens or {}
+    theme["icons"] = tokens.get("icons") or []
     theme["design"] = {key: tokens.get(key) for key in DESIGN_TOKENS}
     return theme
 

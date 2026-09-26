@@ -138,7 +138,7 @@ export function SlideAssistantPanel({
       </div>
 
       {/* Tabs */}
-      <div className="tabs" style={{ margin: '8px 0', borderBottom: '1px solid var(--color-border)', paddingBottom: 6 }}>
+      <div className="slide-assistant-tabs">
         <button
           type="button"
           className={clsx(activeTab === 'chat' && 'is-active')}
@@ -234,7 +234,7 @@ export function SlideAssistantPanel({
           </div>
         </div>
       ) : (
-        <div className="slide-assistant-design" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
+        <div className="slide-assistant-design">
           <div>
             <label className="text-sm" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>
               Тип слайда:

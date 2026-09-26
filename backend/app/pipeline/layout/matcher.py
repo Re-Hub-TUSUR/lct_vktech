@@ -191,6 +191,58 @@ def own_shapes(slide: Slide) -> list[SlideShape]:
     return [shape for shape in slide.shapes if shape.template_shape_id is None]
 
 
+def active_pattern_shapes(pattern: dict[str, Any], slide: Slide) -> list[SlideShape]:
+    """Фигуры паттерна за вычетом тех, что принадлежат незадействованным слотам (companions) или юнитам."""
+    raw_shapes = pattern.get("shapes") or []
+    if not raw_shapes:
+        return []
+
+    if slide.kind in ("two_columns", "cards"):
+        items_count = len(slide.columns or [])
+    elif slide.kind == "kpi":
+        items_count = len(slide.kpis or [])
+    elif slide.kind == "timeline":
+        items_count = len(slide.timeline or [])
+    else:
+        items_count = len(slide.bullets or [])
+
+    dropped: set[int] = set()
+    units = pattern.get("items") or pattern.get("units") or []
+    for idx, unit in enumerate(units):
+        if idx >= items_count:
+            dropped.update(unit.get("shapes") or [])
+            for slot in unit.get("slots") or []:
+                dropped.add(slot["id"])
+                dropped.update(slot.get("companions") or [])
+
+    is_multi = slide.kind in ("two_columns", "cards", "kpi", "timeline")
+    has_body = bool((slide.bullets and len(slide.bullets) > 0) or slide.kind == "quote")
+    has_subtitle = bool(slide.subtitle and slide.subtitle.strip())
+
+    for slot in pattern.get("slots") or []:
+        role = slot.get("role")
+        is_used = False
+        if role == "title":
+            is_used = bool(slide.title)
+        elif role == "subtitle":
+            is_used = has_subtitle
+        elif role == "body":
+            is_used = not is_multi and has_body
+        elif role == "decor_text":
+            is_used = False
+        if not is_used:
+            dropped.add(slot["id"])
+            dropped.update(slot.get("companions") or [])
+
+    result = []
+    for s in raw_shapes:
+        tid = s.get("template_shape_id")
+        if tid is not None and tid in dropped:
+            continue
+        result.append(SlideShape.model_validate(s))
+    return result
+
+
 def assign_patterns(
     slides: list[Slide],
     patterns: list[dict[str, Any]] | None,
@@ -215,8 +267,8 @@ def assign_patterns(
         if slide.pattern_id != pattern["id"]:
             # Фигуры шаблона принадлежат своему слайду-примеру: при смене паттерна берём фигуры нового
             # (иначе сборка сочтёт его декор удалённым), а добавленные пользователем фигуры сохраняем.
-            # Паттерн прежний — фигуры не трогаем: пользователь мог часть из них удалить или сдвинуть.
-            slide.shapes = own_shapes(slide) + [SlideShape.model_validate(s) for s in pattern.get("shapes") or []]
+            # Фигуры отброшенных слотов (например, неиспользованных карточек/заметок) исключаем.
+            slide.shapes = own_shapes(slide) + active_pattern_shapes(pattern, slide)
         slide.pattern_id = pattern["id"]
         if pattern.get("layout_key"):
             slide.layout_key = pattern["layout_key"]

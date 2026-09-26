@@ -190,6 +190,8 @@ export interface SlideTheme {
   layouts: Record<string, LayoutSkin>
   roles: Record<string, string | null>
   patterns?: SlidePattern[]
+  icons?: Array<{ id: string; file: string; slide_index?: number; size_px?: number[] | null }>
+  design?: Record<string, unknown>
 }
 
 // --- Шаблоны --------------------------------------------------------------
@@ -581,11 +583,24 @@ export interface Generation {
   finished_at: string | null
 }
 
+export interface SlideRenderPicture {
+  bbox: FrameRect
+  image: string
+  user?: boolean
+  stretch?: number
+}
+
 /** Рендер слайда из собранного .pptx: превью совпадает с экспортом. */
 export interface SlideRender {
   image: string
   /** Рамки элементов (адрес как в target аудита → [x, y, w, h] в долях слайда). */
   targets: Record<string, FrameRect>
+  facts?: {
+    pictures?: SlideRenderPicture[]
+    chrome?: Array<{ bbox: FrameRect; kind: string }>
+    lines?: Array<{ bbox: FrameRect; size: number; text: string; block: number }>
+    colors?: string[]
+  }
 }
 
 export interface VariantRenders {
