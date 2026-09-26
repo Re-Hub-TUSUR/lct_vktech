@@ -1,10 +1,13 @@
 import clsx from 'clsx'
-import { Check, Eye, LayoutTemplate, Sparkles, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Check, Eye, LayoutTemplate, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { Slide, SlidePattern, SlideTheme } from '../api/types'
 import { PATTERN_CATEGORY_LABELS, PATTERN_TYPE_LABELS, SLIDE_KIND_LABELS, patternLabel } from '../lib/labels'
+import { Modal } from './Modal'
 import { Badge, Button } from './ui'
+
+const EMPTY_PATTERNS: SlidePattern[] = []
 
 interface SlideDesignModalProps {
   isOpen: boolean
@@ -26,7 +29,8 @@ export function SlideDesignModal({
   const [activeTab, setActiveTab] = useState<'patterns' | 'layouts'>('patterns')
   const [typeFilter, setTypeFilter] = useState<string>('all')
 
-  const patterns = theme.patterns || []
+  const patterns = theme.patterns ?? EMPTY_PATTERNS
+  const firstPatternId = patterns[0]?.id ?? null
   const layouts = useMemo(() => {
     return Object.entries(theme.layouts || {}).map(([key, skin]) => ({
       key,
@@ -34,13 +38,25 @@ export function SlideDesignModal({
       name: skin.name || key,
     }))
   }, [theme.layouts])
+  const firstLayoutKey = layouts[0]?.key ?? null
 
   const [selectedPatternId, setSelectedPatternId] = useState<string | null>(
-    slide.pattern_id || patterns[0]?.id || null
+    slide.pattern_id || firstPatternId
   )
   const [selectedLayoutKey, setSelectedLayoutKey] = useState<string | null>(
-    slide.layout_key || layouts[0]?.key || null
+    slide.layout_key || firstLayoutKey
   )
+
+  // The component stays mounted while the audit page changes slides. Reset the
+  // gallery selection when the dialog opens for another slide, otherwise the
+  // preview and the Apply action keep pointing at the previous slide's choice.
+  useEffect(() => {
+    if (!isOpen) return
+    setActiveTab('patterns')
+    setTypeFilter('all')
+    setSelectedPatternId(slide.pattern_id || firstPatternId)
+    setSelectedLayoutKey(slide.layout_key || firstLayoutKey)
+  }, [isOpen, slide.id, slide.pattern_id, slide.layout_key, theme.template_id, firstPatternId, firstLayoutKey])
 
   const availablePatternTypes = useMemo(() => {
     const types = new Set<string>()
@@ -57,7 +73,7 @@ export function SlideDesignModal({
   }, [patterns, typeFilter])
 
   const activePattern = useMemo(() => {
-    return patterns.find((p) => p.id === selectedPatternId) || filteredPatterns[0] || patterns[0]
+    return filteredPatterns.find((p) => p.id === selectedPatternId) || filteredPatterns[0]
   }, [patterns, filteredPatterns, selectedPatternId])
 
   const activeLayout = useMemo(() => {
@@ -86,28 +102,23 @@ export function SlideDesignModal({
   }
 
   return (
-    <div className="chart-editor-backdrop" onClick={onClose}>
-      <div
-        className="chart-editor-modal"
-        style={{ maxWidth: 860, width: '92vw', maxHeight: '88vh' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="chart-editor-header">
-          <div className="row row--sm" style={{ alignItems: 'center' }}>
-            <span className="badge badge-primary" style={{ padding: '6px 8px' }}>
-              <LayoutTemplate size={16} />
-            </span>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 18 }}>Шаблоны дизайна слайдов</h3>
-              <p className="muted text-sm" style={{ margin: 0 }}>
-                Выберите готовый слайд-пример из шаблона или смените базовый макет
-              </p>
-            </div>
-          </div>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрыть">
-            <X size={18} />
-          </button>
-        </div>
+    <Modal
+      title={(
+        <span className="slide-design-modal__title">
+          <span className="badge badge-primary" aria-hidden="true">
+            <LayoutTemplate size={16} />
+          </span>
+          <span className="slide-design-modal__title-copy">
+            <span>Шаблоны дизайна слайдов</span>
+            <small>Выберите готовый слайд-пример из шаблона или смените базовый макет</small>
+          </span>
+        </span>
+      )}
+      onClose={onClose}
+      wide
+      className="slide-design-modal"
+    >
+      <div className="slide-design-modal__content">
 
         <div className="row row--sm" style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: 12 }}>
           <div className="tabs" style={{ margin: 0 }}>
@@ -167,19 +178,22 @@ export function SlideDesignModal({
                   const imgUrl = getPatternImageUrl(pattern)
 
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={pattern.id}
                       className={clsx(
                         'slide-design-card',
                         isSelected && 'is-selected',
                         isCurrent && 'is-current'
                       )}
+                      aria-pressed={isSelected}
+                      aria-label={`Слайд-пример ${patternLabel(pattern)}${isCurrent ? ', активен' : ''}`}
                       onClick={() => setSelectedPatternId(pattern.id)}
                       onDoubleClick={() => {
                         onSelectPattern(pattern)
                         onClose()
                       }}
-                      title="Кликните для выбора, дважды для применения"
+                      title="Выбрать для предпросмотра; дважды нажать для применения"
                     >
                       <div className="slide-design-card__preview">
                         {imgUrl ? (
@@ -222,7 +236,7 @@ export function SlideDesignModal({
                           )}
                         </div>
                       </div>
-                    </div>
+                    </button>
                   )
                 })}
               </div>
@@ -232,19 +246,22 @@ export function SlideDesignModal({
                   const isCurrent = slide.layout_key === key
                   const isSelected = activeLayout?.key === key
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={key}
                       className={clsx(
                         'slide-design-card',
                         isSelected && 'is-selected',
                         isCurrent && 'is-current'
                       )}
+                      aria-pressed={isSelected}
+                      aria-label={`Макет ${name}${isCurrent ? ', активен' : ''}`}
                       onClick={() => setSelectedLayoutKey(key)}
                       onDoubleClick={() => {
                         onSelectLayout(key, name)
                         onClose()
                       }}
-                      title="Кликните для выбора, дважды для применения"
+                      title="Выбрать для предпросмотра; дважды нажать для применения"
                     >
                       <div className="slide-design-card__preview">
                         {skin.image ? (
@@ -283,7 +300,7 @@ export function SlideDesignModal({
                           </span>
                         </div>
                       </div>
-                    </div>
+                    </button>
                   )
                 })}
               </div>
@@ -421,6 +438,6 @@ export function SlideDesignModal({
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

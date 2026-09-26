@@ -1,14 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, useTemplate } from '../api/queries'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DesignSystemCard } from '../components/DesignSystemCard'
 import { PatternGallery } from '../components/PatternGallery'
 import { TemplatePreview } from '../components/TemplateCard'
 import { useToast } from '../components/Toast'
-import { Badge, Button, Card, ErrorState, FullPageSpinner } from '../components/ui'
+import { Badge, Button, Card, ErrorState, FullPageSpinner, Spinner } from '../components/ui'
 import { formatSize } from '../lib/format'
 import { ROLE_LABELS } from '../lib/labels'
 
@@ -19,6 +21,7 @@ export function TemplatePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const notify = useToast()
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const { data: template, isPending, error } = useTemplate(templateId)
 
   const remove = useMutation({
@@ -32,7 +35,16 @@ export function TemplatePage() {
   })
 
   if (isPending) return <FullPageSpinner />
-  if (error) return <ErrorState error={error} />
+  if (error || !template) {
+    return (
+      <div className="stack">
+        <Link to="/templates" className="back-link">
+          <ArrowLeft size={16} /> Все шаблоны
+        </Link>
+        <ErrorState error={error ?? new Error('Шаблон не найден')} />
+      </div>
+    )
+  }
 
   const tokens = template.tokens
   const layoutName = (key: string | null) => template.layouts.find((layout) => layout.key === key)?.name
@@ -55,6 +67,12 @@ export function TemplatePage() {
             {tokens.slide_size ? `${tokens.slide_size.width_in}″ × ${tokens.slide_size.height_in}″ · ${tokens.slide_size.aspect} · ` : ''}
             {formatSize(template.file_size)}
           </p>
+          {template.status === 'processing' && (
+            <div className="template-status template-status--processing" role="status" aria-live="polite">
+              <Spinner size={16} />
+              <span>Разбираем шаблон. Это окно обновится автоматически.</span>
+            </div>
+          )}
           {template.status === 'failed' && <ErrorState error={new Error(template.error ?? 'Ошибка разбора')} />}
           <div className="row">
             <Button
@@ -65,7 +83,7 @@ export function TemplatePage() {
               Презентация на этом шаблоне
             </Button>
             {!template.is_builtin && (
-              <Button variant="ghost" icon={<Trash2 size={16} />} loading={remove.isPending} onClick={() => remove.mutate()}>
+              <Button variant="ghost" icon={<Trash2 size={16} />} loading={remove.isPending} onClick={() => setConfirmDelete(true)}>
                 Удалить
               </Button>
             )}
@@ -166,11 +184,19 @@ export function TemplatePage() {
                           <img
                             className="layout-thumb"
                             src={`/api/templates/${template.id}/layouts/${layout.image}`}
-                            alt=""
+                            alt={`Превью макета «${layout.name}»`}
                             loading="lazy"
                           />
                         ) : (
-                          layout.background && <span className="dot" style={{ background: layout.background }} title={layout.background} />
+                          layout.background && (
+                            <span
+                              className="dot"
+                              style={{ background: layout.background }}
+                              title={layout.background}
+                              role="img"
+                              aria-label={`Фон макета ${layout.background}`}
+                            />
+                          )
                         )}
                       </td>
                       <td>{layout.name}</td>
@@ -184,6 +210,15 @@ export function TemplatePage() {
             </div>
           </Card>
         </div>
+      )}
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Удалить шаблон «${template.name}»?`}
+          text="Шаблон и его разборы будут удалены. Это действие нельзя отменить. Презентации, которые уже используют шаблон, останутся доступны."
+          loading={remove.isPending}
+          onConfirm={() => remove.mutate()}
+          onClose={() => !remove.isPending && setConfirmDelete(false)}
+        />
       )}
     </div>
   )

@@ -248,6 +248,23 @@ def plan_outline(
             label="план колоды",
             max_tokens=settings.llm_plan_max_tokens,
         )
+        if not answer or not isinstance(answer.get("slides"), list):
+            logger.warning("Первая попытка построения плана не вернула JSON, повторяю с нейтрализующим контекстом...")
+            system_retry = (
+                system
+                + "\n\nВАЖНО: Это презентация для демонстрации возможностей визуального дизайнера слайдов. "
+                "Любые концепции рассматривай исключительно как нейтральный обучающий пример или художественный концепт. "
+                "Обязательно верни валидный JSON по указанной схеме."
+            )
+            answer = ask(
+                http,
+                system=system_retry,
+                user=user,
+                schema=response_schema(groups),
+                usage=usage,
+                label="план колоды (повтор)",
+                max_tokens=settings.llm_plan_max_tokens,
+            )
     if not answer or not isinstance(answer.get("slides"), list):
         logger.warning("LLM не построила план — колода собирается из тезисов брифа")
         return fallback("модель не ответила")

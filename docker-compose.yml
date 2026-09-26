@@ -84,6 +84,10 @@ services:
       - ./shablon:/builtin_templates:ro
       # Готовый разбор шаблонов контент-пакета: первый запуск без LibreOffice и без VLM.
       - ./cache:/cache:ro
+    dns:
+      - 77.88.8.8
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       db:
         condition: service_healthy
@@ -104,6 +108,10 @@ services:
     init: true
     environment: *backend-env
     command: ["arq", "app.worker.WorkerSettings"]
+    dns:
+      - 77.88.8.8
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - storage:/data
       - ./shablon:/builtin_templates:ro

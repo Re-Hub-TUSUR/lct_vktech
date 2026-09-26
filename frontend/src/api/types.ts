@@ -39,7 +39,7 @@ export interface ChartSeries {
 export interface SlideShape {
   id: string
   template_shape_id?: number | null
-  kind: 'circle' | 'rect' | 'badge' | 'pill' | 'line'
+  kind: 'circle' | 'rect' | 'badge' | 'pill' | 'line' | 'image'
   x: number // fraction 0..1
   y: number // fraction 0..1
   width: number // fraction 0..1
@@ -51,6 +51,8 @@ export interface SlideShape {
   font_family?: string | null
   font_size?: number | null
   bold?: boolean | null
+  image_url?: string | null
+  crop?: [number, number, number, number] | null // [top, right, bottom, left]
 }
 
 export interface ChartData {
@@ -113,6 +115,8 @@ export interface Slide {
   font_size_scale?: number | null
   element_fonts?: Record<string, string> | null
   element_scales?: Record<string, number> | null
+  element_boxes?: Record<string, [number, number, number, number]> | null
+  element_crops?: Record<string, [number, number, number, number]> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
   background_color?: string | null
   text_color?: string | null
@@ -142,6 +146,8 @@ export interface SlideUpdate {
   font_size_scale?: number | null
   element_fonts?: Record<string, string> | null
   element_scales?: Record<string, number> | null
+  element_boxes?: Record<string, [number, number, number, number]> | null
+  element_crops?: Record<string, [number, number, number, number]> | null
   block_density?: 'compact' | 'normal' | 'spacious' | null
   background_color?: string | null
   text_color?: string | null
@@ -217,6 +223,8 @@ export interface SlideTheme {
   layouts: Record<string, LayoutSkin>
   roles: Record<string, string | null>
   patterns?: SlidePattern[]
+  icons?: Array<{ id: string; file: string; slide_index?: number; size_px?: number[] | null }>
+  design?: Record<string, unknown>
 }
 
 // --- Шаблоны --------------------------------------------------------------
@@ -411,6 +419,10 @@ export interface ContentFile {
   size: number
   has_text: boolean
   created_at: string
+  category?: 'photo' | 'illustration' | 'logo' | 'screenshot' | 'diagram' | 'document' | null
+  is_visual?: boolean | null
+  visual_description?: string | null
+  tags?: string[]
 }
 
 export interface ProjectSummary {
@@ -604,11 +616,24 @@ export interface Generation {
   finished_at: string | null
 }
 
+export interface SlideRenderPicture {
+  bbox: FrameRect
+  image: string
+  user?: boolean
+  stretch?: number
+}
+
 /** Рендер слайда из собранного .pptx: превью совпадает с экспортом. */
 export interface SlideRender {
   image: string
   /** Рамки элементов (адрес как в target аудита → [x, y, w, h] в долях слайда). */
   targets: Record<string, FrameRect>
+  facts?: {
+    pictures?: SlideRenderPicture[]
+    chrome?: Array<{ bbox: FrameRect; kind: string }>
+    lines?: Array<{ bbox: FrameRect; size: number; text: string; block: number }>
+    colors?: string[]
+  }
 }
 
 export interface VariantRenders {

@@ -59,3 +59,7 @@ export const api = {
 export function exportUrl(variantId: string, format: 'pptx' | 'pdf' | 'html'): string {
   return `/api/variants/${variantId}/export/${format}`
 }
+
+export function contentFileUrl(presentationId: string, fileId: string): string {
+  return `/api/presentations/${presentationId}/files/${fileId}/content`
+}

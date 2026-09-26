@@ -43,14 +43,23 @@ def template_detail(template: Template) -> TemplateDetail:
     )
 
 
+from app.pipeline.content.image_analyzer import parse_image_meta
+
+
 def content_file_out(file: ContentFile) -> ContentFileOut:
+    meta = parse_image_meta(file.extracted_text) or {}
+    has_text = bool(meta.get("has_text")) if meta else bool(file.extracted_text)
     return ContentFileOut(
         id=file.id,
         filename=file.filename,
         content_type=file.content_type,
         size=file.size,
-        has_text=bool(file.extracted_text),
+        has_text=has_text,
         created_at=file.created_at,
+        category=meta.get("category"),
+        is_visual=meta.get("is_visual"),
+        visual_description=meta.get("visual_description"),
+        tags=list(meta.get("tags") or []),
     )
 
 

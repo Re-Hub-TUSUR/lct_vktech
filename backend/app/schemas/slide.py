@@ -51,7 +51,7 @@ class ChartSeries(BaseModel):
 class SlideShape(BaseModel):
     id: str = Field(default_factory=lambda: uuid4().hex[:8])
     template_shape_id: int | None = None
-    kind: Literal["circle", "rect", "badge", "pill", "line"] = "circle"
+    kind: Literal["circle", "rect", "badge", "pill", "line", "image"] = "circle"
     x: float = 0.5  # fraction 0..1
     y: float = 0.5  # fraction 0..1
     width: float = 0.15  # fraction
@@ -62,7 +62,9 @@ class SlideShape(BaseModel):
     border: bool | None = False
     font_family: str | None = None
     font_size: float | None = None
-    bold: bool | None = False
+    bold: bool | None = None
+    image_url: str | None = None
+    crop: list[float] | None = None  # [top, right, bottom, left] fractions (0..1)
 
 
 class ChartData(BaseModel):
@@ -136,6 +138,8 @@ class Slide(BaseModel):
     font_size_scale: float | None = None  # 0.8, 1.0, 1.25 и т.д.
     element_fonts: dict[str, str] = Field(default_factory=dict)
     element_scales: dict[str, float] = Field(default_factory=dict)
+    element_boxes: dict[str, list[float]] = Field(default_factory=dict)  # target -> [x, y, w, h] (0..1)
+    element_crops: dict[str, list[float]] = Field(default_factory=dict)  # target -> [top, right, bottom, left] (0..1)
     block_density: Literal["compact", "normal", "spacious"] | None = None
     background_color: str | None = None
     text_color: str | None = None
@@ -165,6 +169,8 @@ class SlideUpdate(BaseModel):
     font_size_scale: float | None = None
     element_fonts: dict[str, str] | None = None
     element_scales: dict[str, float] | None = None
+    element_boxes: dict[str, list[float]] | None = None
+    element_crops: dict[str, list[float]] | None = None
     block_density: Literal["compact", "normal", "spacious"] | None = None
     background_color: str | None = None
     text_color: str | None = None

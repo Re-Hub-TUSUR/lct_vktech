@@ -28,7 +28,17 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 R = TypeVar("R")
-RETRY_PAUSE_SECONDS = 2
+RETRY_DELAYS = [1.5, 3.0, 5.0]
+
+
+def _is_retryable(exc: Exception) -> bool:
+    """Определяет, имеет ли смысл повторить запрос к модели."""
+    if isinstance(exc, (httpx.TransportError, httpx.ProtocolError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        # 429 Too Many Requests (Rate limit), 500, 502, 503, 504
+        return exc.response.status_code in {429, 500, 502, 503, 504}
+    return False
 
 
 @dataclass(frozen=True)
@@ -156,22 +166,27 @@ def ask(
         disable_reasoning=cfg.disable_reasoning,
         schema=schema,
     )
-    try:
-        answer = api.ask_json(http, payload, options, label)
-    except httpx.TransportError as exc:
-        # Обрыв соединения, таймаут или сбой DNS — одна повторная попытка, прежде чем сдаться.
-        logger.warning("Связь с моделью прервалась (%s): %s — повторяю", label, exc)
-        time.sleep(RETRY_PAUSE_SECONDS)
+    answer = None
+    for attempt_idx, delay in enumerate(RETRY_DELAYS):
         try:
             answer = api.ask_json(http, payload, options, label)
-        except (httpx.HTTPError, KeyError, IndexError, ValueError) as repeat:
-            logger.warning("Модель не ответила (%s): %s", label, repeat)
+            break
+        except Exception as exc:
+            if _is_retryable(exc) and attempt_idx < len(RETRY_DELAYS) - 1:
+                logger.warning(
+                    "Связь с моделью прервалась (%s, попытка %d/%d): %s — повторяю через %.1fс",
+                    label, attempt_idx + 1, len(RETRY_DELAYS), exc, delay
+                )
+                time.sleep(delay)
+                continue
+            logger.warning("Модель не ответила (%s): %s", label, exc)
             usage.add(failed=True)
             return None
-    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-        logger.warning("Модель не ответила (%s): %s", label, exc)
+
+    if answer is None:
         usage.add(failed=True)
         return None
+
     usage.add(tokens=answer.tokens, failed=answer.data is None)
     return answer.data
 

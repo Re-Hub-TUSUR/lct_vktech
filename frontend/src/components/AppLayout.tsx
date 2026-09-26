@@ -1,5 +1,6 @@
+import clsx from 'clsx'
 import { LogOut, Menu, Moon, Plus, Sun, X } from 'lucide-react'
-import { Link, NavLink, Outlet, useNavigate } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useState } from 'react'
 
 import { useAuth } from '../auth/AuthProvider'
@@ -23,8 +24,10 @@ export function Logo() {
 export function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const { theme, toggleTheme } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
+  const isAudit = location.pathname.includes('/audit')
 
   const closeMenu = () => setMenuOpen(false)
 
@@ -85,7 +88,7 @@ export function AppLayout() {
           </button>
         </div>
       </header>
-      <main className="page">
+      <main className={clsx('page', isAudit && 'page--audit')}>
         <Outlet />
       </main>
     </div>

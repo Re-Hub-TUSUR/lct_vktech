@@ -1,9 +1,10 @@
+import { LayoutTemplate } from 'lucide-react'
 import { Link } from 'react-router'
 
 import { useTemplates } from '../api/queries'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
-import { ErrorState, Spinner } from '../components/ui'
+import { EmptyState, ErrorState, Spinner } from '../components/ui'
 
 export function TemplatesPage() {
   const templates = useTemplates()
@@ -21,6 +22,15 @@ export function TemplatesPage() {
         <Spinner />
       ) : templates.error ? (
         <ErrorState error={templates.error} />
+      ) : templates.data.length === 0 ? (
+        <div className="templates-empty">
+          <EmptyState
+            icon={<LayoutTemplate size={24} />}
+            title="Пока нет шаблонов"
+            text="Загрузите файл PowerPoint или OpenDocument — после разбора он появится здесь и станет доступен в редакторе."
+            action={<TemplateUploader />}
+          />
+        </div>
       ) : (
         <div className="grid grid-templates">
           {templates.data.map((template) => (

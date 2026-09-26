@@ -6,16 +6,20 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Edit3,
-  FileText,
   Info,
   Maximize2,
+  Minimize2,
   MoreHorizontal,
+  Play,
   RefreshCw,
   TriangleAlert,
   WandSparkles,
   X,
+  ExternalLink,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router'
@@ -28,6 +32,7 @@ import type {
   AuditReport,
   CheckKind,
   RegenerateSlideResponse,
+  Presentation,
   ResolveResponse,
   Severity,
   Slide,
@@ -37,6 +42,8 @@ import type {
   SlideUpdate,
   VariantDetail,
 } from '../api/types'
+import { ImagePickerModal } from '../components/ImagePickerModal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
@@ -46,6 +53,7 @@ import { Slideshow } from '../components/slides/Slideshow'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
+import { changeKind, fieldPatch, mergeDraft, removeSlideImage, selectLayout, selectPattern, setSlideImage } from '../lib/slideEdits'
 import { CHECK_METHOD_LABELS, CHECK_STATUS_LABELS, SEVERITY_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 
 const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
@@ -63,8 +71,6 @@ function worst(issues: AuditIssue[]): Severity | null {
     null,
   )
 }
-
-const NOTES_OPEN_KEY = 'audit.notesOpen'
 
 type Scope = 'slide' | 'all'
 type KindFilter = 'all' | CheckKind
@@ -112,90 +118,27 @@ export function AuditPage() {
   return (
     <div className="stack">
       {header}
-      <AuditWorkspace detail={variant.data} report={audit.data} canEdit={presentation.data.access_role !== 'viewer'} />
+      <AuditWorkspace
+        detail={variant.data}
+        report={audit.data}
+        canEdit={presentation.data.access_role !== 'viewer'}
+        presentation={presentation.data}
+      />
     </div>
   )
 }
 
-function applyFieldChange(slide: Slide, path: string, value: string): Slide {
-  if (path === 'title') return { ...slide, title: value }
-  if (path === 'subtitle') return { ...slide, subtitle: value || null }
-  if (path === 'notes') return { ...slide, notes: value || null }
-  if (path.startsWith('bullets.')) {
-    const idx = parseInt(path.split('.')[1], 10)
-    const next = [...(slide.bullets || [])]
-    next[idx] = value
-    return { ...slide, bullets: next }
-  }
-  if (path.startsWith('columns.')) {
-    const parts = path.split('.')
-    const ci = parseInt(parts[1], 10)
-    const nextCols = [...(slide.columns || [])]
-    if (!nextCols[ci]) return slide
-    if (parts[2] === 'title') {
-      nextCols[ci] = { ...nextCols[ci], title: value }
-    } else if (parts[2] === 'bullets') {
-      const bi = parseInt(parts[3], 10)
-      const nextBullets = [...(nextCols[ci].bullets || [])]
-      nextBullets[bi] = value
-      nextCols[ci] = { ...nextCols[ci], bullets: nextBullets }
-    }
-    return { ...slide, columns: nextCols }
-  }
-  if (path.startsWith('kpis.')) {
-    const parts = path.split('.')
-    const idx = parseInt(parts[1], 10)
-    const nextKpis = [...(slide.kpis || [])]
-    if (!nextKpis[idx]) return slide
-    if (parts[2] === 'value') nextKpis[idx] = { ...nextKpis[idx], value }
-    else if (parts[2] === 'label') nextKpis[idx] = { ...nextKpis[idx], label: value }
-    return { ...slide, kpis: nextKpis }
-  }
-  if (path.startsWith('timeline.')) {
-    const parts = path.split('.')
-    const idx = parseInt(parts[1], 10)
-    const nextTimeline = [...(slide.timeline || [])]
-    if (!nextTimeline[idx]) return slide
-    if (parts[2] === 'date') nextTimeline[idx] = { ...nextTimeline[idx], date: value }
-    else if (parts[2] === 'title') nextTimeline[idx] = { ...nextTimeline[idx], title: value }
-    else if (parts[2] === 'text') nextTimeline[idx] = { ...nextTimeline[idx], text: value || null }
-    return { ...slide, timeline: nextTimeline }
-  }
-  if (path.startsWith('quote.')) {
-    const parts = path.split('.')
-    const curQuote = slide.quote || { text: '', author: null }
-    if (parts[1] === 'text') return { ...slide, quote: { ...curQuote, text: value } }
-    if (parts[1] === 'author') return { ...slide, quote: { ...curQuote, author: value || null } }
-  }
-  if (path.startsWith('table.columns.')) {
-    if (!slide.table) return slide
-    const ci = parseInt(path.split('.')[2], 10)
-    const nextCols = [...slide.table.columns]
-    nextCols[ci] = value
-    return { ...slide, table: { ...slide.table, columns: nextCols } }
-  }
-  if (path.startsWith('table.rows.')) {
-    if (!slide.table) return slide
-    const parts = path.split('.')
-    const ri = parseInt(parts[2], 10)
-    const ci = parseInt(parts[3], 10)
-    const nextRows = slide.table.rows.map((row, r) =>
-      r === ri ? row.map((cell, c) => (c === ci ? value : cell)) : row
-    )
-    return { ...slide, table: { ...slide.table, rows: nextRows } }
-  }
-  if (path === 'chart.caption') {
-    if (!slide.chart) return slide
-    return { ...slide, chart: { ...slide.chart, caption: value || null } }
-  }
-  if (path === 'chart.unit') {
-    if (!slide.chart) return slide
-    return { ...slide, chart: { ...slide.chart, unit: value || null } }
-  }
-  return slide
-}
-
-function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; report: AuditReport; canEdit: boolean }) {
+function AuditWorkspace({
+  detail,
+  report,
+  canEdit,
+  presentation,
+}: {
+  detail: VariantDetail
+  report: AuditReport
+  canEdit: boolean
+  presentation: Presentation
+}) {
   const queryClient = useQueryClient()
   const notify = useToast()
   const navigate = useNavigate()
@@ -208,6 +151,7 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
   const [activeIssue, setActiveIssue] = useState<string | null>(null)
   const [slideDropdownOpen, setSlideDropdownOpen] = useState(false)
   const [openMenuIssueId, setOpenMenuIssueId] = useState<string | null>(null)
+  const [slideshowOpen, setSlideshowOpen] = useState(false)
 
   useEffect(() => {
     const handleDocClick = (e: MouseEvent) => {
@@ -230,14 +174,21 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
   const [isEditing, setIsEditing] = useState(false)
   const [activeElement, setActiveElement] = useState<string | null>(null)
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
+  const [imagePickerMode, setImagePickerMode] = useState<'slide' | 'floating' | 'shape'>('slide')
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
   const [showDesignModal, setShowDesignModal] = useState(false)
+  const [showImagePicker, setShowImagePicker] = useState(false)
+  const [showDiscardDialog, setShowDiscardDialog] = useState(false)
+  const [draftHistory, setDraftHistory] = useState<
+    Record<string, { past: SlideUpdate[]; future: SlideUpdate[] }>
+  >({})
+  const [isSavingAll, setIsSavingAll] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
+  const saveInProgressRef = useRef(false)
 
-  // --audit-h — минимальная высота рабочей области аудита: от её верха до низа экрана. На большом мониторе область
-  // заполняет экран, а на низком растёт вместе со слайдом (он всегда показывается целиком), и страница прокручивается.
-  // Миниатюры и панель замечаний остаются на виду (sticky) и прокручивают свой список сами.
+  // Рабочая область аудита (миниатюры, слайд, панель замечаний) занимает ровно оставшуюся часть экрана,
+  // поэтому страница не прокручивается целиком, а каждая колонка прокручивается сама.
   // Высоту считаем от положения области в документе (а не окна), чтобы она не менялась при прокрутке.
   useEffect(() => {
     const layout = layoutRef.current
@@ -274,44 +225,18 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     const pattern = effectivePatternId && theme?.patterns
       ? theme.patterns.find((p) => p.id === effectivePatternId)
       : undefined
-    const baseShapes: SlideShape[] = (edits?.shapes !== undefined && edits.shapes !== null)
+    const baseShapes: SlideShape[] = edits?.shapes != null
       ? edits.shapes
       : (currentSlide.shapes && currentSlide.shapes.length > 0
           ? currentSlide.shapes
           : (effectivePatternId ? (pattern?.shapes || []) : []))
-
-    if (!edits) {
-      return {
-        ...currentSlide,
-        shapes: baseShapes,
-      }
-    }
-    return {
-      ...currentSlide,
-      kind: edits.kind !== undefined && edits.kind !== null ? edits.kind : currentSlide.kind,
-      title: edits.title !== undefined && edits.title !== null ? edits.title : currentSlide.title,
-      subtitle: edits.subtitle !== undefined ? edits.subtitle : currentSlide.subtitle,
-      bullets: edits.bullets ?? currentSlide.bullets,
-      columns: edits.columns ?? currentSlide.columns,
-      kpis: edits.kpis ?? currentSlide.kpis,
-      timeline: edits.timeline ?? currentSlide.timeline,
-      quote: edits.quote !== undefined ? edits.quote : currentSlide.quote,
-      table: edits.table !== undefined ? edits.table : currentSlide.table,
-      chart: edits.chart !== undefined ? edits.chart : currentSlide.chart,
-      shapes: (edits.shapes !== undefined && edits.shapes !== null) ? edits.shapes : baseShapes,
-      image: edits.image !== undefined ? edits.image : currentSlide.image,
-      pattern_id: edits.pattern_id !== undefined ? edits.pattern_id : currentSlide.pattern_id,
-      layout_key: edits.layout_key !== undefined ? edits.layout_key : currentSlide.layout_key,
-      layout_name: edits.layout_name !== undefined ? edits.layout_name : currentSlide.layout_name,
-      font_family: edits.font_family !== undefined ? edits.font_family : currentSlide.font_family,
-      font_size_scale: edits.font_size_scale !== undefined ? edits.font_size_scale : currentSlide.font_size_scale,
-      element_fonts: edits.element_fonts !== undefined ? edits.element_fonts : currentSlide.element_fonts,
-      element_scales: edits.element_scales !== undefined ? edits.element_scales : currentSlide.element_scales,
-      block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
-    }
+    // Черновик перекрывает все поля, которые в нём заданы (включая заметки и оформление).
+    return { ...mergeDraft(currentSlide, edits), shapes: baseShapes }
   }, [currentSlide, slideEdits, theme?.patterns])
 
-  const hasChanges = !!(currentSlide && slideEdits[currentSlide.id])
+  const hasDraftChanges = (draft: SlideUpdate | undefined) => Boolean(draft && Object.keys(draft).length > 0)
+  const hasChanges = Object.values(slideEdits).some(hasDraftChanges)
+  const hasCurrentSlideChanges = currentSlide ? hasDraftChanges(slideEdits[currentSlide.id]) : false
   const openIssues = report.issues.filter((issue) => issue.status === 'open')
   const resolvedIssues = report.issues.filter((issue) => issue.status !== 'open')
 
@@ -347,41 +272,64 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     setChecked(new Set())
   }
 
-  const [slideshowOpen, setSlideshowOpen] = useState(false)
-
-  // Заметки докладчика свёрнуты по умолчанию: выбор сохраняем в localStorage
-  const [notesOpen, setNotesOpen] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(NOTES_OPEN_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(NOTES_OPEN_KEY, notesOpen ? '1' : '0')
-    } catch {
-      /* хранилище недоступно */
-    }
-  }, [notesOpen])
+  const [showTour, setShowTour] = useState(true)
+  const [isZenMode, setIsZenMode] = useState(false)
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (
+        isEditing ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         (e.target as HTMLElement)?.isContentEditable
       ) {
         return
       }
-      // Z — быстрый запуск полноэкранного просмотра
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я')) {
-        setSlideshowOpen(true)
+      if (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я') {
+        setIsZenMode((prev) => !prev)
+      } else if (e.key === 'Escape' && isZenMode) {
+        setIsZenMode(false)
       }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [])
+  }, [isEditing, isZenMode])
+
+  const currentTourIndex = useMemo(() => {
+    if (!activeIssue) return 0
+    const idx = openIssues.findIndex((i) => i.id === activeIssue)
+    return idx >= 0 ? idx : 0
+  }, [activeIssue, openIssues])
+
+  const currentTourIssue = openIssues[currentTourIndex] || null
+
+  const goToTourIssue = (index: number) => {
+    if (openIssues.length === 0) return
+    const normalized = (index + openIssues.length) % openIssues.length
+    const targetIssue = openIssues[normalized]
+    if (!targetIssue) return
+    setActiveIssue(targetIssue.id)
+    if (targetIssue.slide_index !== null && targetIssue.slide_index !== undefined) {
+      setSlideIndex(targetIssue.slide_index)
+    }
+  }
+
+  useEffect(() => {
+    if (isEditing || !showTour || openIssues.length === 0) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === '[' || (e.key === 'ArrowLeft' && e.altKey)) {
+        goToTourIssue(currentTourIndex - 1)
+      } else if (e.key === ']' || (e.key === 'ArrowRight' && e.altKey)) {
+        goToTourIssue(currentTourIndex + 1)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, showTour, openIssues, currentTourIndex])
 
   const resolve = useMutation({
     mutationFn: ({ ids, action }: { ids: string[]; action: 'fix' | 'ignore' }) =>
@@ -408,12 +356,11 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
   })
 
   const updateSlideMutation = useMutation({
-    mutationFn: (updates: SlideUpdate) =>
-      api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}`, updates),
+    mutationFn: ({ slideId, updates }: { slideId: string; updates: SlideUpdate }) =>
+      api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, updates),
     onSuccess: (result) => {
       applyResult(result)
       notify('Слайд сохранён')
-      setIsEditing(false)
     },
     onError: (error) => notify(error.message, 'error'),
   })
@@ -422,290 +369,107 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     mutationFn: (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
-      return api.post<ResolveResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/upload-image`, formData)
+      // Upload the asset first; the slide itself stays untouched until the
+      // user presses «Готово». This keeps «Выйти без сохранения» reliable.
+      return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
     },
     onSuccess: (result) => {
-      applyResult(result)
-      const updatedVariant = 'variant' in result ? result.variant : variant
-      const updatedSlide = updatedVariant.slides.find((s) => s.id === currentSlide?.id)
-      if (updatedSlide && currentSlide) {
-        setSlideEdits((prev) => ({
-          ...prev,
-          [currentSlide.id]: {
-            ...(prev[currentSlide.id] || {}),
-            kind: updatedSlide.kind,
-            image: updatedSlide.image,
-            bullets: updatedSlide.bullets,
-          },
-        }))
-      }
+      handleSelectContentImage(result.url, result.filename)
       notify('Изображение успешно загружено на слайд')
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+
+  const uploadVariantImageMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
     },
     onError: (error) => notify(error.message, 'error'),
   })
 
   // Правка слайда моделью по сообщению из чата; ответ модели показывает ассистент, ошибку — тоже он.
   const regenerateSlideMutation = useMutation({
-    mutationFn: (instruction: string) =>
-      api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, {
-        instruction,
-      }),
-    onSuccess: (result) => {
-      applyResult(result)
-      if (currentSlide) {
-        setSlideEdits((prev) => {
-          const next = { ...prev }
-          delete next[currentSlide.id]
-          return next
-        })
+    mutationFn: async ({ slideId, instruction }: { slideId: string; instruction: string }) => {
+      // Модель правит сохранённый слайд: сначала сохраняем черновик, иначе ручные правки пропадут.
+      const draft = slideEdits[slideId]
+      if (hasDraftChanges(draft)) {
+        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, { ...draft, shapes: activeSlide.shapes })
       }
+      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, { instruction })
+    },
+    onSuccess: (result, { slideId }) => {
+      applyResult(result)
+      setSlideEdits((prev) => {
+        const next = { ...prev }
+        delete next[slideId]
+        return next
+      })
+      setDraftHistory((prev) => {
+        const next = { ...prev }
+        delete next[slideId]
+        return next
+      })
       notify('Слайд обновлён')
     },
   })
 
   const handleSlideChange = (updates: SlideUpdate) => {
-    if (!currentSlide) return
+    if (!currentSlide || saveInProgressRef.current) return
+    const slideId = currentSlide.id
+    const currentDraft = slideEdits[slideId] || {}
+    setDraftHistory((prev) => ({
+      ...prev,
+      [slideId]: {
+        past: [...(prev[slideId]?.past || []), currentDraft].slice(-40),
+        future: [],
+      },
+    }))
     setSlideEdits((prev) => ({
       ...prev,
-      [currentSlide.id]: {
-        ...(prev[currentSlide.id] || {}),
+      [slideId]: {
+        ...(prev[slideId] || {}),
         ...updates,
       },
     }))
   }
 
-  const handleChangeKind = (newKind: SlideKind) => {
-    if (!currentSlide) return
-    const currentBullets = activeSlide.bullets || []
-    const updates: SlideUpdate = { kind: newKind }
-
-    if (newKind === 'cards' && (!activeSlide.columns || activeSlide.columns.length === 0)) {
-      updates.columns = currentBullets.length > 0
-        ? currentBullets.map((b) => ({ title: b, bullets: [] }))
-        : [
-            { title: 'Карточка 1', bullets: ['Описание и детали первого пункта'] },
-            { title: 'Карточка 2', bullets: ['Описание и детали второго пункта'] },
-          ]
-    } else if (newKind === 'kpi' && (!activeSlide.kpis || activeSlide.kpis.length === 0)) {
-      updates.kpis = [
-        { value: '100+', label: currentBullets[0] || 'Показатель успеха' },
-        { value: '85%', label: currentBullets[1] || 'Уровень конверсии' },
-        { value: '3x', label: currentBullets[2] || 'Рост эффективности' },
-      ]
-    } else if (newKind === 'bullets' && (!activeSlide.bullets || activeSlide.bullets.length === 0)) {
-      if (activeSlide.columns && activeSlide.columns.length > 0) {
-        updates.bullets = activeSlide.columns.map((c) => c.title + (c.bullets?.length ? `: ${c.bullets.join(', ')}` : ''))
-      } else if (activeSlide.kpis && activeSlide.kpis.length > 0) {
-        updates.bullets = activeSlide.kpis.map((k) => `${k.value} — ${k.label}`)
-      } else {
-        updates.bullets = ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3']
-      }
-    } else if (newKind === 'timeline' && (!activeSlide.timeline || activeSlide.timeline.length === 0)) {
-      updates.timeline = [
-        { date: 'Этап 1', title: 'Планирование', text: 'Формирование целей и задач' },
-        { date: 'Этап 2', title: 'Реализация', text: 'Разработка основных модулей' },
-        { date: 'Этап 3', title: 'Запуск', text: 'Внедрение и оценка результатов' },
-      ]
-    } else if (newKind === 'quote' && !activeSlide.quote) {
-      updates.quote = {
-        text: activeSlide.subtitle || (currentBullets[0] ?? 'Сильные идеи формируют будущее проектов и вдохновляют команды.'),
-        author: 'Автор цитаты',
-      }
-    } else if (newKind === 'chart' && !activeSlide.chart) {
-      updates.chart = {
-        type: 'bar',
-        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
-        series: [{ name: 'Результат', values: [25, 45, 60, 95] }],
-        caption: 'Динамика показателей по кварталам',
-        unit: 'тыс. руб.',
-      }
-    } else if (newKind === 'table' && !activeSlide.table) {
-      updates.table = {
-        columns: ['Параметр', 'Значение', 'Статус'],
-        rows: [
-          ['Охват аудитории', '1.2M', 'Выполнено'],
-          ['Вовлеченность', '64%', 'В процессе'],
-          ['ROI', '+140%', 'Превышено'],
-        ],
-      }
-    }
-
-    handleSlideChange(updates)
-  }
-
-  const patternKindToSlideKind = (pattern: SlidePattern, currentKind: SlideKind): SlideKind => {
-    const pType = pattern.type
-    const category = pattern.category
-    if (category === 'cover') return 'title'
-    if (category === 'section') return 'section'
-    if (category === 'closing') return 'closing'
-    if (category === 'quote') return 'quote'
-    if (pType === 'text' || pType === 'title_only') return 'bullets'
-    if (pType === 'cards') return 'cards'
-    if (pType === 'two_columns') return 'two_columns'
-    if (pType === 'kpi') return 'kpi'
-    if (pType === 'timeline') return 'timeline'
-    if (pType === 'table') return 'table'
-    if (pType === 'chart') return 'chart'
-    if (pType === 'agenda') return 'agenda'
-    if (pType === 'image_text') return 'image_text'
-    return currentKind
-  }
-
-  const extractSlideTexts = (slide: Slide): string[] => {
-    if (slide.bullets && slide.bullets.length > 0) {
-      const list = slide.bullets.filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.columns && slide.columns.length > 0) {
-      const list = slide.columns.flatMap((c) => [c.title, ...(c.bullets || [])]).filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.kpis && slide.kpis.length > 0) {
-      const list = slide.kpis.map((k) => `${k.value} ${k.label}`.trim()).filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.timeline && slide.timeline.length > 0) {
-      const list = slide.timeline.map((t) => [t.date, t.title, t.text].filter(Boolean).join(' — ')).filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.quote?.text) return [slide.quote.text]
-    if (slide.summary) return [slide.summary]
-    return ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3']
-  }
-
-  const handleSelectPattern = (pattern: SlidePattern) => {
-    if (!currentSlide) return
-    const newKind = patternKindToSlideKind(pattern, activeSlide.kind)
-    const patch: SlideUpdate = {
-      pattern_id: pattern.id,
-      layout_key: pattern.layout_key,
-      layout_name: pattern.layout_name || (pattern.layout_key && theme.layouts?.[pattern.layout_key]?.name) || pattern.layout_key,
-      shapes: pattern.shapes && pattern.shapes.length > 0 ? pattern.shapes : [],
-      kind: newKind,
-    }
-
-    // Умная адаптация контента под выбранный шаблон без потери данных
-    const existingTexts = extractSlideTexts(activeSlide)
-    const targetCount = Math.max(pattern.items_count || 3, 2)
-
-    if (newKind === 'cards') {
-      patch.columns = Array.from({ length: targetCount }, (_, i) => {
-        const existingCol = activeSlide.columns?.[i]
-        const title = existingCol?.title || existingTexts[i] || `Тезис ${i + 1}`
-        const bullets = existingCol?.bullets?.length
-          ? existingCol.bullets
-          : [existingTexts[i + targetCount] || 'Описание и ключевые детали пункта']
-        return { title, bullets }
-      })
-    } else if (newKind === 'two_columns') {
-      const half = Math.max(1, Math.ceil(existingTexts.length / 2))
-      patch.columns = [
-        {
-          title: activeSlide.columns?.[0]?.title || 'Направление 1',
-          bullets: existingTexts.slice(0, half).length > 0 ? existingTexts.slice(0, half) : ['Ключевой тезис первой колонки'],
-        },
-        {
-          title: activeSlide.columns?.[1]?.title || 'Направление 2',
-          bullets: existingTexts.slice(half).length > 0 ? existingTexts.slice(half) : ['Ключевой тезис второй колонки'],
-        },
-      ]
-    } else if (newKind === 'kpi') {
-      const fallbackValues = ['100+', '85%', '3x', '24/7', '98%', '+45%']
-      patch.kpis = Array.from({ length: targetCount }, (_, i) => {
-        if (activeSlide.kpis?.[i]) return activeSlide.kpis[i]
-        const text = existingTexts[i] || `Показатель ${i + 1}`
-        return {
-          value: fallbackValues[i % fallbackValues.length],
-          label: text,
-        }
-      })
-    } else if (newKind === 'timeline') {
-      patch.timeline = Array.from({ length: targetCount }, (_, i) => {
-        if (activeSlide.timeline?.[i]) return activeSlide.timeline[i]
-        const text = existingTexts[i] || `Этап ${i + 1}`
-        return {
-          date: `Этап ${i + 1}`,
-          title: text.length > 35 ? text.slice(0, 35) + '...' : text,
-          text: text,
-        }
-      })
-    } else if (newKind === 'bullets') {
-      patch.bullets = existingTexts.slice(0, Math.max(targetCount, 3))
-    } else if (newKind === 'quote' && !activeSlide.quote) {
-      patch.quote = {
-        text: activeSlide.subtitle || existingTexts[0] || 'Сильные идеи формируют будущее проектов и вдохновляют команды.',
-        author: 'Автор цитаты',
-      }
-    } else if (newKind === 'chart' && !activeSlide.chart) {
-      patch.chart = {
-        type: 'bar',
-        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
-        series: [{ name: 'Результат', values: [25, 45, 60, 95] }],
-        caption: 'Динамика показателей по кварталам',
-        unit: 'тыс. руб.',
-      }
-    } else if (newKind === 'table' && !activeSlide.table) {
-      patch.table = {
-        columns: ['Параметр', 'Значение', 'Статус'],
-        rows: [
-          ['Охват аудитории', '1.2M', 'Выполнено'],
-          ['Вовлеченность', '64%', 'В процессе'],
-          ['ROI', '+140%', 'Превышено'],
-        ],
-      }
-    }
-
-    handleSlideChange(patch)
-  }
-
-  const handleSelectLayout = (layoutKey: string, layoutName: string) => {
-    if (!currentSlide) return
-    const patch: SlideUpdate = {
-      layout_key: layoutKey,
-      layout_name: layoutName,
-      pattern_id: null,
-      shapes: [], // Очищаем декоративные фигуры старого паттерна, чтобы они не накладывались на новый макет
-    }
-
-    // Если макет привязан к конкретной роли (например title, closing, section, agenda, two_columns)
-    const roleForLayout = Object.entries(theme.roles || {}).find(([_, k]) => k === layoutKey)?.[0]
-    if (roleForLayout && Object.keys(SLIDE_KIND_LABELS).includes(roleForLayout)) {
-      patch.kind = roleForLayout as SlideKind
-    } else {
-      const lower = (layoutName + ' ' + layoutKey).toLowerCase()
-      if (lower.includes('two_col') || lower.includes('2 col') || lower.includes('две колонки')) {
-        patch.kind = 'two_columns'
-      } else if (lower.includes('card') || lower.includes('карточк') || lower.includes('3 col') || lower.includes('три колонки')) {
-        patch.kind = 'cards'
-      } else if (lower.includes('agenda') || lower.includes('повестк') || lower.includes('содержани')) {
-        patch.kind = 'agenda'
-      } else if (lower.includes('quote') || lower.includes('цитат')) {
-        patch.kind = 'quote'
-      }
-    }
-
-    handleSlideChange(patch)
-  }
-
-  const handleFieldChange = (path: string, value: string) => {
-    if (!currentSlide) return
-    const updated = applyFieldChange(activeSlide, path, value)
-    setSlideEdits((prev) => ({
+  const handleUndo = () => {
+    if (!currentSlide || saveInProgressRef.current) return
+    const slideId = currentSlide.id
+    const history = draftHistory[slideId]
+    if (!history?.past.length) return
+    const previous = history.past[history.past.length - 1]
+    const currentDraft = slideEdits[slideId] || {}
+    setSlideEdits((prev) => {
+      const next = { ...prev }
+      if (Object.keys(previous).length === 0) delete next[slideId]
+      else next[slideId] = previous
+      return next
+    })
+    setDraftHistory((prev) => ({
       ...prev,
-      [currentSlide.id]: {
-        ...(prev[currentSlide.id] || {}),
-        title: updated.title,
-        subtitle: updated.subtitle,
-        notes: updated.notes,
-        bullets: updated.bullets,
-        columns: updated.columns,
-        kpis: updated.kpis,
-        timeline: updated.timeline,
-        quote: updated.quote,
-        table: updated.table,
-        chart: updated.chart,
-      },
+      [slideId]: { past: history.past.slice(0, -1), future: [currentDraft, ...history.future].slice(0, 40) },
+    }))
+  }
+
+  const handleRedo = () => {
+    if (!currentSlide || saveInProgressRef.current) return
+    const slideId = currentSlide.id
+    const history = draftHistory[slideId]
+    if (!history?.future.length) return
+    const nextDraft = history.future[0]
+    const currentDraft = slideEdits[slideId] || {}
+    setSlideEdits((prev) => {
+      const next = { ...prev }
+      if (Object.keys(nextDraft).length === 0) delete next[slideId]
+      else next[slideId] = nextDraft
+      return next
+    })
+    setDraftHistory((prev) => ({
+      ...prev,
+      [slideId]: { past: [...history.past, currentDraft].slice(-40), future: history.future.slice(1) },
     }))
   }
 
@@ -722,32 +486,159 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     if (selectedShapeId === shapeId) setSelectedShapeId(null)
   }
 
+  const handleUpdateElementBox = (target: string, box: [number, number, number, number]) => {
+    if (!currentSlide) return
+    const currentBoxes = activeSlide.element_boxes || {}
+    const nextBoxes = { ...currentBoxes, [target]: box }
+    handleSlideChange({ element_boxes: nextBoxes })
+  }
+
+  const handleResetElementBox = (target: string) => {
+    if (!currentSlide) return
+    const currentBoxes = { ...(activeSlide.element_boxes || {}) }
+    delete currentBoxes[target]
+    const currentCrops = { ...(activeSlide.element_crops || {}) }
+    delete currentCrops[target]
+    handleSlideChange({ element_boxes: currentBoxes, element_crops: currentCrops })
+    notify('Положение блока сброшено к шаблону')
+  }
+
+  const handleUpdateElementCrop = (target: string, crop: [number, number, number, number]) => {
+    if (!currentSlide) return
+    const currentCrops = activeSlide.element_crops || {}
+    const nextCrops = { ...currentCrops, [target]: crop }
+    handleSlideChange({ element_crops: nextCrops })
+  }
+
+  const handleAddFloatingImage = () => {
+    setImagePickerMode('floating')
+    setShowImagePicker(true)
+  }
+
+  const handleSelectContentImage = (imageUrl: string, filename: string) => {
+    if (!currentSlide) return
+    if (imagePickerMode === 'floating') {
+      const id = Math.random().toString(36).substring(2, 10)
+      const newShape: SlideShape = {
+        id,
+        kind: 'image',
+        image_url: imageUrl,
+        x: 0.3,
+        y: 0.25,
+        width: 0.4,
+        height: 0.4,
+        color: 'transparent',
+        opacity: 1,
+        border: false,
+      }
+      const currentShapes = activeSlide.shapes || []
+      handleSlideChange({ shapes: [...currentShapes, newShape] })
+      setSelectedShapeId(id)
+      setActiveElement(null)
+      setShowImagePicker(false)
+      notify('Плавающее изображение добавлено на слайд')
+      return
+    }
+
+    if (imagePickerMode === 'shape' && selectedShapeId) {
+      handleUpdateShape(selectedShapeId, { image_url: imageUrl })
+      setShowImagePicker(false)
+      notify('Изображение обновлено')
+      return
+    }
+
+    handleSlideChange(setSlideImage(activeSlide, imageUrl, `Изображение из контент-пакета: ${filename}`))
+    notify('Изображение выбрано из контент-пакета')
+  }
+
+  const handleRemoveSlideImage = () => {
+    if (!currentSlide) return
+    handleSlideChange(removeSlideImage(activeSlide))
+    notify('Изображение удалено со слайда')
+  }
+
+  const handleChangeKind = (newKind: SlideKind) => {
+    if (!currentSlide) return
+    handleSlideChange(changeKind(activeSlide, newKind))
+  }
+
+  const handleSelectPattern = (pattern: SlidePattern) => {
+    if (!currentSlide) return
+    handleSlideChange(selectPattern(activeSlide, pattern, theme))
+  }
+
+  const handleSelectLayout = (layoutKey: string, layoutName: string) => {
+    if (!currentSlide) return
+    handleSlideChange(selectLayout(activeSlide, layoutKey, layoutName, theme))
+  }
+
+  const handleFieldChange = (path: string, value: string) => {
+    if (!currentSlide || saveInProgressRef.current) return
+    const patch = fieldPatch(activeSlide, path, value)
+    if (patch) handleSlideChange(patch)
+  }
+
   useEffect(() => {
+    // Состояние выбора относится к конкретному слайду. Иначе после переключения
+    // рамка старого элемента накладывается на новый слайд.
     setSelectedShapeId(null)
+    setActiveElement(null)
+    setImagePickerMode('slide')
   }, [slideIndex])
 
   const handleSaveSlide = async () => {
-    if (!currentSlide) return
-    const edits = slideEdits[currentSlide.id]
-    if (edits) {
-      await updateSlideMutation.mutateAsync({
-        ...edits,
-        shapes: activeSlide.shapes,
-      })
-    }
-    // Также сохраняем изменения на других слайдах, если они были отредактированы
-    const otherEntries = Object.entries(slideEdits).filter(([id]) => id !== currentSlide.id)
-    for (const [sId, sEdits] of otherEntries) {
-      try {
-        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${sId}`, sEdits)
-      } catch (err) {
-        console.error(`Failed to save slide ${sId}:`, err)
+    if (!currentSlide || saveInProgressRef.current) return
+    saveInProgressRef.current = true
+    setIsSavingAll(true)
+    try {
+      const edits = slideEdits[currentSlide.id]
+      if (hasDraftChanges(edits)) {
+        try {
+          await updateSlideMutation.mutateAsync({
+            slideId: currentSlide.id,
+            updates: {
+              ...edits,
+              shapes: activeSlide.shapes,
+            },
+          })
+        } catch {
+          // The mutation already shows the server error. Keep all local drafts
+          // so the user can retry without losing work.
+          return
+        }
       }
+      // PATCH записывает весь массив слайдов варианта. Сохраняем остальные
+      // слайды последовательно, чтобы запросы не перезаписывали друг друга.
+      const otherEntries = Object.entries(slideEdits).filter(([id, draft]) => id !== currentSlide.id && hasDraftChanges(draft))
+      const failedSlideIds: string[] = []
+      for (const [sId, sEdits] of otherEntries) {
+        try {
+          await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${sId}`, sEdits)
+        } catch (err) {
+          console.error(`Failed to save slide ${sId}:`, err)
+          failedSlideIds.push(sId)
+        }
+      }
+      if (otherEntries.length > 0) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.variant(variant.id) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.audit(variant.id) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.variants(detail.presentation.id) }),
+        ])
+      }
+      if (failedSlideIds.length > 0) {
+        notify(`Не удалось сохранить ${failedSlideIds.length} ${countLabel(failedSlideIds.length, ['слайд', 'слайда', 'слайдов'])}. Черновики оставлены для повтора.`, 'error')
+        return
+      }
+      setSlideEdits({})
+      setDraftHistory({})
+      setIsEditing(false)
+      setActiveElement(null)
+      setSelectedShapeId(null)
+    } finally {
+      saveInProgressRef.current = false
+      setIsSavingAll(false)
     }
-    setSlideEdits({})
-    setIsEditing(false)
-    setActiveElement(null)
-    setSelectedShapeId(null)
   }
 
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -758,18 +649,60 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
     }
   }
 
-  const handleCloseEdit = () => {
-    if (currentSlide) {
-      setSlideEdits((prev) => {
-        const next = { ...prev }
-        delete next[currentSlide.id]
-        return next
-      })
-    }
+  const discardEditing = () => {
+    // Один сеанс редактирования может менять несколько слайдов. Сбрасываем
+    // весь локальный буфер, иначе правка «прячется» и попадёт в следующий Save.
+    setSlideEdits({})
+    setDraftHistory({})
     setIsEditing(false)
     setActiveElement(null)
     setSelectedShapeId(null)
+    setShowDiscardDialog(false)
   }
+
+  const handleCloseEdit = () => {
+    if (saveInProgressRef.current) return
+    if (hasChanges) {
+      setShowDiscardDialog(true)
+      return
+    }
+    discardEditing()
+  }
+
+  useEffect(() => {
+    if (!isEditing) return
+    const handleEditorShortcut = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const isField =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        Boolean(target?.isContentEditable)
+
+      if ((event.metaKey || event.ctrlKey) && !isField && event.key.toLowerCase() === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) handleRedo()
+        else handleUndo()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && !isField && event.key.toLowerCase() === 'y') {
+        event.preventDefault()
+        handleRedo()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        if (!updateSlideMutation.isPending && !isSavingAll && !saveInProgressRef.current) void handleSaveSlide()
+        return
+      }
+      if (event.key === 'Escape' && !isField && !showDesignModal && !showImagePicker && !showDiscardDialog) {
+        event.preventDefault()
+        handleCloseEdit()
+      }
+    }
+    window.addEventListener('keydown', handleEditorShortcut)
+    return () => window.removeEventListener('keydown', handleEditorShortcut)
+  }, [isEditing, hasChanges, showDesignModal, showImagePicker, showDiscardDialog, updateSlideMutation.isPending, isSavingAll, slideEdits, draftHistory])
 
   const toggle = (issueId: string) =>
     setChecked((current) => {
@@ -781,6 +714,12 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
 
   const checkedIds = [...checked].filter((issueId) => openIssues.some((issue) => issue.id === issueId))
   const { summary } = report
+  const isEditorBusy =
+    isSavingAll ||
+    updateSlideMutation.isPending ||
+    uploadImageMutation.isPending ||
+    uploadVariantImageMutation.isPending ||
+    regenerateSlideMutation.isPending
 
   return (
     <>
@@ -792,21 +731,41 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
         onChange={handleImageFileChange}
       />
 
-      <div className="audit-layout" ref={layoutRef}>
+      <div className={clsx('audit-layout', isZenMode && 'is-zen')} ref={layoutRef}>
         {canEdit && isEditing && currentSlide ? (
           <SlideEditToolbar
             slide={activeSlide}
             theme={theme}
             activeElement={activeElement}
             selectedShapeId={selectedShapeId}
-            onSelectShape={setSelectedShapeId}
+            onSelectShape={(id) => {
+              setSelectedShapeId(id)
+              if (id) setActiveElement(null)
+            }}
             onChange={handleSlideChange}
             onSave={handleSaveSlide}
-            onTriggerImageUpload={() => fileInputRef.current?.click()}
+            onTriggerImageUpload={() => {
+              setImagePickerMode('slide')
+              setShowImagePicker(true)
+            }}
+            onOpenImagePicker={() => {
+              if (selectedShapeId && activeSlide.shapes?.some((s) => s.id === selectedShapeId && s.kind === 'image')) {
+                setImagePickerMode('shape')
+              } else {
+                setImagePickerMode('slide')
+              }
+              setShowImagePicker(true)
+            }}
+            onAddFloatingImage={handleAddFloatingImage}
+            onResetElementBox={handleResetElementBox}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            canUndo={Boolean(currentSlide && draftHistory[currentSlide.id]?.past.length)}
+            canRedo={Boolean(currentSlide && draftHistory[currentSlide.id]?.future.length)}
             onOpenDesignModal={() => setShowDesignModal(true)}
             onClose={handleCloseEdit}
-            isSaving={updateSlideMutation.isPending}
-            isUploading={uploadImageMutation.isPending}
+            isSaving={updateSlideMutation.isPending || isSavingAll}
+            isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
             hasChanges={hasChanges}
           />
         ) : (
@@ -814,9 +773,9 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
             <div className="audit-summary-left">
               <div className="audit-summary-stats">
                 {/* Ошибки */}
-                <div className="audit-stat-item">
+                <div className="audit-stat-item" title="Ошибки">
                   <div className="audit-stat-circle audit-stat-circle--error">
-                    <CircleAlert size={17} />
+                    <CircleAlert size={14} />
                   </div>
                   <div className="audit-stat-text">
                     <span className="audit-stat-val">{summary.by_severity.error ?? 0}</span>
@@ -825,9 +784,9 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                 </div>
 
                 {/* Предупреждения */}
-                <div className="audit-stat-item">
+                <div className="audit-stat-item" title="Предупреждения">
                   <div className="audit-stat-circle audit-stat-circle--warning">
-                    <TriangleAlert size={17} />
+                    <TriangleAlert size={14} />
                   </div>
                   <div className="audit-stat-text">
                     <span className="audit-stat-val">{summary.by_severity.warning ?? 0}</span>
@@ -836,9 +795,9 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                 </div>
 
                 {/* Советы */}
-                <div className="audit-stat-item">
+                <div className="audit-stat-item" title="Советы">
                   <div className="audit-stat-circle audit-stat-circle--info">
-                    <Check size={17} />
+                    <Check size={14} />
                   </div>
                   <div className="audit-stat-text">
                     <span className="audit-stat-val">{summary.by_severity.info ?? 0}</span>
@@ -847,23 +806,23 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                 </div>
               </div>
 
-              {/* Счётчики детерминированных и контекстуальных проверок перенесены влево ближе к статам */}
+              {/* Счётчики проверок в компактную строку */}
               <div className="audit-summary-counts-detail">
-                <div className="audit-summary-dot-row">
-                  <span className="audit-summary-bullet-dot" />
-                  <span>{summary.by_kind.deterministic ?? 0} детерминированных</span>
-                </div>
-                <div className="audit-summary-dot-row">
-                  <span className="audit-summary-bullet-dot" />
-                  <span>{summary.by_kind.contextual ?? 0} контекстуальных</span>
-                </div>
-                <div className="audit-summary-dot-row" title="Модель, которая выполняет контекстуальные проверки">
-                  <span className="audit-summary-bullet-dot" />
-                  <span>
-                    {report.judge ? `Судья: ${report.judge}` : 'Модель-судья не подключена'}
-                    {summary.checks_pending > 0 && ` · ждут ${countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}`}
-                  </span>
-                </div>
+                <span title="Детерминированные проверки">{summary.by_kind.deterministic ?? 0} детерминированных</span>
+                <span className="audit-summary-bullet-dot" />
+                <span title="Контекстуальные проверки">{summary.by_kind.contextual ?? 0} контекстуальных</span>
+                {report.judge && (
+                  <>
+                    <span className="audit-summary-bullet-dot" />
+                    <span title="Модель-судья">{report.judge}</span>
+                  </>
+                )}
+                {summary.checks_pending > 0 && (
+                  <>
+                    <span className="audit-summary-bullet-dot" />
+                    <span className="text-warning">ждут {countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -872,10 +831,13 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                 type="button"
                 className="audit-refresh-btn"
                 disabled={rerun.isPending}
-                onClick={() => rerun.mutate()}
+                onClick={() => {
+                  if (rerun.isPending) return
+                  rerun.mutate()
+                }}
               >
-                <RefreshCw size={15} className={clsx(rerun.isPending && 'spin')} />
-                <span>Перезапустить аудит</span>
+                <RefreshCw size={13} className={clsx(rerun.isPending && 'spin')} />
+                <span>{rerun.isPending ? 'Запуск…' : 'Перезапустить аудит'}</span>
               </button>
             )}
           </div>
@@ -889,7 +851,10 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                 key={slide.id}
                 type="button"
                 className={clsx('audit-slide', index === slideIndex && 'is-active')}
+                aria-current={index === slideIndex ? 'true' : undefined}
+                disabled={isEditing && isEditorBusy}
                 onClick={() => {
+                  if (isEditing && isEditorBusy) return
                   setSlideIndex(index)
                   setScope('slide')
                 }}
@@ -910,83 +875,121 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
           {currentSlide && (
             <>
               {/* Слайд вписывается в свободную часть экрана целиком: пропорции шаблона — в --slide-aspect */}
-              <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect || 16 / 9) } as CSSProperties}>
+              <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect) } as CSSProperties}>
                 <div
                   className="audit-stage-canvas"
                   onDoubleClick={() => {
-                    if (canEdit) navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)
+                    if (canEdit && !isEditing) setIsEditing(true)
                   }}
-                  style={{ cursor: canEdit ? 'pointer' : 'default', position: 'relative' }}
-                  title={canEdit ? 'Двойной клик для перехода в редактор презентации' : undefined}
+                  style={{ cursor: canEdit && !isEditing ? 'pointer' : 'default' }}
+                  title={canEdit && !isEditing ? 'Двойной клик для редактирования слайда' : undefined}
                 >
                   <SlideView
                     key={currentSlide.id}
                     slide={activeSlide}
                     theme={theme}
                     number={slideIndex + 1}
+                    preferInteractive
                     highlights={isEditing ? undefined : highlights}
                     activeTarget={isEditing ? undefined : activeTarget}
-                    render={isEditing ? undefined : slideRender(variant, slideIndex)}
+                    render={slideRender(variant, slideIndex)}
                     editable={isEditing}
+                    hasEdits={hasCurrentSlideChanges}
                     selectedShapeId={selectedShapeId}
-                    onSelectShape={setSelectedShapeId}
+                    selectedElementId={activeElement}
+                    onSelectShape={(id) => {
+                      setSelectedShapeId(id)
+                      if (id) setActiveElement(null)
+                    }}
                     onUpdateShape={handleUpdateShape}
                     onDeleteShape={handleDeleteShape}
-                    onElementSelect={(el) => setActiveElement(el)}
+                    onElementSelect={(el) => {
+                      setActiveElement(el)
+                      if (el) setSelectedShapeId(null)
+                    }}
                     onFieldChange={handleFieldChange}
                     onImageClick={() => {
                       setActiveElement('image')
-                      fileInputRef.current?.click()
+                      setSelectedShapeId(null)
+                      setImagePickerMode('slide')
+                      setShowImagePicker(true)
                     }}
+                    onUpdateElementBox={handleUpdateElementBox}
+                    onResetElementBox={handleResetElementBox}
+                    onUpdateElementCrop={handleUpdateElementCrop}
                   />
-
-                  {/* Заметки докладчика: всплывающее окно поверх просматриваемого слайда по его размерам снизу (Image 4) */}
-                  {notesOpen && (
-                    <div
-                      className="audit-slide-notes-overlay"
-                      role="region"
-                      aria-label="Заметки докладчика"
-                      onClick={(e) => e.stopPropagation()}
-                      onDoubleClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="audit-slide-notes-card">
-                        <div className="audit-slide-notes-header">
-                          <div className="audit-slide-notes-title">
-                            <FileText size={14} />
-                            <span>Заметки докладчика к слайду {slideIndex + 1}</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="icon-btn-tiny"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setNotesOpen(false)
-                            }}
-                            title="Закрыть заметки"
-                            aria-label="Закрыть заметки"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                        <div className="audit-slide-notes-body">
-                          {canEdit ? (
-                            <textarea
-                              className="audit-slide-notes-textarea"
-                              placeholder="Добавьте заметки докладчика к этому слайду..."
-                              value={activeSlide.notes || ''}
-                              onChange={(e) => handleFieldChange('notes', e.target.value)}
-                            />
-                          ) : activeSlide.notes ? (
-                            <p className="audit-slide-notes-text">{activeSlide.notes}</p>
-                          ) : (
-                            <p className="audit-speaker-notes-placeholder">К этому слайду заметок нет</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
+
+              {!isEditing && showTour && openIssues.length > 0 && currentTourIssue && (
+                <div className="audit-tour-bar" role="region" aria-label="Пошаговый тур по замечаниям аудита">
+                  <div className="row row--xs" style={{ alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => goToTourIssue(currentTourIndex - 1)}
+                      title="Предыдущее замечание ([)"
+                      aria-label="Предыдущее замечание"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="audit-tour-bar__step">
+                      {currentTourIndex + 1} / {openIssues.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => goToTourIssue(currentTourIndex + 1)}
+                      title="Следующее замечание (])"
+                      aria-label="Следующее замечание"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  <div className="audit-tour-bar__title" title={currentTourIssue.message}>
+                    <SeverityIcon severity={currentTourIssue.severity} />
+                    <strong>{currentTourIssue.check_title}:</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>{currentTourIssue.message}</span>
+                  </div>
+
+                  <div className="row row--xs" style={{ alignItems: 'center' }}>
+                    {currentTourIssue.fixable && canEdit && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={<WandSparkles size={13} />}
+                        loading={resolve.isPending}
+                        onClick={() => resolve.mutate({ ids: [currentTourIssue.id], action: 'fix' })}
+                      >
+                        Исправить
+                      </Button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      style={{ fontSize: 11 }}
+                      title="Скрыть замечание"
+                      disabled={resolve.isPending}
+                      onClick={() => {
+                        if (resolve.isPending) return
+                        resolve.mutate({ ids: [currentTourIssue.id], action: 'ignore' })
+                      }}
+                    >
+                      Скрыть
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => setShowTour(false)}
+                      title="Закрыть панель обхода"
+                      aria-label="Закрыть панель обхода"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Панель информации и управления под слайдом */}
               <div className="audit-stage-bottom-bar">
@@ -1010,36 +1013,76 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                 </div>
 
                 <div className="audit-stage-bottom-right">
-                  <button
-                    type="button"
-                    className={clsx('audit-editor-toggle-btn audit-editor-toggle-btn--icon', notesOpen && 'is-active')}
-                    onClick={() => setNotesOpen((prev) => !prev)}
-                    title={notesOpen ? 'Скрыть заметки докладчика' : 'Показать заметки докладчика'}
-                    aria-label="Заметки докладчика"
-                  >
-                    <FileText size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="audit-editor-toggle-btn audit-editor-toggle-btn--icon"
-                    onClick={() => setSlideshowOpen(true)}
-                    title="Смотреть презентацию на весь экран (Z)"
-                    aria-label="Смотреть презентацию на весь экран"
-                  >
-                    <Maximize2 size={16} />
-                  </button>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      className="audit-editor-toggle-btn audit-editor-toggle-btn--primary"
-                      onClick={() => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)}
-                      title="Перейти в полноэкранный редактор презентации"
-                    >
-                      <Edit3 size={15} />
-                      <span>Режим редактора</span>
+                  {!isEditing && openIssues.length > 0 && !showTour && (
+                    <button type="button" className="audit-editor-toggle-btn" onClick={() => setShowTour(true)}>
+                      <span>Тур по замечаниям ({openIssues.length})</span>
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="audit-editor-toggle-btn"
+                    onClick={() => setSlideshowOpen(true)}
+                    title="Смотреть презентацию на весь экран (слайд-шоу)"
+                  >
+                    <Play size={14} />
+                    <span>Слайд-шоу</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('audit-editor-toggle-btn', isZenMode && 'is-active')}
+                    onClick={() => setIsZenMode(!isZenMode)}
+                    title={isZenMode ? 'Выйти из фокус-режима (Z или Esc)' : 'Фокус-режим: скрыть боковые панели (хоткей Z)'}
+                  >
+                    {isZenMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                    <span>{isZenMode ? 'Выйти из фокуса' : 'Фокус'}</span>
+                  </button>
+                  {canEdit && (
+                    <>
+                      <button
+                        type="button"
+                        className={clsx('audit-editor-toggle-btn', isEditing && 'is-active')}
+                        onClick={() => {
+                          if (isEditing) {
+                            handleCloseEdit()
+                          } else {
+                            setIsEditing(true)
+                          }
+                        }}
+                      >
+                        <Edit3 size={15} />
+                        <span>{isEditing ? 'Выйти из редактора' : 'Режим редактора'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="audit-editor-toggle-btn"
+                        onClick={() => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)}
+                        title="Открыть в полноэкранной студии"
+                      >
+                        <ExternalLink size={14} />
+                        <span>Студия</span>
+                      </button>
+                    </>
+                  )}
                 </div>
+              </div>
+
+              {/* Блок «Заметки докладчика» */}
+              <div className="audit-speaker-notes-box">
+                {isEditing ? (
+                  <textarea
+                    className="audit-speaker-notes-textarea"
+                    placeholder="Заметки докладчика..."
+                    value={activeSlide.notes || ''}
+                    onChange={(e) => handleFieldChange('notes', e.target.value)}
+                  />
+                ) : activeSlide.notes ? (
+                  <div className="audit-speaker-notes-content">
+                    <span className="audit-speaker-notes-title">Заметки докладчика:</span>
+                    <span className="audit-speaker-notes-text">{activeSlide.notes}</span>
+                  </div>
+                ) : (
+                  <span className="audit-speaker-notes-placeholder">Заметки докладчика</span>
+                )}
               </div>
             </>
           )}
@@ -1051,7 +1094,8 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
               slide={activeSlide}
               theme={theme}
               slideIndex={slideIndex}
-              onRegenerate={async (instruction) => (await regenerateSlideMutation.mutateAsync(instruction)).reply}
+              onRegenerate={async (instruction) =>
+                (await regenerateSlideMutation.mutateAsync({ slideId: activeSlide.id, instruction })).reply}
               onChangeKind={handleChangeKind}
               onSelectPattern={handleSelectPattern}
               onOpenDesignModal={() => setShowDesignModal(true)}
@@ -1223,18 +1267,22 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                                   {issue.fixable && canEdit && (
                                     <button
                                       type="button"
+                                      disabled={resolve.isPending}
                                       onClick={() => {
+                                        if (resolve.isPending) return
                                         resolve.mutate({ ids: [issue.id], action: 'fix' })
                                         setOpenMenuIssueId(null)
                                       }}
                                     >
-                                      Исправить автоматически
+                                      {resolve.isPending ? 'Исправляем…' : 'Исправить автоматически'}
                                     </button>
                                   )}
                                   {canEdit && (
                                     <button
                                       type="button"
+                                      disabled={resolve.isPending}
                                       onClick={() => {
+                                        if (resolve.isPending) return
                                         resolve.mutate({ ids: [issue.id], action: 'ignore' })
                                         setOpenMenuIssueId(null)
                                       }}
@@ -1293,8 +1341,11 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                             <button
                               type="button"
                               className="audit-btn-hide"
-                              disabled={checkedIds.length === 0}
-                              onClick={() => resolve.mutate({ ids: checkedIds, action: 'ignore' })}
+                              disabled={checkedIds.length === 0 || resolve.isPending}
+                              onClick={() => {
+                                if (resolve.isPending || checkedIds.length === 0) return
+                                resolve.mutate({ ids: checkedIds, action: 'ignore' })
+                              }}
                             >
                               <Ban size={15} />
                               <span>Скрыть</span>
@@ -1302,11 +1353,14 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
                             <button
                               type="button"
                               className="audit-btn-fix"
-                              disabled={checkedIds.length === 0}
-                              onClick={() => resolve.mutate({ ids: checkedIds, action: 'fix' })}
+                              disabled={checkedIds.length === 0 || resolve.isPending}
+                              onClick={() => {
+                                if (resolve.isPending || checkedIds.length === 0) return
+                                resolve.mutate({ ids: checkedIds, action: 'fix' })
+                              }}
                             >
-                              <WandSparkles size={15} />
-                              <span>Исправить ({checkedIds.length})</span>
+                              <WandSparkles size={15} className={clsx(resolve.isPending && 'spin')} />
+                              <span>{resolve.isPending ? 'Исправляем…' : `Исправить (${checkedIds.length})`}</span>
                             </button>
                           </div>
                         </div>
@@ -1346,6 +1400,47 @@ function AuditWorkspace({ detail, report, canEdit }: { detail: VariantDetail; re
           onClose={() => setShowDesignModal(false)}
         />
       )}
+
+      {currentSlide && (
+        <ImagePickerModal
+          isOpen={showImagePicker}
+          presentationId={presentation.id}
+          contentFiles={presentation.files ?? []}
+          currentImageUrl={
+            imagePickerMode === 'shape'
+              ? activeSlide.shapes?.find((s) => s.id === selectedShapeId)?.image_url
+              : activeSlide.image?.url
+          }
+          onClose={() => setShowImagePicker(false)}
+          onSelectImage={handleSelectContentImage}
+          onUploadImage={async (file) => {
+            if (imagePickerMode === 'floating') {
+              const res = await uploadVariantImageMutation.mutateAsync(file)
+              handleSelectContentImage(res.url, res.filename)
+            } else if (imagePickerMode === 'shape' && selectedShapeId) {
+              const res = await uploadVariantImageMutation.mutateAsync(file)
+              handleUpdateShape(selectedShapeId, { image_url: res.url })
+              setShowImagePicker(false)
+              notify('Изображение обновлено')
+            } else {
+              await uploadImageMutation.mutateAsync(file)
+            }
+          }}
+          onRemoveImage={imagePickerMode === 'slide' && activeSlide.image?.url ? handleRemoveSlideImage : undefined}
+          isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
+        />
+      )}
+
+      {showDiscardDialog && (
+        <ConfirmDialog
+          title="Выйти без сохранения?"
+          text="В редакторе есть несохранённые изменения. Они будут удалены для всех слайдов этой сессии."
+          confirmLabel="Выйти без сохранения"
+          onConfirm={discardEditing}
+          onClose={() => setShowDiscardDialog(false)}
+        />
+      )}
+
       {slideshowOpen && (
         <Slideshow
           slides={slides}

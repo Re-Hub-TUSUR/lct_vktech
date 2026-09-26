@@ -15,11 +15,14 @@
 import copy
 import logging
 import math
+import re
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 
 from lxml import etree
+from PIL import Image
+import pymupdf
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
@@ -217,43 +220,148 @@ def build_deck(
     return DeckBuild(data=data, targets=targets, facts=facts)
 
 
-def _user_image(spec: Slide) -> Path | None:
-    if not spec.image or not spec.image.url:
-        return None
-    path = storage_path("user_images", Path(spec.image.url).name)
-    return path if path.exists() else None
-
-
-def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
-    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
-    path = _user_image(spec) if spec.kind == "image_text" else None
-    placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
-    if placeholders:
-        idx = placeholders[0]["id"] - PH_BASE
-        holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
-        if holder is not None:
-            if path is not None and hasattr(holder, "insert_picture"):
-                holder.insert_picture(str(path))  # python-pptx обрезает картинку под рамку, не растягивая
-            else:
-                remove(holder._element)
-        return
-    if path is None:
-        return
-    x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
-    add_picture_fill(slide, path, int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+def _ensure_raster(path: Path) -> Path:
+    """Если файл в формате SVG, растрирует его в PNG через PyMuPDF для python-pptx."""
+    if path.suffix.lower() != ".svg":
+        return path
+    png_path = path.parent / f"{path.name}.png"
+    try:
+        if not png_path.exists() or png_path.stat().st_mtime < path.stat().st_mtime:
+            with pymupdf.open(stream=path.read_bytes(), filetype="svg") as doc:
+                if len(doc) > 0:
+                    pix = doc[0].get_pixmap(dpi=150)
+                    pix.save(str(png_path))
+    except Exception as exc:
+        logger.warning("Не удалось растрировать SVG %s: %s", path, exc)
+        return path
+    return png_path if png_path.exists() else path
 
 
 def add_picture_fill(slide, path: Path, left: int, top: int, width: int, height: int):
-    """Картинка заполняет рамку без искажений: лишнее по длинной стороне обрезается поровну (layout.image_aspect)."""
+    """Вставляет картинку с заполнением рамки без искажения пропорций (center crop)."""
     picture = slide.shapes.add_picture(str(path), left, top, width, height)
-    pixels_w, pixels_h = picture.image.size
-    if pixels_w and pixels_h and width and height:
+    with Image.open(path) as img:
+        pixels_w, pixels_h = img.size
+    if pixels_h > 0 and height > 0:
         excess = (pixels_w / pixels_h) / (width / height)
         if excess > 1:  # картинка шире рамки — срезаем бока
             picture.crop_left = picture.crop_right = (1 - 1 / excess) / 2
         elif excess < 1:  # картинка выше рамки — срезаем верх и низ
             picture.crop_top = picture.crop_bottom = (1 - excess) / 2
     return picture
+
+
+def _resolve_image_url(url: str | None) -> Path | None:
+    """Унифицированное разрешение пути к картинке (контент-пакет, user_images или прямой путь)."""
+    if not url:
+        return None
+    url = url.strip()
+    if not url:
+        return None
+
+    # 1. Контент-пакет презентации: /presentations/{id}/files/{file_id}[/content]
+    match = re.search(r"/presentations/([0-9a-fA-F-]+)/files/([0-9a-fA-F-]+)", url)
+    if match:
+        pres_id, file_id = match.group(1), match.group(2)
+        content_dir = storage_path("content", pres_id)
+        if content_dir.is_dir():
+            matches = [f for f in content_dir.glob(f"{file_id}.*") if f.is_file() and not f.name.endswith(".svg.png")]
+            if not matches:
+                matches = [f for f in content_dir.glob(f"{file_id}") if f.is_file()]
+            if not matches:
+                matches = [f for f in content_dir.glob(f"{file_id}.*") if f.is_file()]
+            if matches:
+                return _ensure_raster(matches[0])
+
+    # 2. Пользовательские изображения: storage_path("user_images", filename)
+    filename = Path(url).name
+    if filename:
+        user_img = storage_path("user_images", filename)
+        if user_img.is_file():
+            return _ensure_raster(user_img)
+
+    # 3. Прямой путь на файловой системе
+    direct_path = Path(url)
+    try:
+        if direct_path.is_file():
+            return _ensure_raster(direct_path)
+    except OSError:
+        pass
+
+    return None
+
+
+def _apply_crop(pic, crop: list[float] | None) -> None:
+    """Применяет кадрирование к объекту Picture в python-pptx (crop: [top, right, bottom, left] 0..1)."""
+    if not crop or len(crop) < 4:
+        return
+    try:
+        top, right, bottom, left = crop[:4]
+        if 0 <= top < 1 and 0 <= bottom < 1 and top + bottom < 1:
+            pic.crop_top = float(top)
+            pic.crop_bottom = float(bottom)
+        if 0 <= left < 1 and 0 <= right < 1 and left + right < 1:
+            pic.crop_left = float(left)
+            pic.crop_right = float(right)
+    except Exception:
+        logger.exception("Failed to apply crop to picture: %s", crop)
+
+
+def _slide_image(spec: Slide) -> Path | None:
+    """Унифицированное разрешение пути к картинке слайда (контент-пакет, user_images или прямой путь)."""
+    if not spec.image or not spec.image.url:
+        return None
+    return _resolve_image_url(spec.image.url)
+
+
+_user_image = _slide_image
+
+
+def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
+    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
+    path = _slide_image(spec) if (spec.kind in {"image_text", "title"} or (spec.image and spec.image.url)) else None
+    if path is None:
+        return
+
+    elem_boxes = getattr(spec, "element_boxes", {}) or {}
+    elem_crops = getattr(spec, "element_crops", {}) or {}
+
+    if "image" in elem_boxes:
+        ix, iy, iw, ih = elem_boxes["image"]
+        pic = slide.shapes.add_picture(str(path), int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
+        _apply_crop(pic, elem_crops.get("image"))
+        placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
+        if placeholders:
+            idx = placeholders[0]["id"] - PH_BASE
+            holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
+            if holder is not None:
+                remove(holder._element)
+        return
+
+    placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
+    if placeholders:
+        idx = placeholders[0]["id"] - PH_BASE
+        holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
+        if holder is not None:
+            if hasattr(holder, "insert_picture"):
+                holder.insert_picture(str(path))  # python-pptx обрезает картинку под рамку, не растягивая
+                _apply_crop(holder, elem_crops.get("image"))
+            else:
+                remove(holder._element)
+        return
+    if spec.kind == "title":
+        if pattern.get("images"):
+            x, y, w, h = pattern["images"][0]["bbox"]
+            pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+            _apply_crop(pic, elem_crops.get("image"))
+        else:
+            logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
+            pic = slide.shapes.add_picture(str(path), int(ctx.width * 0.06), int(ctx.height * 0.06), logo_w, logo_h)
+            _apply_crop(pic, elem_crops.get("image"))
+    else:
+        x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
+        pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+        _apply_crop(pic, elem_crops.get("image"))
 
 
 def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx, chart_colors, chrome) -> Targets:
@@ -364,13 +472,26 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     targets: Targets = {}
     elem_fonts = getattr(spec, "element_fonts", {}) or {}
     elem_scales = getattr(spec, "element_scales", {}) or {}
+    elem_boxes = getattr(spec, "element_boxes", {}) or {}
+    elem_crops = getattr(spec, "element_crops", {}) or {}
     elem_colors = getattr(spec, "element_colors", {}) or {}
     elem_bolds = getattr(spec, "element_bolds", {}) or {}
+
+    title_color = elem_colors.get("title") or getattr(spec, "text_color", None)
+    title_bold = elem_bolds.get("title") if "title" in elem_bolds else (spec.is_bold if spec.is_bold is not None else True)
     title_font = elem_fonts.get("title") or spec.font_family
     title_scale = elem_scales.get("title", 1.0)
-    title_color = elem_colors.get("title") or getattr(spec, "text_color", None)
-    title_bold = elem_bolds.get("title") if "title" in elem_bolds else (getattr(spec, "is_bold", None) if getattr(spec, "is_bold", None) is not None else True)
-    if title_ph is not None:
+    if "title" in elem_boxes:
+        tx, ty, tw, th = elem_boxes["title"]
+        rect = (int(tx * ctx.width), int(ty * ctx.height), int(tw * ctx.width), int(th * ctx.height))
+        box = slide.shapes.add_textbox(*rect)
+        _write(
+            box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font
+        )
+        targets["title"] = _fraction(rect, ctx)
+        if title_ph is not None:
+            remove(title_ph._element)
+    elif title_ph is not None:
         title_ph.text_frame.text = spec.title
         # Длинный заголовок ужимается в рамку макета, а не наезжает на декор (как автоподбор в PowerPoint).
         title_ph.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
@@ -383,6 +504,9 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                     r.font.color.rgb = ctx.rgb(title_color)
                 if title_bold is not None:
                     r.font.bold = title_bold
+                if title_scale != 1.0:
+                    # Масштаб из редактора — от кегля заголовка в типографике шаблона.
+                    r.font.size = ctx.pt(ctx.role_size("title", 30) * title_scale)
         if None not in (title_ph.left, title_ph.top, title_ph.width, title_ph.height):
             targets["title"] = _fraction((title_ph.left, title_ph.top, title_ph.width, title_ph.height), ctx)
     else:
@@ -391,7 +515,11 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         _write(box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font)
         targets["title"] = _fraction(rect, ctx)
 
-    area = _content_area(title_ph, ctx)
+    if "content" in elem_boxes:
+        cx, cy, cw, ch = elem_boxes["content"]
+        area = (int(cx * ctx.width), int(cy * ctx.height), int(cw * ctx.width), int(ch * ctx.height))
+    else:
+        area = _content_area(title_ph, ctx)
     kind = spec.kind
     if kind in CONTENT_TARGET:
         targets[CONTENT_TARGET[kind]] = _fraction(area, ctx)
@@ -402,7 +530,17 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     sub_bold = elem_bolds.get("subtitle") if "subtitle" in elem_bolds else getattr(spec, "is_bold", None)
     if kind in {"title", "section", "closing"}:
         if spec.subtitle:
-            if bodies:
+            if "subtitle" in elem_boxes:
+                sx, sy, sw, sh = elem_boxes["subtitle"]
+                rect = (int(sx * ctx.width), int(sy * ctx.height), int(sw * ctx.width), int(sh * ctx.height))
+                box = slide.shapes.add_textbox(*rect)
+                _write(
+                    box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, bold=bool(sub_bold), color=sub_color, font_name=sub_font
+                )
+                targets["subtitle"] = _fraction(rect, ctx)
+                if bodies:
+                    remove(bodies[0]._element)
+            elif bodies:
                 bodies[0].text_frame.text = spec.subtitle
                 used.add(bodies[0].shape_id)
                 for p in bodies[0].text_frame.paragraphs:
@@ -416,12 +554,56 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
             else:
                 x, y, w, _ = area
                 box = slide.shapes.add_textbox(x, y, w, int(ctx.height * 0.12))
-                _write(box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, bold=bool(sub_bold), color=sub_color, font_name=sub_font)
+                _write(box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, font_name=sub_font)
+        if kind == "title" and spec.image:
+            path = _slide_image(spec)
+            if path is not None:
+                if "image" in elem_boxes:
+                    ix, iy, iw, ih = elem_boxes["image"]
+                    pic = slide.shapes.add_picture(str(path), int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
+                    _apply_crop(pic, elem_crops.get("image"))
+                else:
+                    img_ph = next(
+                        (
+                            p
+                            for p in placeholders
+                            if hasattr(p, "insert_picture")
+                            and getattr(p.placeholder_format, "type", None) in {PP_PLACEHOLDER.PICTURE, PP_PLACEHOLDER.BITMAP}
+                        ),
+                        None,
+                    )
+                    if img_ph is not None:
+                        img_ph.insert_picture(str(path))
+                        _apply_crop(img_ph, elem_crops.get("image"))
+                        used.add(img_ph.shape_id)
+                    else:
+                        logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
+                        pic = slide.shapes.add_picture(
+                            str(path),
+                            int(ctx.width * 0.06),
+                            int(ctx.height * 0.06),
+                            logo_w,
+                            logo_h,
+                        )
+                        _apply_crop(pic, elem_crops.get("image"))
     elif kind in {"bullets", "agenda"}:
-        items = spec.bullets
-        if kind == "agenda":
-            items = [f"{i:02d}   {item}" for i, item in enumerate(items, start=1)]
-        _bullets_box(slide, area, items, ctx, bullets=kind == "bullets", size=ctx.role_size("body", 20))
+        if kind == "bullets" and spec.image and spec.image.url:
+            _image_text(slide, spec, area, ctx)
+        else:
+            items = spec.bullets
+            if kind == "agenda":
+                items = [f"{i:02d}   {item}" for i, item in enumerate(items, start=1)]
+            _bullets_box(
+                slide,
+                area,
+                items,
+                ctx,
+                bullets=kind == "bullets",
+                size=ctx.role_size("body", 20),
+                elem_boxes=elem_boxes,
+                elem_fonts=elem_fonts,
+                elem_scales=elem_scales,
+            )
     elif kind == "two_columns":
         _two_columns(slide, spec, area, ctx)
     elif kind == "cards":
@@ -510,29 +692,80 @@ def _set_bullet(paragraph, ctx: _Ctx) -> None:
     etree.SubElement(p_pr, qn("a:buChar")).set("char", "•")
 
 
-def _bullets_box(slide, area, items: list[str], ctx: _Ctx, *, bullets: bool = True, size: float = 20) -> None:
+def _bullets_box(
+    slide,
+    area,
+    items: list[str],
+    ctx: _Ctx,
+    *,
+    bullets: bool = True,
+    size: float = 20,
+    elem_boxes: dict | None = None,
+    elem_fonts: dict | None = None,
+    elem_scales: dict | None = None,
+) -> None:
     if not items:
         return
+    elem_boxes = elem_boxes or {}
+    elem_fonts = elem_fonts or {}
+    elem_scales = elem_scales or {}
+
+    if "bullets" in elem_boxes:
+        bx, by, bw, bh = elem_boxes["bullets"]
+        area = (int(bx * ctx.width), int(by * ctx.height), int(bw * ctx.width), int(bh * ctx.height))
+
+    remaining_items = []
+    for i, item in enumerate(items):
+        key = f"bullets.{i}"
+        if key in elem_boxes:
+            ix, iy, iw, ih = elem_boxes[key]
+            b_area = (int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
+            b_box = slide.shapes.add_textbox(*b_area)
+            b_frame = b_box.text_frame
+            b_frame.word_wrap = True
+            p = b_frame.paragraphs[0]
+            if bullets:
+                _set_bullet(p, ctx)
+            b_scale = elem_scales.get(key, 1.0)
+            b_font = elem_fonts.get(key)
+            _run(p, item, ctx, size=size * b_scale, font_name=b_font)
+        else:
+            remaining_items.append((i, item))
+
+    if not remaining_items:
+        return
+
     x, y, w, h = area
     box = slide.shapes.add_textbox(x, y, w, h)
     frame = box.text_frame
     frame.word_wrap = True
-    for i, item in enumerate(items):
-        paragraph = frame.paragraphs[0] if i == 0 else frame.add_paragraph()
+    for idx, (orig_i, item) in enumerate(remaining_items):
+        paragraph = frame.paragraphs[0] if idx == 0 else frame.add_paragraph()
         if bullets:
             _set_bullet(paragraph, ctx)
-        _run(paragraph, item, ctx, size=size)
+        key = f"bullets.{orig_i}"
+        b_scale = elem_scales.get(key, 1.0)
+        b_font = elem_fonts.get(key)
+        _run(paragraph, item, ctx, size=size * b_scale, font_name=b_font)
 
 
 def _two_columns(slide, spec: Slide, area, ctx: _Ctx) -> None:
     x, y, w, h = area
+    elem_boxes = getattr(spec, "element_boxes", {}) or {}
     gap = int(w * 0.05)
     column_width = (w - gap) // 2
     for i, column in enumerate(spec.columns[:2]):
+        col_key = f"columns.{i}"
         left = x + i * (column_width + gap)
-        header = slide.shapes.add_textbox(left, y, column_width, int(h * 0.16))
+        top = y
+        cur_w = column_width
+        cur_h = h
+        if col_key in elem_boxes:
+            cx, cy, cw, ch = elem_boxes[col_key]
+            left, top, cur_w, cur_h = int(cx * ctx.width), int(cy * ctx.height), int(cw * ctx.width), int(ch * ctx.height)
+        header = slide.shapes.add_textbox(left, top, cur_w, int(cur_h * 0.16))
         _write(header.text_frame, [column.title], ctx, size=22, bold=True, color=ctx.theme["accent"])
-        _bullets_box(slide, (left, y + int(h * 0.18), column_width, int(h * 0.82)), column.bullets, ctx, size=18)
+        _bullets_box(slide, (left, top + int(cur_h * 0.18), cur_w, int(cur_h * 0.82)), column.bullets, ctx, size=18)
 
 
 def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
@@ -540,6 +773,7 @@ def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
     if not spec.columns:
         return
     x, y, w, h = area
+    elem_boxes = getattr(spec, "element_boxes", {}) or {}
     count = len(spec.columns)
     per_row = count if count <= 4 else math.ceil(count / 2)
     rows = math.ceil(count / per_row)
@@ -548,12 +782,20 @@ def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
     card_height = min((h - gap * (rows - 1)) // rows, int(ctx.height * 0.36))
     for i, card_spec in enumerate(spec.columns):
         row, col = divmod(i, per_row)
+        card_x = x + col * (card_width + gap)
+        card_y = y + row * (card_height + gap)
+        card_w = card_width
+        card_h = card_height
+        card_key = f"columns.{i}"
+        if card_key in elem_boxes:
+            cx, cy, cw, ch = elem_boxes[card_key]
+            card_x, card_y, card_w, card_h = int(cx * ctx.width), int(cy * ctx.height), int(cw * ctx.width), int(ch * ctx.height)
         card = slide.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE,
-            x + col * (card_width + gap),
-            y + row * (card_height + gap),
-            card_width,
-            card_height,
+            card_x,
+            card_y,
+            card_w,
+            card_h,
         )
         card.adjustments[0] = 0.08
         card.fill.solid()
@@ -573,18 +815,38 @@ def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
 
 def _image_text(slide, spec: Slide, area, ctx: _Ctx) -> None:
     x, y, w, h = area
+    elem_boxes = getattr(spec, "element_boxes", {}) or {}
+    elem_crops = getattr(spec, "element_crops", {}) or {}
+    elem_fonts = getattr(spec, "element_fonts", {}) or {}
+    elem_scales = getattr(spec, "element_scales", {}) or {}
+
     text_width = int(w * 0.52)
-    _bullets_box(slide, (x, y, text_width, h), spec.bullets, ctx, size=18)
+    _bullets_box(
+        slide,
+        (x, y, text_width, h),
+        spec.bullets,
+        ctx,
+        size=18,
+        elem_boxes=elem_boxes,
+        elem_fonts=elem_fonts,
+        elem_scales=elem_scales,
+    )
     left = x + int(w * 0.57)
     img_width = x + w - left
     img_height = h
 
-    if (path := _user_image(spec)) is not None:
+    if "image" in elem_boxes:
+        ix, iy, iw, ih = elem_boxes["image"]
+        left, y, img_width, img_height = int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height)
+
+    path = _slide_image(spec)
+    if path is not None:
         try:
-            add_picture_fill(slide, path, left, y, img_width, img_height)
+            pic = slide.shapes.add_picture(str(path), left, y, img_width, img_height)
+            _apply_crop(pic, elem_crops.get("image"))
             return
-        except Exception:  # noqa: BLE001 — нечитаемая картинка: остаётся рамка с описанием
-            logger.warning("Картинку %s не удалось вставить на слайд %s", path.name, spec.id)
+        except Exception:
+            logger.exception("Не удалось вставить картинку %s в слайд", path)
 
     frame = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, y, img_width, img_height)
     frame.fill.solid()
@@ -819,6 +1081,18 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
                     pass
             if text and sp.has_text_frame and _changed(text, original.get("text")):
                 sp.text_frame.text = text
+            continue
+
+        if kind == "image":
+            img_url = getattr(s, "image_url", None) if not isinstance(s, dict) else s.get("image_url")
+            img_path = _resolve_image_url(img_url)
+            crop_val = getattr(s, "crop", None) if not isinstance(s, dict) else s.get("crop")
+            if img_path and img_path.is_file():
+                try:
+                    pic = slide.shapes.add_picture(str(img_path), left, top, width, height)
+                    _apply_crop(pic, crop_val)
+                except Exception:
+                    logger.exception("Не удалось вставить фигуру-картинку %s", img_path)
             continue
 
         if kind == "circle":
