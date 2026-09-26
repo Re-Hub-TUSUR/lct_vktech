@@ -6,16 +6,20 @@ import {
   Check,
   CheckSquare,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Edit3,
-  FileText,
   Info,
   Maximize2,
+  Minimize2,
   MoreHorizontal,
+  Play,
   RefreshCw,
   TriangleAlert,
   WandSparkles,
   X,
+  ExternalLink,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router'
@@ -38,6 +42,8 @@ import type {
   SlideUpdate,
   VariantDetail,
 } from '../api/types'
+import { ImagePickerModal } from '../components/ImagePickerModal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
 import { SlideDesignModal } from '../components/SlideDesignModal'
@@ -64,8 +70,6 @@ function worst(issues: AuditIssue[]): Severity | null {
     null,
   )
 }
-
-const NOTES_OPEN_KEY = 'audit.notesOpen'
 
 type Scope = 'slide' | 'all'
 type KindFilter = 'all' | CheckKind
@@ -205,7 +209,7 @@ function AuditWorkspace({
   detail,
   report,
   canEdit,
-  presentation: _presentation,
+  presentation,
 }: {
   detail: VariantDetail
   report: AuditReport
@@ -224,6 +228,7 @@ function AuditWorkspace({
   const [activeIssue, setActiveIssue] = useState<string | null>(null)
   const [slideDropdownOpen, setSlideDropdownOpen] = useState(false)
   const [openMenuIssueId, setOpenMenuIssueId] = useState<string | null>(null)
+  const [slideshowOpen, setSlideshowOpen] = useState(false)
 
   useEffect(() => {
     const handleDocClick = (e: MouseEvent) => {
@@ -260,9 +265,8 @@ function AuditWorkspace({
   const layoutRef = useRef<HTMLDivElement>(null)
   const saveInProgressRef = useRef(false)
 
-  // --audit-h — минимальная высота рабочей области аудита: от её верха до низа экрана. На большом мониторе область
-  // заполняет экран, а на низком растёт вместе со слайдом (он всегда показывается целиком), и страница прокручивается.
-  // Миниатюры и панель замечаний остаются на виду (sticky) и прокручивают свой список сами.
+  // Рабочая область аудита (миниатюры, слайд, панель замечаний) занимает ровно оставшуюся часть экрана,
+  // поэтому страница не прокручивается целиком, а каждая колонка прокручивается сама.
   // Высоту считаем от положения области в документе (а не окна), чтобы она не менялась при прокрутке.
   useEffect(() => {
     const layout = layoutRef.current
@@ -382,23 +386,8 @@ function AuditWorkspace({
     setChecked(new Set())
   }
 
-  const [slideshowOpen, setSlideshowOpen] = useState(false)
-
-  // Заметки докладчика свёрнуты по умолчанию: выбор сохраняем в localStorage
-  const [notesOpen, setNotesOpen] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(NOTES_OPEN_KEY) === '1'
-    } catch {
-      return false
-    }
-  })
-  useEffect(() => {
-    try {
-      localStorage.setItem(NOTES_OPEN_KEY, notesOpen ? '1' : '0')
-    } catch {
-      /* хранилище недоступно */
-    }
-  }, [notesOpen])
+  const [showTour, setShowTour] = useState(true)
+  const [isZenMode, setIsZenMode] = useState(false)
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -413,14 +402,48 @@ function AuditWorkspace({
       ) {
         return
       }
-      // Z — быстрый запуск полноэкранного просмотра
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я')) {
-        setSlideshowOpen(true)
+      if (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я') {
+        setIsZenMode((prev) => !prev)
+      } else if (e.key === 'Escape' && isZenMode) {
+        setIsZenMode(false)
       }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [])
+  }, [isEditing, isZenMode])
+
+  const currentTourIndex = useMemo(() => {
+    if (!activeIssue) return 0
+    const idx = openIssues.findIndex((i) => i.id === activeIssue)
+    return idx >= 0 ? idx : 0
+  }, [activeIssue, openIssues])
+
+  const currentTourIssue = openIssues[currentTourIndex] || null
+
+  const goToTourIssue = (index: number) => {
+    if (openIssues.length === 0) return
+    const normalized = (index + openIssues.length) % openIssues.length
+    const targetIssue = openIssues[normalized]
+    if (!targetIssue) return
+    setActiveIssue(targetIssue.id)
+    if (targetIssue.slide_index !== null && targetIssue.slide_index !== undefined) {
+      setSlideIndex(targetIssue.slide_index)
+    }
+  }
+
+  useEffect(() => {
+    if (isEditing || !showTour || openIssues.length === 0) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === '[' || (e.key === 'ArrowLeft' && e.altKey)) {
+        goToTourIssue(currentTourIndex - 1)
+      } else if (e.key === ']' || (e.key === 'ArrowRight' && e.altKey)) {
+        goToTourIssue(currentTourIndex + 1)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isEditing, showTour, openIssues, currentTourIndex])
 
   const resolve = useMutation({
     mutationFn: ({ ids, action }: { ids: string[]; action: 'fix' | 'ignore' }) =>
@@ -654,6 +677,12 @@ function AuditWorkspace({
     }
     handleSlideChange(patch)
     notify('Изображение выбрано из контент-пакета')
+  }
+
+  const handleRemoveSlideImage = () => {
+    if (!currentSlide) return
+    handleSlideChange({ image: null })
+    notify('Изображение удалено со слайда')
   }
 
   const handleChangeKind = (newKind: SlideKind) => {
@@ -1046,7 +1075,7 @@ function AuditWorkspace({
         onChange={handleImageFileChange}
       />
 
-      <div className="audit-layout" ref={layoutRef}>
+      <div className={clsx('audit-layout', isZenMode && 'is-zen')} ref={layoutRef}>
         {canEdit && isEditing && currentSlide ? (
           <SlideEditToolbar
             slide={activeSlide}
@@ -1190,14 +1219,14 @@ function AuditWorkspace({
           {currentSlide && (
             <>
               {/* Слайд вписывается в свободную часть экрана целиком: пропорции шаблона — в --slide-aspect */}
-              <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect || 16 / 9) } as CSSProperties}>
+              <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect) } as CSSProperties}>
                 <div
                   className="audit-stage-canvas"
                   onDoubleClick={() => {
-                    if (canEdit) navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)
+                    if (canEdit && !isEditing) setIsEditing(true)
                   }}
-                  style={{ cursor: canEdit ? 'pointer' : 'default', position: 'relative' }}
-                  title={canEdit ? 'Двойной клик для перехода в редактор презентации' : undefined}
+                  style={{ cursor: canEdit && !isEditing ? 'pointer' : 'default' }}
+                  title={canEdit && !isEditing ? 'Двойной клик для редактирования слайда' : undefined}
                 >
                   <SlideView
                     key={currentSlide.id}
@@ -1234,54 +1263,78 @@ function AuditWorkspace({
                     onResetElementBox={handleResetElementBox}
                     onUpdateElementCrop={handleUpdateElementCrop}
                   />
-
-                  {/* Заметки докладчика: всплывающее окно поверх просматриваемого слайда по его размерам снизу (Image 4) */}
-                  {notesOpen && (
-                    <div
-                      className="audit-slide-notes-overlay"
-                      role="region"
-                      aria-label="Заметки докладчика"
-                      onClick={(e) => e.stopPropagation()}
-                      onDoubleClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="audit-slide-notes-card">
-                        <div className="audit-slide-notes-header">
-                          <div className="audit-slide-notes-title">
-                            <FileText size={14} />
-                            <span>Заметки докладчика к слайду {slideIndex + 1}</span>
-                          </div>
-                          <button
-                            type="button"
-                            className="icon-btn-tiny"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setNotesOpen(false)
-                            }}
-                            title="Закрыть заметки"
-                            aria-label="Закрыть заметки"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                        <div className="audit-slide-notes-body">
-                          {canEdit ? (
-                            <textarea
-                              className="audit-slide-notes-textarea"
-                              placeholder="Добавьте заметки докладчика к этому слайду..."
-                              value={activeSlide.notes || ''}
-                              onChange={(e) => handleFieldChange('notes', e.target.value)}
-                            />
-                          ) : activeSlide.notes ? (
-                            <p className="audit-slide-notes-text">{activeSlide.notes}</p>
-                          ) : (
-                            <p className="audit-speaker-notes-placeholder">К этому слайду заметок нет</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
+
+              {!isEditing && showTour && openIssues.length > 0 && currentTourIssue && (
+                <div className="audit-tour-bar" role="region" aria-label="Пошаговый тур по замечаниям аудита">
+                  <div className="row row--xs" style={{ alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => goToTourIssue(currentTourIndex - 1)}
+                      title="Предыдущее замечание ([)"
+                      aria-label="Предыдущее замечание"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <span className="audit-tour-bar__step">
+                      {currentTourIndex + 1} / {openIssues.length}
+                    </span>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => goToTourIssue(currentTourIndex + 1)}
+                      title="Следующее замечание (])"
+                      aria-label="Следующее замечание"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+
+                  <div className="audit-tour-bar__title" title={currentTourIssue.message}>
+                    <SeverityIcon severity={currentTourIssue.severity} />
+                    <strong>{currentTourIssue.check_title}:</strong>
+                    <span className="muted" style={{ fontSize: 12 }}>{currentTourIssue.message}</span>
+                  </div>
+
+                  <div className="row row--xs" style={{ alignItems: 'center' }}>
+                    {currentTourIssue.fixable && canEdit && (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={<WandSparkles size={13} />}
+                        loading={resolve.isPending}
+                        onClick={() => resolve.mutate({ ids: [currentTourIssue.id], action: 'fix' })}
+                      >
+                        Исправить
+                      </Button>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-xs"
+                      style={{ fontSize: 11 }}
+                      title="Скрыть замечание"
+                      disabled={resolve.isPending}
+                      onClick={() => {
+                        if (resolve.isPending) return
+                        resolve.mutate({ ids: [currentTourIssue.id], action: 'ignore' })
+                      }}
+                    >
+                      Скрыть
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn-tiny"
+                      onClick={() => setShowTour(false)}
+                      title="Закрыть панель обхода"
+                      aria-label="Закрыть панель обхода"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Панель информации и управления под слайдом */}
               <div className="audit-stage-bottom-bar">
@@ -1305,36 +1358,76 @@ function AuditWorkspace({
                 </div>
 
                 <div className="audit-stage-bottom-right">
-                  <button
-                    type="button"
-                    className={clsx('audit-editor-toggle-btn audit-editor-toggle-btn--icon', notesOpen && 'is-active')}
-                    onClick={() => setNotesOpen((prev) => !prev)}
-                    title={notesOpen ? 'Скрыть заметки докладчика' : 'Показать заметки докладчика'}
-                    aria-label="Заметки докладчика"
-                  >
-                    <FileText size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    className="audit-editor-toggle-btn audit-editor-toggle-btn--icon"
-                    onClick={() => setSlideshowOpen(true)}
-                    title="Смотреть презентацию на весь экран (Z)"
-                    aria-label="Смотреть презентацию на весь экран"
-                  >
-                    <Maximize2 size={16} />
-                  </button>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      className="audit-editor-toggle-btn audit-editor-toggle-btn--primary"
-                      onClick={() => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)}
-                      title="Перейти в полноэкранный редактор презентации"
-                    >
-                      <Edit3 size={15} />
-                      <span>Режим редактора</span>
+                  {!isEditing && openIssues.length > 0 && !showTour && (
+                    <button type="button" className="audit-editor-toggle-btn" onClick={() => setShowTour(true)}>
+                      <span>Тур по замечаниям ({openIssues.length})</span>
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className="audit-editor-toggle-btn"
+                    onClick={() => setSlideshowOpen(true)}
+                    title="Смотреть презентацию на весь экран (слайд-шоу)"
+                  >
+                    <Play size={14} />
+                    <span>Слайд-шоу</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={clsx('audit-editor-toggle-btn', isZenMode && 'is-active')}
+                    onClick={() => setIsZenMode(!isZenMode)}
+                    title={isZenMode ? 'Выйти из фокус-режима (Z или Esc)' : 'Фокус-режим: скрыть боковые панели (хоткей Z)'}
+                  >
+                    {isZenMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                    <span>{isZenMode ? 'Выйти из фокуса' : 'Фокус'}</span>
+                  </button>
+                  {canEdit && (
+                    <>
+                      <button
+                        type="button"
+                        className={clsx('audit-editor-toggle-btn', isEditing && 'is-active')}
+                        onClick={() => {
+                          if (isEditing) {
+                            handleCloseEdit()
+                          } else {
+                            setIsEditing(true)
+                          }
+                        }}
+                      >
+                        <Edit3 size={15} />
+                        <span>{isEditing ? 'Выйти из редактора' : 'Режим редактора'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="audit-editor-toggle-btn"
+                        onClick={() => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)}
+                        title="Открыть в полноэкранной студии"
+                      >
+                        <ExternalLink size={14} />
+                        <span>Студия</span>
+                      </button>
+                    </>
+                  )}
                 </div>
+              </div>
+
+              {/* Блок «Заметки докладчика» */}
+              <div className="audit-speaker-notes-box">
+                {isEditing ? (
+                  <textarea
+                    className="audit-speaker-notes-textarea"
+                    placeholder="Заметки докладчика..."
+                    value={activeSlide.notes || ''}
+                    onChange={(e) => handleFieldChange('notes', e.target.value)}
+                  />
+                ) : activeSlide.notes ? (
+                  <div className="audit-speaker-notes-content">
+                    <span className="audit-speaker-notes-title">Заметки докладчика:</span>
+                    <span className="audit-speaker-notes-text">{activeSlide.notes}</span>
+                  </div>
+                ) : (
+                  <span className="audit-speaker-notes-placeholder">Заметки докладчика</span>
+                )}
               </div>
             </>
           )}
@@ -1652,6 +1745,47 @@ function AuditWorkspace({
           onClose={() => setShowDesignModal(false)}
         />
       )}
+
+      {currentSlide && (
+        <ImagePickerModal
+          isOpen={showImagePicker}
+          presentationId={presentation.id}
+          contentFiles={presentation.files ?? []}
+          currentImageUrl={
+            imagePickerMode === 'shape'
+              ? activeSlide.shapes?.find((s) => s.id === selectedShapeId)?.image_url
+              : activeSlide.image?.url
+          }
+          onClose={() => setShowImagePicker(false)}
+          onSelectImage={handleSelectContentImage}
+          onUploadImage={async (file) => {
+            if (imagePickerMode === 'floating') {
+              const res = await uploadVariantImageMutation.mutateAsync(file)
+              handleSelectContentImage(res.url, res.filename)
+            } else if (imagePickerMode === 'shape' && selectedShapeId) {
+              const res = await uploadVariantImageMutation.mutateAsync(file)
+              handleUpdateShape(selectedShapeId, { image_url: res.url })
+              setShowImagePicker(false)
+              notify('Изображение обновлено')
+            } else {
+              await uploadImageMutation.mutateAsync(file)
+            }
+          }}
+          onRemoveImage={imagePickerMode === 'slide' && activeSlide.image?.url ? handleRemoveSlideImage : undefined}
+          isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
+        />
+      )}
+
+      {showDiscardDialog && (
+        <ConfirmDialog
+          title="Выйти без сохранения?"
+          text="В редакторе есть несохранённые изменения. Они будут удалены для всех слайдов этой сессии."
+          confirmLabel="Выйти без сохранения"
+          onConfirm={discardEditing}
+          onClose={() => setShowDiscardDialog(false)}
+        />
+      )}
+
       {slideshowOpen && (
         <Slideshow
           slides={slides}

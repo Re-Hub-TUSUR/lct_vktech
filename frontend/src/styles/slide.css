@@ -3,7 +3,6 @@
 .slide {
   position: relative;
   width: 100%;
-  aspect-ratio: var(--slide-aspect, 1.777778);
   container-type: inline-size;
   overflow: hidden;
   background: var(--slide-bg);
@@ -13,7 +12,6 @@
   /* Слайды часто лежат внутри кнопок-миниатюр, а у кнопок text-align: center. */
   text-align: left;
   user-select: none;
-  box-sizing: border-box;
 }
 .slide__inner {
   position: absolute;
@@ -30,7 +28,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   pointer-events: none;
 }
 .slide--skinned::after {
@@ -49,7 +47,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   display: block;
   pointer-events: none;
 }

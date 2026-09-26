@@ -339,6 +339,30 @@ function GoogleSlidesEditor({
     setActiveElement(null)
   }
 
+  const handleUpdateElementBox = (target: string, box: [number, number, number, number]) => {
+    if (!currentSlide) return
+    const currentBoxes = currentSlide.element_boxes || {}
+    const nextBoxes = { ...currentBoxes, [target]: box }
+    updateCurrentSlide({ element_boxes: nextBoxes })
+  }
+
+  const handleResetElementBox = (target: string) => {
+    if (!currentSlide) return
+    const currentBoxes = { ...(currentSlide.element_boxes || {}) }
+    delete currentBoxes[target]
+    const currentCrops = { ...(currentSlide.element_crops || {}) }
+    delete currentCrops[target]
+    updateCurrentSlide({ element_boxes: currentBoxes, element_crops: currentCrops })
+    notify('Положение блока сброшено к шаблону')
+  }
+
+  const handleUpdateElementCrop = (target: string, crop: [number, number, number, number]) => {
+    if (!currentSlide) return
+    const currentCrops = currentSlide.element_crops || {}
+    const nextCrops = { ...currentCrops, [target]: crop }
+    updateCurrentSlide({ element_crops: nextCrops })
+  }
+
   const handleMoveSlide = (fromIndex: number, direction: 'up' | 'down') => {
     const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1
     if (toIndex < 0 || toIndex >= slides.length) return
@@ -1631,6 +1655,7 @@ function GoogleSlidesEditor({
                   number={currentIndex + 1}
                   editable={canEdit}
                   selectedShapeId={selectedShapeId}
+                  selectedElementId={activeElement}
                   onSelectShape={(id) => {
                     setSelectedShapeId(id)
                     if (id) setActiveElement(null)
@@ -1641,6 +1666,9 @@ function GoogleSlidesEditor({
                     setActiveElement(el)
                     if (el) setSelectedShapeId(null)
                   }}
+                  onUpdateElementBox={handleUpdateElementBox}
+                  onResetElementBox={handleResetElementBox}
+                  onUpdateElementCrop={handleUpdateElementCrop}
                   onFieldChange={handleFieldChange}
                   onDeleteChart={handleDeleteChart}
                   onImageClick={() => {
