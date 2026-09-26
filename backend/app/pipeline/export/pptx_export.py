@@ -474,14 +474,20 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     elem_scales = getattr(spec, "element_scales", {}) or {}
     elem_boxes = getattr(spec, "element_boxes", {}) or {}
     elem_crops = getattr(spec, "element_crops", {}) or {}
+    elem_colors = getattr(spec, "element_colors", {}) or {}
+    elem_bolds = getattr(spec, "element_bolds", {}) or {}
 
+    title_color = elem_colors.get("title") or getattr(spec, "text_color", None)
+    title_bold = elem_bolds.get("title") if "title" in elem_bolds else (spec.is_bold if spec.is_bold is not None else True)
     title_font = elem_fonts.get("title") or spec.font_family
     title_scale = elem_scales.get("title", 1.0)
     if "title" in elem_boxes:
         tx, ty, tw, th = elem_boxes["title"]
         rect = (int(tx * ctx.width), int(ty * ctx.height), int(tw * ctx.width), int(th * ctx.height))
         box = slide.shapes.add_textbox(*rect)
-        _write(box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=True, font_name=title_font)
+        _write(
+            box.text_frame, [spec.title], ctx, size=30 * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font
+        )
         targets["title"] = _fraction(rect, ctx)
         if title_ph is not None:
             remove(title_ph._element)
@@ -498,6 +504,9 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                     r.font.color.rgb = ctx.rgb(title_color)
                 if title_bold is not None:
                     r.font.bold = title_bold
+                if title_scale != 1.0:
+                    # Масштаб из редактора — от кегля заголовка в типографике шаблона.
+                    r.font.size = ctx.pt(ctx.role_size("title", 30) * title_scale)
         if None not in (title_ph.left, title_ph.top, title_ph.width, title_ph.height):
             targets["title"] = _fraction((title_ph.left, title_ph.top, title_ph.width, title_ph.height), ctx)
     else:
@@ -525,7 +534,9 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                 sx, sy, sw, sh = elem_boxes["subtitle"]
                 rect = (int(sx * ctx.width), int(sy * ctx.height), int(sw * ctx.width), int(sh * ctx.height))
                 box = slide.shapes.add_textbox(*rect)
-                _write(box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, font_name=sub_font)
+                _write(
+                    box.text_frame, [spec.subtitle], ctx, size=20 * sub_scale, bold=bool(sub_bold), color=sub_color, font_name=sub_font
+                )
                 targets["subtitle"] = _fraction(rect, ctx)
                 if bodies:
                     remove(bodies[0]._element)

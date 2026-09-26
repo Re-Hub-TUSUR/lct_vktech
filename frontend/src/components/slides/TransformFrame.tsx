@@ -16,6 +16,11 @@ export interface TransformFrameProps {
   crop?: CropRect | null // [top, right, bottom, left] 0..1
   label?: string
   hasCustomPosition?: boolean
+  /** false — блок только сдвигается (сборка переносит положение, но не размер). */
+  resizable?: boolean
+  /** Тянуть можно за всё тело рамки, а не только за ручку (фигуры, картинки). */
+  dragAnywhere?: boolean
+  onDoubleClick?: () => void
   onUpdateBox: (newBox: BoxRect) => void
   /** data-element-id or shape:<id>; used for an imperative drag preview. */
   previewTarget?: string
@@ -46,6 +51,9 @@ export function TransformFrame({
   crop = EMPTY_CROP,
   label,
   hasCustomPosition = false,
+  resizable = true,
+  dragAnywhere = false,
+  onDoubleClick,
   onUpdateBox,
   previewTarget,
   onUpdateCrop,
@@ -464,6 +472,7 @@ export function TransformFrame({
         'transform-frame',
         isImage && 'transform-frame--image',
         !isImage && 'transform-frame--structural',
+        dragAnywhere && 'transform-frame--drag-body',
         isDragging && 'is-dragging',
         isCropping && 'is-cropping'
       )}
@@ -535,7 +544,8 @@ export function TransformFrame({
           <div
             className="transform-frame__border"
             onPointerDown={handleMovePointerDown}
-            title="Перетащите для перемещения блока"
+            onDoubleClick={onDoubleClick}
+            title={onDoubleClick ? 'Перетащите для перемещения, двойной клик — изменить текст' : 'Перетащите для перемещения блока'}
           />
 
           {/* Ручка перемещения по центру сверху */}
@@ -548,7 +558,7 @@ export function TransformFrame({
           </div>
 
           {/* 8 маркеров изменения размера */}
-          {handles.map((hName) => (
+          {resizable && handles.map((hName) => (
             <span
               key={hName}
               className={clsx('transform-frame__handle', `handle--${hName}`)}

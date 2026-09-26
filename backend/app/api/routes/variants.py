@@ -271,6 +271,7 @@ async def update_slide(
             "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
             "element_fonts", "element_scales", "element_boxes", "element_crops",
             "block_density", "background_color", "text_color", "accent_color", "element_colors",
+            "element_backgrounds", "element_bolds", "is_bold", "text_background_color",
             "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
         ):
             setattr(slide, field, val)

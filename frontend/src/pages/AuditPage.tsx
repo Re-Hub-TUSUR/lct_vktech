@@ -53,6 +53,7 @@ import { Slideshow } from '../components/slides/Slideshow'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
+import { changeKind, fieldPatch, mergeDraft, removeSlideImage, selectLayout, selectPattern, setSlideImage } from '../lib/slideEdits'
 import { CHECK_METHOD_LABELS, CHECK_STATUS_LABELS, SEVERITY_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 
 const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
@@ -127,84 +128,6 @@ export function AuditPage() {
   )
 }
 
-function applyFieldChange(slide: Slide, path: string, value: string): Slide {
-  if (path === 'title') return { ...slide, title: value }
-  if (path === 'subtitle') return { ...slide, subtitle: value || null }
-  if (path === 'notes') return { ...slide, notes: value || null }
-  if (path.startsWith('bullets.')) {
-    const idx = parseInt(path.split('.')[1], 10)
-    const next = [...(slide.bullets || [])]
-    next[idx] = value
-    return { ...slide, bullets: next }
-  }
-  if (path.startsWith('columns.')) {
-    const parts = path.split('.')
-    const ci = parseInt(parts[1], 10)
-    const nextCols = [...(slide.columns || [])]
-    if (!nextCols[ci]) return slide
-    if (parts[2] === 'title') {
-      nextCols[ci] = { ...nextCols[ci], title: value }
-    } else if (parts[2] === 'bullets') {
-      const bi = parseInt(parts[3], 10)
-      const nextBullets = [...(nextCols[ci].bullets || [])]
-      nextBullets[bi] = value
-      nextCols[ci] = { ...nextCols[ci], bullets: nextBullets }
-    }
-    return { ...slide, columns: nextCols }
-  }
-  if (path.startsWith('kpis.')) {
-    const parts = path.split('.')
-    const idx = parseInt(parts[1], 10)
-    const nextKpis = [...(slide.kpis || [])]
-    if (!nextKpis[idx]) return slide
-    if (parts[2] === 'value') nextKpis[idx] = { ...nextKpis[idx], value }
-    else if (parts[2] === 'label') nextKpis[idx] = { ...nextKpis[idx], label: value }
-    return { ...slide, kpis: nextKpis }
-  }
-  if (path.startsWith('timeline.')) {
-    const parts = path.split('.')
-    const idx = parseInt(parts[1], 10)
-    const nextTimeline = [...(slide.timeline || [])]
-    if (!nextTimeline[idx]) return slide
-    if (parts[2] === 'date') nextTimeline[idx] = { ...nextTimeline[idx], date: value }
-    else if (parts[2] === 'title') nextTimeline[idx] = { ...nextTimeline[idx], title: value }
-    else if (parts[2] === 'text') nextTimeline[idx] = { ...nextTimeline[idx], text: value || null }
-    return { ...slide, timeline: nextTimeline }
-  }
-  if (path.startsWith('quote.')) {
-    const parts = path.split('.')
-    const curQuote = slide.quote || { text: '', author: null }
-    if (parts[1] === 'text') return { ...slide, quote: { ...curQuote, text: value } }
-    if (parts[1] === 'author') return { ...slide, quote: { ...curQuote, author: value || null } }
-  }
-  if (path.startsWith('table.columns.')) {
-    if (!slide.table) return slide
-    const ci = parseInt(path.split('.')[2], 10)
-    const nextCols = [...slide.table.columns]
-    nextCols[ci] = value
-    return { ...slide, table: { ...slide.table, columns: nextCols } }
-  }
-  if (path.startsWith('table.rows.')) {
-    if (!slide.table) return slide
-    const parts = path.split('.')
-    const ri = parseInt(parts[2], 10)
-    const ci = parseInt(parts[3], 10)
-    const nextRows = slide.table.rows.map((row, r) =>
-      r === ri ? row.map((cell, c) => (c === ci ? value : cell)) : row
-    )
-    return { ...slide, table: { ...slide.table, rows: nextRows } }
-  }
-  if (path === 'chart.caption') {
-    if (!slide.chart) return slide
-    return { ...slide, chart: { ...slide.chart, caption: value || null } }
-  }
-  if (path === 'chart.unit') {
-    if (!slide.chart) return slide
-    return { ...slide, chart: { ...slide.chart, unit: value || null } }
-  }
-  return slide
-}
-
 function AuditWorkspace({
   detail,
   report,
@@ -253,7 +176,6 @@ function AuditWorkspace({
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
   const [imagePickerMode, setImagePickerMode] = useState<'slide' | 'floating' | 'shape'>('slide')
   const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
-  const [editedElementsBySlide, setEditedElementsBySlide] = useState<Record<string, string[]>>({})
   const [showDesignModal, setShowDesignModal] = useState(false)
   const [showImagePicker, setShowImagePicker] = useState(false)
   const [showDiscardDialog, setShowDiscardDialog] = useState(false)
@@ -303,54 +225,18 @@ function AuditWorkspace({
     const pattern = effectivePatternId && theme?.patterns
       ? theme.patterns.find((p) => p.id === effectivePatternId)
       : undefined
-    const baseShapes: SlideShape[] = (edits?.shapes !== undefined && edits.shapes !== null)
+    const baseShapes: SlideShape[] = edits?.shapes != null
       ? edits.shapes
       : (currentSlide.shapes && currentSlide.shapes.length > 0
           ? currentSlide.shapes
           : (effectivePatternId ? (pattern?.shapes || []) : []))
-
-    if (!edits) {
-      return {
-        ...currentSlide,
-        shapes: baseShapes,
-      }
-    }
-    return {
-      ...currentSlide,
-      kind: edits.kind !== undefined && edits.kind !== null ? edits.kind : currentSlide.kind,
-      title: edits.title !== undefined && edits.title !== null ? edits.title : currentSlide.title,
-      subtitle: edits.subtitle !== undefined ? edits.subtitle : currentSlide.subtitle,
-      bullets: edits.bullets ?? currentSlide.bullets,
-      columns: edits.columns ?? currentSlide.columns,
-      kpis: edits.kpis ?? currentSlide.kpis,
-      timeline: edits.timeline ?? currentSlide.timeline,
-      quote: edits.quote !== undefined ? edits.quote : currentSlide.quote,
-      table: edits.table !== undefined ? edits.table : currentSlide.table,
-      chart: edits.chart !== undefined ? edits.chart : currentSlide.chart,
-      shapes: (edits.shapes !== undefined && edits.shapes !== null) ? edits.shapes : baseShapes,
-      image: edits.image !== undefined ? edits.image : currentSlide.image,
-      pattern_id: edits.pattern_id !== undefined ? edits.pattern_id : currentSlide.pattern_id,
-      layout_key: edits.layout_key !== undefined ? edits.layout_key : currentSlide.layout_key,
-      layout_name: edits.layout_name !== undefined ? edits.layout_name : currentSlide.layout_name,
-      font_family: edits.font_family !== undefined ? edits.font_family : currentSlide.font_family,
-      font_size_scale: edits.font_size_scale !== undefined ? edits.font_size_scale : currentSlide.font_size_scale,
-      element_fonts: edits.element_fonts !== undefined ? edits.element_fonts : currentSlide.element_fonts,
-      element_scales: edits.element_scales !== undefined ? edits.element_scales : currentSlide.element_scales,
-      block_density: edits.block_density !== undefined ? edits.block_density : currentSlide.block_density,
-      element_boxes: edits.element_boxes !== undefined ? edits.element_boxes : currentSlide.element_boxes,
-      element_crops: edits.element_crops !== undefined ? edits.element_crops : currentSlide.element_crops,
-    }
+    // Черновик перекрывает все поля, которые в нём заданы (включая заметки и оформление).
+    return { ...mergeDraft(currentSlide, edits), shapes: baseShapes }
   }, [currentSlide, slideEdits, theme?.patterns])
 
   const hasDraftChanges = (draft: SlideUpdate | undefined) => Boolean(draft && Object.keys(draft).length > 0)
   const hasChanges = Object.values(slideEdits).some(hasDraftChanges)
   const hasCurrentSlideChanges = currentSlide ? hasDraftChanges(slideEdits[currentSlide.id]) : false
-  const currentDraft = currentSlide ? slideEdits[currentSlide.id] : undefined
-  const editedElementIds = currentSlide && hasCurrentSlideChanges
-    ? (editedElementsBySlide[currentSlide.id] || []).filter((path) =>
-        Boolean(currentDraft && Object.prototype.hasOwnProperty.call(currentDraft, path.split('.')[0])),
-      )
-    : []
   const openIssues = report.issues.filter((issue) => issue.status === 'open')
   const resolvedIssues = report.issues.filter((issue) => issue.status !== 'open')
 
@@ -505,18 +391,17 @@ function AuditWorkspace({
 
   // Правка слайда моделью по сообщению из чата; ответ модели показывает ассистент, ошибку — тоже он.
   const regenerateSlideMutation = useMutation({
-    mutationFn: ({ slideId, instruction }: { slideId: string; instruction: string }) =>
-      api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, {
-        instruction,
-      }),
+    mutationFn: async ({ slideId, instruction }: { slideId: string; instruction: string }) => {
+      // Модель правит сохранённый слайд: сначала сохраняем черновик, иначе ручные правки пропадут.
+      const draft = slideEdits[slideId]
+      if (hasDraftChanges(draft)) {
+        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, { ...draft, shapes: activeSlide.shapes })
+      }
+      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, { instruction })
+    },
     onSuccess: (result, { slideId }) => {
       applyResult(result)
       setSlideEdits((prev) => {
-        const next = { ...prev }
-        delete next[slideId]
-        return next
-      })
-      setEditedElementsBySlide((prev) => {
         const next = { ...prev }
         delete next[slideId]
         return next
@@ -662,262 +547,35 @@ function AuditWorkspace({
       return
     }
 
-    const patch: SlideUpdate = {
-      image: {
-        prompt: `Изображение из контент-пакета: ${filename}`,
-        url: imageUrl,
-        status: 'generated',
-      },
-    }
-    if (activeSlide.kind !== 'image_text' && activeSlide.kind !== 'title') {
-      patch.kind = 'image_text'
-      if (!activeSlide.bullets || activeSlide.bullets.length === 0) {
-        patch.bullets = ['Описание к изображению']
-      }
-    }
-    handleSlideChange(patch)
+    handleSlideChange(setSlideImage(activeSlide, imageUrl, `Изображение из контент-пакета: ${filename}`))
     notify('Изображение выбрано из контент-пакета')
   }
 
   const handleRemoveSlideImage = () => {
     if (!currentSlide) return
-    handleSlideChange({ image: null })
+    handleSlideChange(removeSlideImage(activeSlide))
     notify('Изображение удалено со слайда')
   }
 
   const handleChangeKind = (newKind: SlideKind) => {
     if (!currentSlide) return
-    const currentBullets = activeSlide.bullets || []
-    const updates: SlideUpdate = { kind: newKind }
-
-    if (newKind === 'cards' && (!activeSlide.columns || activeSlide.columns.length === 0)) {
-      updates.columns = currentBullets.length > 0
-        ? currentBullets.map((b) => ({ title: b, bullets: [] }))
-        : [
-            { title: 'Карточка 1', bullets: ['Описание и детали первого пункта'] },
-            { title: 'Карточка 2', bullets: ['Описание и детали второго пункта'] },
-          ]
-    } else if (newKind === 'kpi' && (!activeSlide.kpis || activeSlide.kpis.length === 0)) {
-      updates.kpis = [
-        { value: '100+', label: currentBullets[0] || 'Показатель успеха' },
-        { value: '85%', label: currentBullets[1] || 'Уровень конверсии' },
-        { value: '3x', label: currentBullets[2] || 'Рост эффективности' },
-      ]
-    } else if (newKind === 'bullets' && (!activeSlide.bullets || activeSlide.bullets.length === 0)) {
-      if (activeSlide.columns && activeSlide.columns.length > 0) {
-        updates.bullets = activeSlide.columns.map((c) => c.title + (c.bullets?.length ? `: ${c.bullets.join(', ')}` : ''))
-      } else if (activeSlide.kpis && activeSlide.kpis.length > 0) {
-        updates.bullets = activeSlide.kpis.map((k) => `${k.value} — ${k.label}`)
-      } else {
-        updates.bullets = ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3']
-      }
-    } else if (newKind === 'timeline' && (!activeSlide.timeline || activeSlide.timeline.length === 0)) {
-      updates.timeline = [
-        { date: 'Этап 1', title: 'Планирование', text: 'Формирование целей и задач' },
-        { date: 'Этап 2', title: 'Реализация', text: 'Разработка основных модулей' },
-        { date: 'Этап 3', title: 'Запуск', text: 'Внедрение и оценка результатов' },
-      ]
-    } else if (newKind === 'quote' && !activeSlide.quote) {
-      updates.quote = {
-        text: activeSlide.subtitle || (currentBullets[0] ?? 'Сильные идеи формируют будущее проектов и вдохновляют команды.'),
-        author: 'Автор цитаты',
-      }
-    } else if (newKind === 'chart' && !activeSlide.chart) {
-      updates.chart = {
-        type: 'bar',
-        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
-        series: [{ name: 'Результат', values: [25, 45, 60, 95] }],
-        caption: 'Динамика показателей по кварталам',
-        unit: 'тыс. руб.',
-      }
-    } else if (newKind === 'table' && !activeSlide.table) {
-      updates.table = {
-        columns: ['Параметр', 'Значение', 'Статус'],
-        rows: [
-          ['Охват аудитории', '1.2M', 'Выполнено'],
-          ['Вовлеченность', '64%', 'В процессе'],
-          ['ROI', '+140%', 'Превышено'],
-        ],
-      }
-    }
-
-    handleSlideChange(updates)
-  }
-
-  const patternKindToSlideKind = (pattern: SlidePattern, currentKind: SlideKind): SlideKind => {
-    const pType = pattern.type
-    const category = pattern.category
-    if (category === 'cover') return 'title'
-    if (category === 'section') return 'section'
-    if (category === 'closing') return 'closing'
-    if (category === 'quote') return 'quote'
-    if (pType === 'text' || pType === 'title_only') return 'bullets'
-    if (pType === 'cards') return 'cards'
-    if (pType === 'two_columns') return 'two_columns'
-    if (pType === 'kpi') return 'kpi'
-    if (pType === 'timeline') return 'timeline'
-    if (pType === 'table') return 'table'
-    if (pType === 'chart') return 'chart'
-    if (pType === 'agenda') return 'agenda'
-    if (pType === 'image_text') return 'image_text'
-    return currentKind
-  }
-
-  const extractSlideTexts = (slide: Slide): string[] => {
-    if (slide.bullets && slide.bullets.length > 0) {
-      const list = slide.bullets.filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.columns && slide.columns.length > 0) {
-      const list = slide.columns.flatMap((c) => [c.title, ...(c.bullets || [])]).filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.kpis && slide.kpis.length > 0) {
-      const list = slide.kpis.map((k) => `${k.value} ${k.label}`.trim()).filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.timeline && slide.timeline.length > 0) {
-      const list = slide.timeline.map((t) => [t.date, t.title, t.text].filter(Boolean).join(' — ')).filter(Boolean)
-      if (list.length > 0) return list
-    }
-    if (slide.quote?.text) return [slide.quote.text]
-    if (slide.summary) return [slide.summary]
-    return ['Ключевой пункт 1', 'Ключевой пункт 2', 'Ключевой пункт 3']
+    handleSlideChange(changeKind(activeSlide, newKind))
   }
 
   const handleSelectPattern = (pattern: SlidePattern) => {
     if (!currentSlide) return
-    const newKind = patternKindToSlideKind(pattern, activeSlide.kind)
-    const patch: SlideUpdate = {
-      pattern_id: pattern.id,
-      layout_key: pattern.layout_key,
-      layout_name: pattern.layout_name || (pattern.layout_key && theme.layouts?.[pattern.layout_key]?.name) || pattern.layout_key,
-      shapes: pattern.shapes && pattern.shapes.length > 0 ? pattern.shapes : [],
-      kind: newKind,
-    }
-
-    // Умная адаптация контента под выбранный шаблон без потери данных
-    const existingTexts = extractSlideTexts(activeSlide)
-    const targetCount = Math.max(pattern.items_count || 3, 2)
-
-    if (newKind === 'cards') {
-      patch.columns = Array.from({ length: targetCount }, (_, i) => {
-        const existingCol = activeSlide.columns?.[i]
-        const title = existingCol?.title || existingTexts[i] || `Тезис ${i + 1}`
-        const bullets = existingCol?.bullets?.length
-          ? existingCol.bullets
-          : [existingTexts[i + targetCount] || 'Описание и ключевые детали пункта']
-        return { title, bullets }
-      })
-    } else if (newKind === 'two_columns') {
-      const half = Math.max(1, Math.ceil(existingTexts.length / 2))
-      patch.columns = [
-        {
-          title: activeSlide.columns?.[0]?.title || 'Направление 1',
-          bullets: existingTexts.slice(0, half).length > 0 ? existingTexts.slice(0, half) : ['Ключевой тезис первой колонки'],
-        },
-        {
-          title: activeSlide.columns?.[1]?.title || 'Направление 2',
-          bullets: existingTexts.slice(half).length > 0 ? existingTexts.slice(half) : ['Ключевой тезис второй колонки'],
-        },
-      ]
-    } else if (newKind === 'kpi') {
-      const fallbackValues = ['100+', '85%', '3x', '24/7', '98%', '+45%']
-      patch.kpis = Array.from({ length: targetCount }, (_, i) => {
-        if (activeSlide.kpis?.[i]) return activeSlide.kpis[i]
-        const text = existingTexts[i] || `Показатель ${i + 1}`
-        return {
-          value: fallbackValues[i % fallbackValues.length],
-          label: text,
-        }
-      })
-    } else if (newKind === 'timeline') {
-      patch.timeline = Array.from({ length: targetCount }, (_, i) => {
-        if (activeSlide.timeline?.[i]) return activeSlide.timeline[i]
-        const text = existingTexts[i] || `Этап ${i + 1}`
-        return {
-          date: `Этап ${i + 1}`,
-          title: text.length > 35 ? text.slice(0, 35) + '...' : text,
-          text: text,
-        }
-      })
-    } else if (newKind === 'bullets') {
-      patch.bullets = existingTexts.slice(0, Math.max(targetCount, 3))
-    } else if (newKind === 'quote' && !activeSlide.quote) {
-      patch.quote = {
-        text: activeSlide.subtitle || existingTexts[0] || 'Сильные идеи формируют будущее проектов и вдохновляют команды.',
-        author: 'Автор цитаты',
-      }
-    } else if (newKind === 'chart' && !activeSlide.chart) {
-      patch.chart = {
-        type: 'bar',
-        categories: ['Q1', 'Q2', 'Q3', 'Q4'],
-        series: [{ name: 'Результат', values: [25, 45, 60, 95] }],
-        caption: 'Динамика показателей по кварталам',
-        unit: 'тыс. руб.',
-      }
-    } else if (newKind === 'table' && !activeSlide.table) {
-      patch.table = {
-        columns: ['Параметр', 'Значение', 'Статус'],
-        rows: [
-          ['Охват аудитории', '1.2M', 'Выполнено'],
-          ['Вовлеченность', '64%', 'В процессе'],
-          ['ROI', '+140%', 'Превышено'],
-        ],
-      }
-    }
-
-    handleSlideChange(patch)
+    handleSlideChange(selectPattern(activeSlide, pattern, theme))
   }
 
   const handleSelectLayout = (layoutKey: string, layoutName: string) => {
     if (!currentSlide) return
-    const patch: SlideUpdate = {
-      layout_key: layoutKey,
-      layout_name: layoutName,
-      pattern_id: null,
-      shapes: [], // Очищаем декоративные фигуры старого паттерна, чтобы они не накладывались на новый макет
-    }
-
-    // Если макет привязан к конкретной роли (например title, closing, section, agenda, two_columns)
-    const roleForLayout = Object.entries(theme.roles || {}).find(([_, k]) => k === layoutKey)?.[0]
-    if (roleForLayout && Object.keys(SLIDE_KIND_LABELS).includes(roleForLayout)) {
-      patch.kind = roleForLayout as SlideKind
-    } else {
-      const lower = (layoutName + ' ' + layoutKey).toLowerCase()
-      if (lower.includes('two_col') || lower.includes('2 col') || lower.includes('две колонки')) {
-        patch.kind = 'two_columns'
-      } else if (lower.includes('card') || lower.includes('карточк') || lower.includes('3 col') || lower.includes('три колонки')) {
-        patch.kind = 'cards'
-      } else if (lower.includes('agenda') || lower.includes('повестк') || lower.includes('содержани')) {
-        patch.kind = 'agenda'
-      } else if (lower.includes('quote') || lower.includes('цитат')) {
-        patch.kind = 'quote'
-      }
-    }
-
-    handleSlideChange(patch)
+    handleSlideChange(selectLayout(activeSlide, layoutKey, layoutName, theme))
   }
 
   const handleFieldChange = (path: string, value: string) => {
     if (!currentSlide || saveInProgressRef.current) return
-    const updated = applyFieldChange(activeSlide, path, value)
-    const root = path.split('.')[0] as keyof Slide
-    if (JSON.stringify(activeSlide[root]) === JSON.stringify(updated[root])) return
-    setEditedElementsBySlide((prev) => ({
-      ...prev,
-      [currentSlide.id]: Array.from(new Set([...(prev[currentSlide.id] || []), path])),
-    }))
-    if (root === 'title') handleSlideChange({ title: updated.title })
-    else if (root === 'subtitle') handleSlideChange({ subtitle: updated.subtitle })
-    else if (root === 'notes') handleSlideChange({ notes: updated.notes })
-    else if (root === 'bullets') handleSlideChange({ bullets: updated.bullets })
-    else if (root === 'columns') handleSlideChange({ columns: updated.columns })
-    else if (root === 'kpis') handleSlideChange({ kpis: updated.kpis })
-    else if (root === 'timeline') handleSlideChange({ timeline: updated.timeline })
-    else if (root === 'quote') handleSlideChange({ quote: updated.quote })
-    else if (root === 'table') handleSlideChange({ table: updated.table })
-    else if (root === 'chart') handleSlideChange({ chart: updated.chart })
+    const patch = fieldPatch(activeSlide, path, value)
+    if (patch) handleSlideChange(patch)
   }
 
   useEffect(() => {
@@ -973,7 +631,6 @@ function AuditWorkspace({
         return
       }
       setSlideEdits({})
-      setEditedElementsBySlide({})
       setDraftHistory({})
       setIsEditing(false)
       setActiveElement(null)
@@ -996,7 +653,6 @@ function AuditWorkspace({
     // Один сеанс редактирования может менять несколько слайдов. Сбрасываем
     // весь локальный буфер, иначе правка «прячется» и попадёт в следующий Save.
     setSlideEdits({})
-    setEditedElementsBySlide({})
     setDraftHistory({})
     setIsEditing(false)
     setActiveElement(null)
@@ -1238,7 +894,6 @@ function AuditWorkspace({
                     activeTarget={isEditing ? undefined : activeTarget}
                     render={slideRender(variant, slideIndex)}
                     editable={isEditing}
-                    editedElementIds={editedElementIds}
                     hasEdits={hasCurrentSlideChanges}
                     selectedShapeId={selectedShapeId}
                     selectedElementId={activeElement}

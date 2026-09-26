@@ -167,10 +167,17 @@
   gap: 2.4cqw;
   align-items: baseline;
 }
-.slide__agenda span {
+.slide__agenda-num {
   font-family: var(--slide-heading-font);
   font-weight: 800;
   color: var(--slide-accent);
+}
+
+/* Пустое редактируемое поле показывает, что в него вписать. */
+.slide [contenteditable='true'][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .slide__columns {
@@ -1164,6 +1171,10 @@
    а сам текст остаётся доступен для обычного клика и редактирования. */
 .transform-frame--structural .transform-frame__border {
   pointer-events: none;
+}
+
+.transform-frame--drag-body .transform-frame__border {
+  pointer-events: auto;
 }
 
 .transform-frame.is-dragging .transform-frame__border {
