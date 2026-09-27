@@ -10,6 +10,7 @@ import type { CustomSkill, GenerationSettings, Presentation, PresentationInput, 
 import { FileDrop } from '../components/FileDrop'
 import { FolderIcon } from '../components/FolderIcon'
 import { PresentationHeader } from '../components/PresentationHeader'
+import { SkillsPicker, skillSource } from '../components/SkillsPicker'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
@@ -32,12 +33,19 @@ function bumpSkillVersion(version: string): string {
   return `${Number.isFinite(major) ? major : 1}.${Number.isFinite(minor) ? minor : 0}.${(Number.isFinite(patch) ? patch : 0) + 1}`
 }
 
-function savedSkillVersions(current: CustomSkill[], previous: CustomSkill[] = []): CustomSkill[] {
-  return current.map((skill) => {
-    const old = previous.find((item) => item.id === skill.id)
-    const changed = !old || old.title !== skill.title || old.kind !== skill.kind || old.instruction !== skill.instruction || old.enabled !== skill.enabled
-    return changed && old ? { ...skill, version: bumpSkillVersion(old.version) } : skill
-  })
+/**
+ * Готовит скиллы к сохранению: пустые разовые правила отбрасываются, у отредактированных разовых повышается версия.
+ * Версию шаблонов и скиллов библиотеки задаёт источник, а переключение тумблера версию не меняет.
+ */
+function savedSkillVersions(current: CustomSkill[], previous: CustomSkill[], libraryIds: Set<string>): CustomSkill[] {
+  return current
+    .filter((skill) => skillSource(skill, libraryIds) !== 'local' || skill.instruction.trim())
+    .map((skill) => {
+      const old = previous.find((item) => item.id === skill.id)
+      if (!old || skillSource(skill, libraryIds) !== 'local') return skill
+      const changed = old.title !== skill.title || old.kind !== skill.kind || old.instruction !== skill.instruction
+      return changed ? { ...skill, version: bumpSkillVersion(old.version) } : skill
+    })
 }
 
 interface FormState {
@@ -155,6 +163,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const canEdit = !presentation || presentation.access_role !== 'viewer'
   const isGenerating = presentation?.status === 'generating'
   const isBusy = Boolean(step || isSubmitting || isGenerating)
+  const enabledSkills = (form.settings.custom_skills ?? []).filter((skill) => skill.enabled).length
   const canSubmit = canEdit && form.title.trim().length > 0 && selectedTemplate?.status === 'ready' && !isBusy
 
   const removeExisting = async (fileId: string) => {
@@ -176,7 +185,11 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
       project_id: form.projectId,
       settings: {
         ...form.settings,
-        custom_skills: savedSkillVersions(form.settings.custom_skills ?? [], presentation?.settings.custom_skills ?? []),
+        custom_skills: savedSkillVersions(
+          form.settings.custom_skills ?? [],
+          presentation?.settings.custom_skills ?? [],
+          new Set((customSkills.data ?? []).map((skill) => skill.id))
+        ),
       },
     }
     try {
@@ -474,71 +487,19 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                 label="Генерировать изображения"
                 hint="Задача со звёздочкой: модель text-to-image до 20B. Пока — заглушка"
               />
-              <div className="stack" style={{ marginTop: 24 }}>
-                <div>
-                  <h3>Кастомные скиллы</h3>
-                  <p className="muted">Дополнительные правила для агентов этой презентации. Версия фиксируется в запуске.</p>
-                </div>
-                {customSkills.data && customSkills.data.length > 0 && (
-                  <div>
-                    <small className="field__label">Подключить из библиотеки</small>
-                    <div className="row" style={{ flexWrap: 'wrap' }}>
-                      {customSkills.data.map((skill) => (
-                        <Button key={skill.id} type="button" variant="secondary" size="sm" disabled={form.settings.custom_skills.some((item) => item.id === skill.id)} onClick={() => setOption('custom_skills', [
-                          ...form.settings.custom_skills,
-                          { id: skill.id, title: skill.title, kind: skill.kind, instruction: skill.instruction, version: skill.version, enabled: skill.enabled },
-                        ])}>
-                          {skill.title} v{skill.version}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {(form.settings.custom_skills ?? []).map((skill, index) => (
-                  <div key={skill.id} className="card" style={{ padding: 16 }}>
-                    <div className="row" style={{ justifyContent: 'space-between' }}>
-                      <strong>{skill.title || 'Новый скилл'}</strong>
-                      <Button type="button" variant="ghost" icon={<Trash2 size={15} />} onClick={() =>
-                        setOption('custom_skills', form.settings.custom_skills.filter((_, i) => i !== index))
-                      } aria-label="Удалить скилл" />
-                    </div>
-                    <div className="grid grid-2" style={{ marginTop: 10 }}>
-                      <Field label="Название">
-                        <input value={skill.title} onChange={(e) => {
-                          const next = [...form.settings.custom_skills]
-                          next[index] = { ...skill, title: e.target.value }
-                          setOption('custom_skills', next)
-                        }} />
-                      </Field>
-                      <div>
-                        <small className="field__label">Область</small>
-                        <Select value={skill.kind} options={[
-                        { value: 'all', label: 'Вся генерация' },
-                        { value: 'text', label: 'Тексты и структура' },
-                        { value: 'design', label: 'Дизайн' },
-                        { value: 'audit', label: 'Аудит' },
-                        ]} onChange={(value) => {
-                        const next = [...form.settings.custom_skills]
-                        next[index] = { ...skill, kind: value as CustomSkill['kind'] }
-                        setOption('custom_skills', next)
-                        }} />
-                      </div>
-                    </div>
-                    <Field label="Инструкция для агента">
-                      <textarea rows={4} value={skill.instruction} onChange={(e) => {
-                        const next = [...form.settings.custom_skills]
-                        next[index] = { ...skill, instruction: e.target.value }
-                        setOption('custom_skills', next)
-                      }} placeholder="Например: пиши заголовки как выводы, избегай канцелярита..." />
-                    </Field>
-                  </div>
-                ))}
-                <Button type="button" variant="secondary" onClick={() => setOption('custom_skills', [
-                  ...(form.settings.custom_skills ?? []),
-                  { id: crypto.randomUUID(), title: '', kind: 'all', instruction: '', version: '1.0.0', enabled: true },
-                ])}>Добавить скилл</Button>
-              </div>
             </div>
+          </Card>
+
+          <Card>
+            <div className="card__header">
+              <h2>5. Скиллы</h2>
+              <small className="muted">{countLabel(enabledSkills, ['скилл включён', 'скилла включено', 'скиллов включено'])}</small>
+            </div>
+            <p className="muted">
+              Дополнительные правила для агентов: стиль речи, подача под аудиторию, структура. Версии включённых скиллов
+              фиксируются в запуске генерации.
+            </p>
+            <SkillsPicker value={form.settings.custom_skills ?? []} onChange={(value) => setOption('custom_skills', value)} />
           </Card>
         </div>
 
@@ -561,6 +522,10 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               <div>
                 <dt>Контент-пакет</dt>
                 <dd>{countLabel(files.length + existingFiles.length, ['файл', 'файла', 'файлов'])}</dd>
+              </div>
+              <div>
+                <dt>Скиллы</dt>
+                <dd>{enabledSkills ? countLabel(enabledSkills, ['включён', 'включено', 'включено']) : 'не подключены'}</dd>
               </div>
             </dl>
             {error ? <ErrorState error={error} /> : null}

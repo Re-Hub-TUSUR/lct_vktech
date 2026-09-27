@@ -24,6 +24,14 @@ class CustomSkillUpdate(BaseModel):
     instruction: str | None = Field(None, min_length=1, max_length=12000)
     enabled: bool | None = None
 
+class SkillPresetOut(BaseModel):
+    id: str
+    title: str
+    description: str
+    kind: SkillKind
+    version: str
+    instruction: str
+
 class CustomSkillOut(BaseModel):
     id: uuid.UUID
     title: str

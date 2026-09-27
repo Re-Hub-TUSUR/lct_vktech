@@ -65,6 +65,39 @@ def get_skill(name: str) -> Skill:
     return skills[name]
 
 
+@dataclass(frozen=True)
+class SkillPreset:
+    """Шаблонный пользовательский скилл из стандартной комплектации (backend/skills/presets/*.yaml)."""
+
+    id: str
+    title: str
+    description: str
+    kind: str
+    version: str
+    instruction: str
+
+
+PRESET_PREFIX = "preset:"
+
+
+@lru_cache(maxsize=1)
+def load_skill_presets() -> list[SkillPreset]:
+    presets: list[SkillPreset] = []
+    for path in sorted((settings.skills_dir / "presets").glob("*.yaml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        presets.append(
+            SkillPreset(
+                id=PRESET_PREFIX + str(data.get("id") or path.stem),
+                title=data.get("title", path.stem),
+                description=(data.get("description") or "").strip(),
+                kind=data.get("kind", "all"),
+                version=str(data.get("version", "1.0.0")),
+                instruction=(data.get("instruction") or "").strip(),
+            )
+        )
+    return presets
+
+
 def skills_snapshot(custom: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     result = [skill.ref() for skill in load_skills().values()]
     for item in custom or []:

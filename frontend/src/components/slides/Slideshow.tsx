@@ -104,13 +104,15 @@ export function Slideshow({
     return () => window.removeEventListener('keydown', onKey)
   }, [next, prev, last, wake])
 
-  // Подгружаем картинки соседних слайдов, чтобы листание не мигало.
+  // Подгружаем картинки соседних слайдов, чтобы листание не мигало. Только существующих: на первом
+  // и последнем слайде соседа с одной стороны нет (renderFor(-1) ронял показ в Студии).
   useEffect(() => {
     for (const i of [index - 1, index + 1]) {
+      if (i < 0 || i > last) continue
       const image = renderFor?.(i)?.image
       if (image) new Image().src = image
     }
-  }, [index, renderFor])
+  }, [index, last, renderFor])
 
   const slide = slides[index]
   if (!slide) return null

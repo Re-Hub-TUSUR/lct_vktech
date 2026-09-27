@@ -1,11 +1,13 @@
 import uuid
+from dataclasses import asdict
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbSession
 from app.models import CustomSkill
-from app.schemas.custom_skill import CustomSkillCreate, CustomSkillOut, CustomSkillUpdate
+from app.pipeline.skills import load_skill_presets
+from app.schemas.custom_skill import CustomSkillCreate, CustomSkillOut, CustomSkillUpdate, SkillPresetOut
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -18,6 +20,10 @@ def _out(skill: CustomSkill) -> CustomSkillOut:
 async def list_skills(user: CurrentUser, db: DbSession) -> list[CustomSkillOut]:
     rows = await db.scalars(select(CustomSkill).where(CustomSkill.owner_id == user.id).order_by(CustomSkill.updated_at.desc()))
     return [_out(skill) for skill in rows]
+
+@router.get("/presets", response_model=list[SkillPresetOut])
+async def list_presets(user: CurrentUser) -> list[SkillPresetOut]:
+    return [SkillPresetOut(**asdict(preset)) for preset in load_skill_presets()]
 
 @router.post("", response_model=CustomSkillOut, status_code=status.HTTP_201_CREATED)
 async def create_skill(payload: CustomSkillCreate, user: CurrentUser, db: DbSession) -> CustomSkillOut:

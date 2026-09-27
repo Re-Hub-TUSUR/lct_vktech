@@ -10,6 +10,7 @@ import type {
   Presentation,
   PresentationListItem,
   SkillInfo,
+  SkillPreset,
   TemplateDetail,
   TemplateSummary,
   VariantDetail,
@@ -21,6 +22,7 @@ export const queryKeys = {
   options: ['meta', 'options'] as const,
   skills: ['meta', 'skills'] as const,
   customSkills: ['custom-skills'] as const,
+  skillPresets: ['skill-presets'] as const,
   templates: ['templates'] as const,
   template: (id: string) => ['templates', id] as const,
   presentations: ['presentations'] as const,
@@ -51,6 +53,10 @@ export function useSkills() {
 
 export function useCustomSkills() {
   return useQuery({ queryKey: queryKeys.customSkills, queryFn: () => api.get<CustomSkillRecord[]>('/skills') })
+}
+
+export function useSkillPresets() {
+  return useQuery({ queryKey: queryKeys.skillPresets, queryFn: () => api.get<SkillPreset[]>('/skills/presets'), staleTime: Infinity })
 }
 
 export function useTemplates() {

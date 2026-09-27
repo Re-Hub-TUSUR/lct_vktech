@@ -219,7 +219,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
   hasChangesRef.current = hasChanges
 
   /** Рендер из собранного .pptx — только если он построен ровно по этому слайду. */
-  const renderFor = (slide: Slide, localIndex: number) => {
+  const renderFor = (slide: Slide | undefined, localIndex: number) => {
+    if (!slide) return undefined
     const server = serverJson.get(slide.id)
     return server && server.json === slidesJson[localIndex] ? slideRender(variant, server.index) : undefined
   }

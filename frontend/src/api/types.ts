@@ -408,13 +408,28 @@ export type VariantAxis = 'density' | 'visualization' | 'structure' | 'layouts'
 export type PresentationAccessRole = 'owner' | 'coowner' | 'editor' | 'viewer'
 export type ShareRole = 'coowner' | 'editor' | 'viewer'
 
+export type SkillKind = 'all' | 'text' | 'design' | 'audit'
+/** Откуда подключён скилл: шаблон из стандартной комплектации, личная библиотека или только эта презентация. */
+export type SkillSource = 'preset' | 'library' | 'local'
+
 export interface CustomSkill {
   id: string
   title: string
-  kind: 'all' | 'text' | 'design' | 'audit'
+  kind: SkillKind
   instruction: string
   version: string
   enabled: boolean
+  source?: SkillSource
+  description?: string
+}
+
+export interface SkillPreset {
+  id: string
+  title: string
+  description: string
+  kind: SkillKind
+  version: string
+  instruction: string
 }
 
 export interface CustomSkillRecord extends CustomSkill {
