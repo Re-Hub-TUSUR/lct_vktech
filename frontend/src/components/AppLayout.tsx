@@ -50,6 +50,7 @@ export function AppLayout() {
           </NavLink>
           <NavLink to="/presentations" onClick={closeMenu}>Мои презентации</NavLink>
           <NavLink to="/templates" onClick={closeMenu}>Шаблоны</NavLink>
+          <NavLink to="/skills" onClick={closeMenu}>Скиллы</NavLink>
         </nav>
         <div className="topbar__actions">
           <Button

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -32,6 +32,7 @@ class GenerationSettings(BaseModel):
     # Задача со звёздочкой: генерация изображений моделью text-to-image.
     generate_images: bool = False
     speaker_notes: bool = True
+    custom_skills: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
 
 
 class PresentationCreate(BaseModel):

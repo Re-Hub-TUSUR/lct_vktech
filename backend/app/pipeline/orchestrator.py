@@ -121,6 +121,11 @@ async def run_generation(generation_id: uuid.UUID, arq=None) -> None:
         if generation is None:
             logger.warning("Генерация %s не найдена", generation_id)
             return
+        # Redis может доставить задание после рестарта worker. Не запускаем повторно
+        # уже завершённую или переведённую в failed генерацию.
+        if generation.status not in {"queued", "running"}:
+            logger.info("Пропускаем генерацию %s со статусом %s", generation_id, generation.status)
+            return
         presentation = await db.scalar(
             select(Presentation)
             .where(Presentation.id == generation.presentation_id)
@@ -133,7 +138,7 @@ async def run_generation(generation_id: uuid.UUID, arq=None) -> None:
 
         generation.status = "running"
         generation.started_at = utcnow()
-        generation.skills = skills_snapshot()
+        generation.skills = skills_snapshot((presentation.settings or {}).get("custom_skills"))
         await db.commit()
         await touch_heartbeat(redis_client, generation.id)
         await _publish_generation_update(generation)
@@ -227,6 +232,7 @@ async def _run_stages(
                 tone=options.tone,
                 audience=options.audience,
                 patterns=template.patterns,
+                custom_skills=options.custom_skills,
             ),
         )
         specs = plan.specs
@@ -244,6 +250,7 @@ async def _run_stages(
                 language=options.language,
                 tone=options.tone,
                 audience=options.audience,
+                custom_skills=options.custom_skills,
             ),
         )
         # План с текстами хранится у прогона: по нему рерол пересобирает вариант без новых запросов.

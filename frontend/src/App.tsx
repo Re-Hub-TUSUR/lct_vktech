@@ -20,6 +20,7 @@ import { VariantsPage } from './pages/VariantsPage'
 import { ShareAcceptPage } from './pages/ShareAcceptPage'
 import { MyPresentationsPage } from './pages/MyPresentationsPage'
 import { ProjectShareAcceptPage } from './pages/ProjectShareAcceptPage'
+import { SkillsPage } from './pages/SkillsPage'
 
 function PresentationRedirect() {
   const { id } = useParams()
@@ -44,6 +45,7 @@ export function App() {
         <Route path="library" element={<Navigate to="/presentations" replace />} />
         <Route path="templates" element={<TemplatesPage />} />
         <Route path="templates/:templateId" element={<TemplatePage />} />
+        <Route path="skills" element={<SkillsPage />} />
         <Route path="presentations/new" element={<PresentationSettingsPage />} />
         <Route path="presentations/:id" element={<PresentationRedirect />} />
         <Route path="presentations/:id/settings" element={<PresentationSettingsPage />} />

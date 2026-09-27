@@ -15,7 +15,7 @@ from typing import Any
 from app.core.config import settings
 from app.pipeline.ai.llm import Usage, ask, open_client, writer_model
 from app.pipeline.planning.planner import TONES
-from app.pipeline.skills import get_skill
+from app.pipeline.skills import custom_skill_context, get_skill
 from app.pipeline.visuals.visualizer import refine_chart
 from app.schemas.slide import ChartSeries, Column, Kpi, Quote, Slide, TableData, TimelineItem
 
@@ -289,6 +289,7 @@ def edit_slide(
     language: str = "ru",
     tone: str = "business",
     audience: str = "",
+    custom_skills: list[dict[str, Any]] | None = None,
     pattern: dict[str, Any] | None = None,
 ) -> EditResult:
     """Переписывает слайд по инструкции. Бросает EditError, если модель не подключена или не ответила."""
@@ -317,6 +318,9 @@ def edit_slide(
     for key, value in values.items():
         system = system.replace("{" + key + "}", value)
         user = user.replace("{" + key + "}", value)
+    extra = custom_skill_context(custom_skills, {"all", "text", "audit"})
+    if extra:
+        system += "\n\nПользовательские правила, обязательные и для автоисправления:\n" + extra
 
     usage = Usage(model=cfg.model)
     with open_client(cfg) as http:

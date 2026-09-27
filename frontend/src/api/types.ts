@@ -402,6 +402,23 @@ export type VariantAxis = 'density' | 'visualization' | 'structure' | 'layouts'
 export type PresentationAccessRole = 'owner' | 'coowner' | 'editor' | 'viewer'
 export type ShareRole = 'coowner' | 'editor' | 'viewer'
 
+export interface CustomSkill {
+  id: string
+  title: string
+  kind: 'all' | 'text' | 'design' | 'audit'
+  instruction: string
+  version: string
+  enabled: boolean
+}
+
+export interface CustomSkillRecord extends CustomSkill {
+  id: string
+  description: string
+  history: { version: string; instruction: string; created_at?: string | null }[]
+  created_at: string
+  updated_at: string
+}
+
 export interface GenerationSettings {
   slides_count: number
   language: 'ru' | 'en'
@@ -410,6 +427,7 @@ export interface GenerationSettings {
   variant_axis: VariantAxis
   generate_images: boolean
   speaker_notes: boolean
+  custom_skills: CustomSkill[]
 }
 
 export interface ContentFile {

@@ -18,7 +18,7 @@ from typing import Any
 from app.core.config import settings
 from app.pipeline.ai.llm import Usage, ask, llm_enabled, open_client
 from app.pipeline.planning.outline import build_outline, purpose_label
-from app.pipeline.skills import get_skill
+from app.pipeline.skills import custom_skill_context, get_skill
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +211,7 @@ def plan_outline(
     tone: str = "business",
     audience: str = "",
     patterns: list[dict[str, Any]] | None = None,
+    custom_skills: list[dict[str, Any]] | None = None,
 ) -> DeckPlan:
     """План колоды: LLM, а при её отсутствии или ошибке — колода из тезисов брифа (planning/outline.py)."""
     fallback = lambda warning=None: DeckPlan(  # noqa: E731 — короткая ветка отката
@@ -237,6 +238,9 @@ def plan_outline(
             "sources": sources or "(материалов нет)",
         },
     )
+    extra = custom_skill_context(custom_skills, {"all", "structure", "text"})
+    if extra:
+        system += "\n\nДополнительные пользовательские правила:\n" + extra
     usage = Usage()
     with open_client() as http:
         answer = ask(

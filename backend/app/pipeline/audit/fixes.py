@@ -57,6 +57,32 @@ class EditorContext:
     tone: str = "business"
     audience: str = ""
     patterns: dict[str, dict[str, Any]] = field(default_factory=dict)
+    custom_skills: list[dict[str, Any]] = field(default_factory=list)
+
+
+def apply_custom_style_rules(slides: list[Slide], custom_skills: list[dict[str, Any]]) -> list[str]:
+    """Применяет простые, однозначные правила скиллов после аудиторских правок.
+
+    Модельные правила уже передаются в editor prompt; этот слой нужен для того,
+    чтобы детерминированные исправления аудита тоже не отменяли стиль презентации.
+    """
+    applied: list[str] = []
+    for skill in custom_skills or []:
+        if not skill.get("enabled", True):
+            continue
+        text = str(skill.get("instruction") or "").lower()
+        wants_questions = ("заголов" in text or "header" in text or "title" in text) and ("вопрос" in text or "question" in text)
+        if not wants_questions:
+            continue
+        changed = False
+        for slide in slides:
+            if slide.title and slide.title[-1:] not in "?!":
+                slide.title = slide.title.rstrip(" .:;-") + "?"
+                slide.summary = slide.title
+                changed = True
+        if changed:
+            applied.append(str(skill.get("id") or skill.get("name") or "custom"))
+    return applied
 
 
 FixFn = Callable[[list[Slide], int, IssueRef, FixContext], list[Slide] | None]
@@ -419,6 +445,7 @@ def apply_editor_fixes(
                 language=ctx.language,
                 tone=ctx.tone,
                 audience=ctx.audience,
+                custom_skills=ctx.custom_skills,
                 pattern=ctx.patterns.get(slide.pattern_id or ""),
             )
         except EditError as exc:

@@ -24,6 +24,8 @@ class SkillRef(BaseModel):
     version: str
     runtime: str
     model: str | None = None
+    source: str = "builtin"
+    skill_id: str | None = None
 
 
 class GenerationOut(BaseModel):
