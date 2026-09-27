@@ -64,7 +64,14 @@ def test_image_analyzer_fallback_heuristics(tmp_path: Path):
     assert "команда" in analysis.tags or "team" in analysis.tags or "people" in analysis.tags
 
 
-def test_image_analyzer_logo_recognition(tmp_path: Path):
+def test_image_analyzer_logo_recognition(tmp_path: Path, monkeypatch):
+    # Проверяем разбор по правилам (логотип — по имени файла). С заданными VLM_*/LLM_* анализатор
+    # спросил бы настоящую модель, и её ответ о пустой картинке делал тест случайным.
+    from app.core.config import settings
+    from app.pipeline.content import image_analyzer
+
+    monkeypatch.setattr(image_analyzer, "vlm_enabled", lambda: False)
+    monkeypatch.setattr(settings, "llm_base_url", None)
     png_path = tmp_path / "company_logo_vk.png"
     png_path.write_bytes(make_png_bytes(200, 200))
 
