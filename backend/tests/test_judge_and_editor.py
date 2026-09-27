@@ -236,3 +236,13 @@ def test_relayout_after_edit_touches_only_edited_slide():
     relayout_edited_slide(edited, [], {"content": "0:2", "title": "0:0"}, [{"key": "0:2", "name": "Контент"}])
     assert (edited.pattern_id, edited.layout_key, edited.layout_name) == (None, "0:2", "Контент")
     assert all((s.pattern_id, s.layout_key) == ("s9", "0:5") for s in slides if s is not edited)
+
+
+def test_relayout_lives_in_layout_layer():
+    """Маршруты и сервис аудита используют одну функцию переподбора вёрстки правленого слайда."""
+    from app.api.routes import variants
+    from app.pipeline.layout import composer
+    from app.services import audit
+
+    assert variants.relayout_edited_slide is composer.relayout_edited_slide
+    assert audit.relayout_edited_slide is composer.relayout_edited_slide

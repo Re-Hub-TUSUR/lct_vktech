@@ -322,6 +322,31 @@ def _apply_crop(pic, crop: list[float] | None, path: Path) -> None:
         logger.exception("Не удалось кадрировать картинку %s: %s", path, crop)
 
 
+def _round_picture(pic, radius: float | None) -> None:
+    """Скругление углов картинки (как в редакторе): фигура картинки — roundRect, adj — доля половины
+    короткой стороны в стотысячных. radius 1 — полукруглые края, у квадрата — круг."""
+    if not radius or radius <= 0:
+        return
+    try:
+        sp_pr = pic._element.spPr
+        geometry = sp_pr.find(qn("a:prstGeom"))
+        if geometry is None:
+            geometry = etree.SubElement(sp_pr, qn("a:prstGeom"))
+            # По схеме prstGeom идёт сразу после xfrm.
+            xfrm = sp_pr.find(qn("a:xfrm"))
+            if xfrm is not None:
+                xfrm.addnext(geometry)
+        geometry.set("prst", "roundRect")
+        for child in list(geometry):
+            geometry.remove(child)
+        guides = etree.SubElement(geometry, qn("a:avLst"))
+        guide = etree.SubElement(guides, qn("a:gd"))
+        guide.set("name", "adj")
+        guide.set("fmla", f"val {int(min(radius, 1.0) * 50000)}")
+    except Exception:  # noqa: BLE001 — картинка с прямыми углами лучше, чем несобранный слайд
+        logger.exception("Не удалось скруглить картинку: %s", radius)
+
+
 def _slide_image(spec: Slide) -> Path | None:
     """Унифицированное разрешение пути к картинке слайда (контент-пакет, user_images или прямой путь)."""
     if not spec.image or not spec.image.url:
@@ -345,6 +370,7 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
         ix, iy, iw, ih = elem_boxes["image"]
         pic = slide.shapes.add_picture(str(path), int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
         _apply_crop(pic, elem_crops.get("image"), path)
+        _round_picture(pic, (spec.element_radii or {}).get("image"))
         placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
         if placeholders:
             idx = placeholders[0]["id"] - PH_BASE
@@ -361,6 +387,7 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
             if hasattr(holder, "insert_picture"):
                 picture = holder.insert_picture(str(path))
                 _apply_crop(picture, elem_crops.get("image"), path)
+                _round_picture(picture, (spec.element_radii or {}).get("image"))
             else:
                 remove(holder._element)
         return
@@ -369,14 +396,17 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
             x, y, w, h = pattern["images"][0]["bbox"]
             pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
             _apply_crop(pic, elem_crops.get("image"), path)
+            _round_picture(pic, (spec.element_radii or {}).get("image"))
         else:
             logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
             pic = slide.shapes.add_picture(str(path), int(ctx.width * 0.06), int(ctx.height * 0.06), logo_w, logo_h)
             _apply_crop(pic, elem_crops.get("image"), path)
+            _round_picture(pic, (spec.element_radii or {}).get("image"))
     else:
         x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
         pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
         _apply_crop(pic, elem_crops.get("image"), path)
+        _round_picture(pic, (spec.element_radii or {}).get("image"))
 
 
 def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx, chart_colors, chrome) -> Targets:
@@ -588,6 +618,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                     ix, iy, iw, ih = elem_boxes["image"]
                     pic = slide.shapes.add_picture(str(path), int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
                     _apply_crop(pic, elem_crops.get("image"), path)
+                    _round_picture(pic, (spec.element_radii or {}).get("image"))
                 else:
                     img_ph = next(
                         (
@@ -601,6 +632,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                     if img_ph is not None:
                         picture = img_ph.insert_picture(str(path))
                         _apply_crop(picture, elem_crops.get("image"), path)
+                        _round_picture(picture, (spec.element_radii or {}).get("image"))
                         used.add(img_ph.shape_id)
                     else:
                         logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
@@ -612,6 +644,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                             logo_h,
                         )
                         _apply_crop(pic, elem_crops.get("image"), path)
+                        _round_picture(pic, (spec.element_radii or {}).get("image"))
     elif kind in {"bullets", "agenda"}:
         if kind == "bullets" and spec.image and spec.image.url:
             _image_text(slide, spec, area, ctx)
@@ -892,6 +925,7 @@ def _image_text(slide, spec: Slide, area, ctx: _Ctx) -> None:
         try:
             pic = slide.shapes.add_picture(str(path), left, y, img_width, img_height)
             _apply_crop(pic, elem_crops.get("image"), path)
+            _round_picture(pic, (spec.element_radii or {}).get("image"))
             return
         except Exception:
             logger.exception("Не удалось вставить картинку %s в слайд", path)
@@ -1148,6 +1182,7 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
                 try:
                     pic = slide.shapes.add_picture(str(img_path), left, top, width, height)
                     _apply_crop(pic, crop_val, img_path)
+                    _round_picture(pic, getattr(s, "radius", None) if not isinstance(s, dict) else s.get("radius"))
                 except Exception:
                     logger.exception("Не удалось вставить фигуру-картинку %s", img_path)
             continue

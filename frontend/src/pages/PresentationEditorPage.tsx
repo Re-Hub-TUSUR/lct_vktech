@@ -291,8 +291,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
   const effectiveShapes: SlideShape[] = currentSlide?.shapes?.length ? currentSlide.shapes : pattern?.shapes || []
   const selectedShape = effectiveShapes.find((s) => s.id === selectedShapeId)
 
-  const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>) =>
-    updateCurrentSlide({ shapes: effectiveShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s)) })
+  const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>, coalesceKey?: string) =>
+    updateCurrentSlide({ shapes: effectiveShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s)) }, coalesceKey)
 
   const handleDeleteShape = (shapeId: string) => {
     updateCurrentSlide({ shapes: effectiveShapes.filter((s) => s.id !== shapeId) })
@@ -889,6 +889,17 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
                 <Bold size={14} />
               </button>
             )}
+            {activeElement === 'image' && currentSlide.image?.url && !selectedShape && (
+              <RadiusControl
+                value={currentSlide.element_radii?.image ?? 0}
+                onChange={(radius) => {
+                  const radii = { ...(currentSlide.element_radii || {}) }
+                  if (radius) radii.image = radius
+                  else delete radii.image
+                  updateCurrentSlide({ element_radii: radii }, `radius:image:${currentSlide.id}`)
+                }}
+              />
+            )}
             {typo.canAlign &&
               ALIGN_OPTIONS.map(({ value, label, icon }) => (
                 <button
@@ -927,7 +938,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
             {selectedShape && (
               <ShapeBar
                 shape={selectedShape}
-                onChange={(patch) => handleUpdateShape(selectedShape.id, patch)}
+                onChange={(patch, coalesceKey) => handleUpdateShape(selectedShape.id, patch, coalesceKey)}
                 onDuplicate={() => {
                   const copy: SlideShape = {
                     ...selectedShape,
@@ -943,7 +954,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
                 onDelete={selectedShape.template_shape_id == null ? () => handleDeleteShape(selectedShape.id) : undefined}
               />
             )}
-            {!typo.canFont && !typo.canScale && !typo.canBold && !typo.canColor && !selectedShape && (
+            {!typo.canFont && !typo.canScale && !typo.canBold && !typo.canColor && !selectedShape && activeElement !== 'image' && (
               <span className="gslides-tool-hint">
                 <Info size={13} /> {typo.hint ?? 'Оформление как в шаблоне'}
               </span>
@@ -1370,6 +1381,42 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
   )
 }
 
+const RADIUS_PRESETS: { value: number; label: string }[] = [
+  { value: 0, label: 'Нет' },
+  { value: 0.15, label: 'Малое' },
+  { value: 0.4, label: 'Сильное' },
+  { value: 1, label: 'Круг' },
+]
+
+/** Скругление углов картинки: пресеты и ползунок 0–100% (доля половины короткой стороны, как в .pptx). */
+function RadiusControl({ value, onChange }: { value: number; onChange: (radius: number) => void }) {
+  return (
+    <div className="gslides-radius" title="Скругление углов">
+      <span className="gslides-radius__label">Углы</span>
+      {RADIUS_PRESETS.map((preset) => (
+        <button
+          key={preset.label}
+          type="button"
+          className={clsx('gslides-radius__preset', Math.abs(value - preset.value) < 0.005 && 'is-active')}
+          onClick={() => onChange(preset.value)}
+        >
+          {preset.label}
+        </button>
+      ))}
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={Math.round(value * 100)}
+        aria-label="Скругление углов, %"
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+      />
+      <span className="gslides-radius__value">{Math.round(value * 100)}%</span>
+    </div>
+  )
+}
+
 const SHAPE_KIND_OPTIONS: { value: SlideShape['kind']; label: string }[] = [
   { value: 'rect', label: 'Прямоугольник' },
   { value: 'circle', label: 'Круг' },
@@ -1387,7 +1434,7 @@ function ShapeBar({
   onDelete,
 }: {
   shape: SlideShape
-  onChange: (patch: Partial<SlideShape>) => void
+  onChange: (patch: Partial<SlideShape>, coalesceKey?: string) => void
   onDuplicate: () => void
   onReplaceImage: () => void
   onDelete?: () => void
@@ -1397,10 +1444,13 @@ function ShapeBar({
   return (
     <div className="gslides-shape-bar">
       {isImage ? (
-        <button type="button" className="gslides-tool-btn" onClick={onReplaceImage} title="Заменить фото">
-          <ImageIcon size={14} />
-          <span>Заменить</span>
-        </button>
+        <>
+          <button type="button" className="gslides-tool-btn" onClick={onReplaceImage} title="Заменить фото">
+            <ImageIcon size={14} />
+            <span>Заменить</span>
+          </button>
+          <RadiusControl value={shape.radius ?? 0} onChange={(radius) => onChange({ radius: radius || null }, `radius:${shape.id}`)} />
+        </>
       ) : (
         !template && (
           <select

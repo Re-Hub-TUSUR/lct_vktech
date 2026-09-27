@@ -53,6 +53,8 @@ export interface SlideShape {
   bold?: boolean | null
   image_url?: string | null
   crop?: [number, number, number, number] | null // [top, right, bottom, left]
+  /** Скругление углов картинки: доля половины короткой стороны (0 — прямые, 1 — полукруглые края). */
+  radius?: number | null
 }
 
 export interface ChartData {
@@ -130,6 +132,8 @@ export interface Slide {
   element_bolds?: Record<string, boolean> | null
   /** Выравнивание текста поля. */
   element_aligns?: Record<string, TextAlign> | null
+  /** Скругление углов картинки слайда (ключ image), как SlideShape.radius. */
+  element_radii?: Record<string, number> | null
 }
 
 export interface SlideUpdate {
@@ -163,6 +167,8 @@ export interface SlideUpdate {
   element_bolds?: Record<string, boolean> | null
   /** Выравнивание текста поля. */
   element_aligns?: Record<string, TextAlign> | null
+  /** Скругление углов картинки слайда (ключ image), как SlideShape.radius. */
+  element_radii?: Record<string, number> | null
   image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
   layout_key?: string | null
   layout_name?: string | null
@@ -776,12 +782,16 @@ export interface AuditReport {
   checks: AuditCheck[]
   // Модель-судья контекстуальных проверок; null — не подключена.
   judge: string | null
+  // Слайды правили после последней проверки — аудит перезапускается только по кнопке.
+  stale?: boolean
 }
 
 export interface ResolveResponse {
   applied: number
   report: AuditReport
   variant: Variant
+  // Замечания, которые остались открытыми после «Исправить», и почему.
+  not_fixed?: { issue_id: Uuid; reason: string }[]
 }
 
 // Правка слайда из чата: что сделала модель — для ответа ассистента.

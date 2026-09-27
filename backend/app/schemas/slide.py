@@ -65,6 +65,8 @@ class SlideShape(BaseModel):
     bold: bool | None = None
     image_url: str | None = None
     crop: list[float] | None = None  # [top, right, bottom, left] fractions (0..1)
+    # Скругление углов картинки: доля половины короткой стороны (0 — прямые углы, 1 — полукруглые края).
+    radius: float | None = None
 
 
 class ChartData(BaseModel):
@@ -151,6 +153,8 @@ class Slide(BaseModel):
     element_bolds: dict[str, bool] = Field(default_factory=dict)
     # Выравнивание текста поля: left | center | right | justify.
     element_aligns: dict[str, str] = Field(default_factory=dict)
+    # Скругление углов картинки слайда (ключ image): как SlideShape.radius.
+    element_radii: dict[str, float] = Field(default_factory=dict)
 
 
 class SlideUpdate(BaseModel):
@@ -183,6 +187,7 @@ class SlideUpdate(BaseModel):
     is_bold: bool | None = None
     element_bolds: dict[str, bool] | None = None
     element_aligns: dict[str, str] | None = None
+    element_radii: dict[str, float] | None = None
     image: ImageSpec | None = None
     layout_key: str | None = None
     layout_name: str | None = None

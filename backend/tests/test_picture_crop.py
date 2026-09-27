@@ -46,3 +46,24 @@ def test_invalid_crop_is_ignored(tmp_path):
     pic, path = _picture(tmp_path, (100, 100), (1_000_000, 1_000_000))
     _apply_crop(pic, [0.6, 0, 0.6, 0], path)
     assert _crop(pic) == (0.0, 0.0, 0.0, 0.0)
+
+
+def test_round_picture_sets_round_rect_geometry(tmp_path):
+    # Скругление из редактора: roundRect с adj = доля половины короткой стороны; файл открывается заново.
+    from io import BytesIO
+
+    from pptx.oxml.ns import qn
+
+    from app.pipeline.export.pptx_export import _round_picture
+
+    pic, _ = _picture(tmp_path, (100, 100), (1_000_000, 1_000_000))
+    _round_picture(pic, 0.5)
+    geometry = pic._element.spPr.find(qn("a:prstGeom"))
+    assert geometry.get("prst") == "roundRect"
+    assert geometry.find(f"{qn('a:avLst')}/{qn('a:gd')}").get("fmla") == "val 25000"
+    tags = [child.tag for child in pic._element.spPr]
+    assert tags.index(qn("a:xfrm")) < tags.index(qn("a:prstGeom"))
+    prs = pic.part.package.presentation_part.presentation
+    out = BytesIO()
+    prs.save(out)
+    Presentation(BytesIO(out.getvalue()))

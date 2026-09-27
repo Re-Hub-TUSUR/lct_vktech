@@ -324,3 +324,11 @@ def assign_layouts(slides: list[Slide], roles: dict[str, Any], layout_names: dic
         key = roles.get(role) or roles.get("content") or roles.get("title")
         slide.layout_key = key
         slide.layout_name = layout_names.get(key) if key else None
+
+
+def relayout_edited_slide(slide: Slide, patterns, roles: dict, layouts: list, *, position: int = 0) -> None:
+    """После правки моделью новый текст мог перестать помещаться в паттерн — тогда слайду подбирается другой.
+    Остальные слайды колоды не менялись, их вёрстку не трогаем. Не вызывается, если паттерн выбрал пользователь."""
+    names = {layout["key"]: layout["name"] for layout in layouts}
+    assign_layouts([slide], roles, names)
+    assign_patterns([slide], patterns, position=position, layout_names=names, keep=True)

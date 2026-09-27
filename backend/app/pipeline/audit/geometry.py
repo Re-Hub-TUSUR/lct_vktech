@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.pipeline.audit.catalog import AuditContext, Finding, render_params
-from app.pipeline.audit.checks import check, text_overflow_estimate
+from app.pipeline.audit.checks import check, text_overflow_estimate, user_styled
 from app.schemas.slide import INVERSE_KINDS, Slide
 
 Box = tuple[float, float, float, float]  # x0, y0, x1, y1
@@ -120,6 +120,24 @@ class Page:
         return boxes
 
 
+def user_placed(slide: Slide, name: str) -> bool:
+    """Положение элемента задала сборка на макете или пользователь, а не слайд-пример шаблона.
+
+    Слайд по паттерну — клон примера: где стоят его картинки, текст и декор, решил дизайнер шаблона
+    (картинка «в обрез», логотип под фото, крупные поля). Проверки положения критикуют только то,
+    что пользователь сдвинул сам или добавил (плавающие фото — image.N)."""
+    if not slide.pattern_id:
+        return True
+    if name.startswith("image."):
+        return True
+    boxes = slide.element_boxes or {}
+    base = base_name(name)
+    if any(key == name or key == base or name.startswith(key + ".") for key in boxes):
+        return True
+    # Сдвинутый блок контента несёт с собой текст тела слайда.
+    return "content" in boxes and base not in {"title", "subtitle", "image"}
+
+
 def pages(slides: list[Slide], ctx: AuditContext) -> Iterator[tuple[Slide, Page]]:
     for slide in slides:
         entry = ctx.renders.get(slide.id)
@@ -137,6 +155,8 @@ def out_of_bounds(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     tolerance = float(render_params().get("bounds_tolerance", 0.01))
     for slide, page in pages(slides, ctx):
         for name, box in page.objects().items():
+            if not user_placed(slide, name):
+                continue  # картинка «в обрез» — замысел слайда-примера
             over = max(-box[0], -box[1], box[2] - 1, box[3] - 1)
             if over > tolerance:
                 yield Finding(
@@ -259,7 +279,8 @@ def alignment(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
             (name for name in ("bullets", "columns.0", "kpis.0", "timeline.0", "quote", "columns") if page.owned(name)),
             None,
         )
-        if title and body_name:
+        # Отступы слайда-примера — замысел шаблона; сравниваем, только если пользователь что-то сдвинул.
+        if title and body_name and (user_placed(slide, "title") or user_placed(slide, body_name)):
             # Текст карточки отступает от её края на поле карточки — с заголовком выравнивается сама карточка.
             body_left = (
                 page.targets[body_name][0]
@@ -281,7 +302,8 @@ def alignment(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
                 for index in range(12)
                 if (own := page.owned(f"{prefix}.{index}"))
             ]
-            if len(tops) >= 2 and low < max(tops) - min(tops) < high:
+            moved = any(user_placed(slide, f"{prefix}.{index}") for index in range(len(tops)))
+            if len(tops) >= 2 and moved and low < max(tops) - min(tops) < high:
                 yield Finding(
                     "layout.alignment",
                     slide.id,
@@ -301,8 +323,8 @@ def margins(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
         for side in ("left", "right", "top", "bottom")
     }
     for slide, page in pages(slides, ctx):
-        boxes = [(owner, line["box"]) for line, owner in zip(page.lines, page.owners) if owner]
-        boxes += list(page.objects().items())
+        boxes = [(owner, line["box"]) for line, owner in zip(page.lines, page.owners) if owner and user_placed(slide, owner)]
+        boxes += [(name, box) for name, box in page.objects().items() if user_placed(slide, name)]
         worst: tuple[float, str, str, float] | None = None
         for owner, box in boxes:
             distances = {"left": box[0], "top": box[1], "right": 1 - box[2], "bottom": 1 - box[3]}
@@ -369,6 +391,8 @@ def fonts(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     # и гарнитуры, которые реально стоят у текста колоды.
     families = {family(name) for name in main_fonts(ctx)}
     for slide, page in pages(slides, ctx):
+        if user_styled(slide, "font"):
+            continue  # шрифт выбран в редакторе
         used = [name for name in page.facts.get("fonts") or [] if family(name) not in SYMBOL_FONTS]
         foreign = sorted({name for name in used if family(name) not in known})
         if foreign:
@@ -403,12 +427,18 @@ def font_sizes(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     # Мельче самой мелкой ступени шкалы — текст ужат, чтобы влезть в рамку, даже если такой кегль где-то в файле шаблона есть.
     smallest = min(scale) if scale else None
     for slide, page in pages(slides, ctx):
+        if user_styled(slide, "size"):
+            continue  # кегль изменён в редакторе
         sizes = page.facts.get("sizes") or []
         tiny = [size for size in sizes if smallest is not None and size < smallest - tolerance]
+        # На слайде из шаблона кегли — это кегли слотов примера после автоподбора сборки (длинный текст
+        # ужимается, числа KPI масштабируются всей серией): «не из шкалы» там не ошибка, «мельче шкалы» — да.
         off = [
             size
             for size in sizes
-            if size not in tiny and all(abs(size - step) > max(tolerance, share * step) for step in allowed)
+            if size not in tiny
+            and not slide.pattern_id
+            and all(abs(size - step) > max(tolerance, share * step) for step in allowed)
         ]
         if tiny:
             shown = ", ".join(f"{size:g} pt" for size in tiny[:5])
@@ -457,6 +487,8 @@ def palette(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     base = [_rgb(color) for color in sorted(colors) if HEX_RX.match(color)]
     cache: dict[str, bool] = {}
     for slide, page in pages(slides, ctx):
+        if user_styled(slide, "color"):
+            continue  # цвет выбран в редакторе
         foreign = []
         for color in page.facts.get("colors") or []:
             if not HEX_RX.match(color):
@@ -474,7 +506,10 @@ def palette(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
 def logo_position(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     share = float(render_params().get("chrome_overlap", 0.15))
     for slide, page in pages(slides, ctx):
-        content = [line["box"] for line in page.content_lines()] + list(page.objects().values())
+        # Перекрытие, заложенное в слайде-примере (фото под логотипом), — не ошибка сборки.
+        content = [
+            line["box"] for line, owner in zip(page.lines, page.owners) if owner is not None and user_placed(slide, owner)
+        ] + [box for name, box in page.objects().items() if user_placed(slide, name)]
         for chrome in page.facts.get("chrome") or []:
             box = xyxy(chrome["bbox"])
             size = area(box)
@@ -514,6 +549,8 @@ def fill_ratio(slides: list[Slide], ctx: AuditContext) -> Iterator[Finding]:
     for slide, page in pages(slides, ctx):
         if slide.kind in INVERSE_KINDS or slide.kind in {"quote", "agenda"}:
             continue
+        if slide.pattern_id:
+            continue  # заполненность слайда-примера — пропорции самого шаблона
         cells: set[tuple[int, int]] = set()
         owners = {owner for owner in page.owners if owner}
         for owner in owners:

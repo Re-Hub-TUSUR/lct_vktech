@@ -74,6 +74,8 @@ async def render_variant_job(ctx: dict, variant_id: str, revision: str, audit: b
         await db.refresh(variant)
         if slides_revision(variant.slides or [], template) != revision:
             return "outdated"
+        # Пока рендер шёл, пользователь нажал «Перезапустить аудит» — проверяем по свежему рендеру.
+        audit = audit or bool((variant.renders or {}).get("audit"))
         variant.renders = renders
         if audit and presentation is not None:
             audit_ctx = await build_audit_context(db, presentation, template)

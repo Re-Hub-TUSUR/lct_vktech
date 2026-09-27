@@ -4,13 +4,12 @@ import {
   ArrowRight,
   Ban,
   Check,
-  CheckSquare,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   Info,
-  MoreHorizontal,
+  Loader2,
   Pencil,
   Play,
   RefreshCw,
@@ -23,7 +22,7 @@ import { useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, useAudit, usePresentation, useVariant } from '../api/queries'
-import type { AuditCheck, AuditIssue, AuditReport, CheckKind, ResolveResponse, Severity, VariantDetail } from '../api/types'
+import type { AuditCheck, AuditIssue, AuditReport, ResolveResponse, Severity, VariantDetail } from '../api/types'
 import { PresentationHeader } from '../components/PresentationHeader'
 import { SlideView, slideRender, type Highlights } from '../components/slides/SlideView'
 import { Slideshow } from '../components/slides/Slideshow'
@@ -49,7 +48,13 @@ function worst(issues: AuditIssue[]): Severity | null {
 }
 
 type Scope = 'slide' | 'all'
-type KindFilter = 'all' | CheckKind
+type SeverityFilter = 'all' | Severity
+
+const SEVERITY_FILTERS: { key: Severity; label: string }[] = [
+  { key: 'error', label: 'Ошибки' },
+  { key: 'warning', label: 'Предупреждения' },
+  { key: 'info', label: 'Советы' },
+]
 
 export function AuditPage() {
   const { id } = useParams()
@@ -118,22 +123,20 @@ function AuditWorkspace({
   const { variant, theme } = detail
   const [slideIndex, setSlideIndex] = useState(0)
   const [scope, setScope] = useState<Scope>('slide')
-  const [kind, setKind] = useState<KindFilter>('all')
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
   const [tab, setTab] = useState<'issues' | 'checks'>('issues')
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [activeIssue, setActiveIssue] = useState<string | null>(null)
   const [slideDropdownOpen, setSlideDropdownOpen] = useState(false)
-  const [openMenuIssueId, setOpenMenuIssueId] = useState<string | null>(null)
   const [slideshowOpen, setSlideshowOpen] = useState(false)
+  // Почему «Исправить» не помогло — показывается на карточке, пока замечание открыто.
+  const [notFixed, setNotFixed] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {
     const handleDocClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (!target.closest('.audit-slide-dropdown-wrapper')) {
         setSlideDropdownOpen(false)
-      }
-      if (!target.closest('.audit-issue-more-wrapper')) {
-        setOpenMenuIssueId(null)
       }
     }
     document.addEventListener('click', handleDocClick)
@@ -161,7 +164,7 @@ function AuditWorkspace({
       }
       return !prev
     })
-  const openStudio = () => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)
+  const openStudio = (index = slideIndex) => navigate(`/presentations/${detail.presentation.id}/editor?slide=${index}`)
 
   // Рабочая область аудита (миниатюры, слайд, панель замечаний) занимает ровно оставшуюся часть экрана,
   // поэтому страница не прокручивается целиком, а каждая колонка прокручивается сама.
@@ -204,10 +207,28 @@ function AuditWorkspace({
     return map
   }, [openIssues])
 
-  const visible = openIssues.filter(
-    (issue) => (scope === 'all' || issue.slide_id === currentSlide?.id) && (kind === 'all' || issue.kind === kind),
+  const inScope = openIssues.filter((issue) => scope === 'all' || issue.slide_id === currentSlide?.id)
+  const severityCounts = inScope.reduce<Partial<Record<Severity, number>>>(
+    (acc, issue) => ({ ...acc, [issue.severity]: (acc[issue.severity] ?? 0) + 1 }),
+    {},
   )
+  const visible = inScope
+    .filter((issue) => severityFilter === 'all' || issue.severity === severityFilter)
+    .sort(
+      (a, b) =>
+        (a.slide_index ?? -1) - (b.slide_index ?? -1) || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
+    )
   const fixableVisible = visible.filter((issue) => issue.fixable)
+
+  // «Вся колода»: замечания по слайдам; замечания ко всей колоде (без слайда) — первой группой.
+  const groups = new Map<number | null, AuditIssue[]>()
+  for (const issue of visible) {
+    const key = scope === 'all' ? issue.slide_index : null
+    groups.set(key, [...(groups.get(key) ?? []), issue])
+  }
+
+  // После «Перезапустить аудит» проверки по рендеру и судья идут в фоне — отчёт догонит сам (SSE + опрос).
+  const checking = report.summary.checks_pending > 0
 
   const highlights: Highlights = {}
   for (const issue of bySlide.get(currentSlide?.id ?? '') ?? []) {
@@ -268,8 +289,22 @@ function AuditWorkspace({
     onSuccess: (result, { action, ids }) => {
       applyResult(result)
       if (action === 'fix') {
-        const skipped = ids.length - result.applied
-        notify(`Исправлено: ${result.applied}${skipped > 0 ? `, не удалось автоматически: ${skipped}` : ''}`)
+        const reasons = new Map((result.not_fixed ?? []).map((item) => [item.issue_id, item.reason]))
+        setNotFixed((current) => {
+          const next = new Map(current)
+          for (const issueId of ids) next.delete(issueId)
+          for (const [issueId, reason] of reasons) next.set(issueId, reason)
+          return next
+        })
+        const tone = result.applied === 0 ? 'error' : result.applied < ids.length ? 'info' : undefined
+        notify(
+          ids.length === 1
+            ? result.applied
+              ? 'Исправлено'
+              : (reasons.values().next().value ?? 'Исправить автоматически не удалось')
+            : `Исправлено ${result.applied} из ${ids.length}`,
+          tone,
+        )
       } else {
         notify(`Скрыто замечаний: ${result.applied}`, 'info')
       }
@@ -295,6 +330,8 @@ function AuditWorkspace({
     })
 
   const checkedIds = [...checked].filter((issueId) => openIssues.some((issue) => issue.id === issueId))
+  const checkedFixable = checkedIds.filter((issueId) => openIssues.some((issue) => issue.id === issueId && issue.fixable))
+  const resolvingIds = new Set(resolve.isPending && resolve.variables?.action === 'fix' ? resolve.variables.ids : [])
   const { summary } = report
   return (
     <>
@@ -338,19 +375,29 @@ function AuditWorkspace({
 
               {/* Счётчики проверок в компактную строку */}
               <div className="audit-summary-counts-detail">
-                <span title="Детерминированные проверки">{summary.by_kind.deterministic ?? 0} детерминированных</span>
-                <span className="audit-summary-bullet-dot" />
-                <span title="Контекстуальные проверки">{summary.by_kind.contextual ?? 0} контекстуальных</span>
+                {checking ? (
+                  <span className="audit-checking" title="Отчёт обновится сам, как только проверки закончатся">
+                    <Loader2 size={13} className="spin" />
+                    Проверка идёт…
+                    {summary.checks_pending > 0 &&
+                      ` ещё ${countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}`}
+                  </span>
+                ) : (
+                  <span>{countLabel(summary.checks_run, ['проверка выполнена', 'проверки выполнены', 'проверок выполнено'])}</span>
+                )}
                 {report.judge && (
                   <>
                     <span className="audit-summary-bullet-dot" />
-                    <span title="Модель-судья">{report.judge}</span>
+                    <span title="Модель-судья: оценивает смысл текста и вид слайдов">судья: {report.judge}</span>
                   </>
                 )}
-                {summary.checks_pending > 0 && (
+                {report.stale && !checking && (
                   <>
                     <span className="audit-summary-bullet-dot" />
-                    <span className="text-warning">ждут {countLabel(summary.checks_pending, ['проверка', 'проверки', 'проверок'])}</span>
+                    <span className="audit-stale" title="Аудит перезапускается только по кнопке «Перезапустить аудит»">
+                      <TriangleAlert size={13} />
+                      Слайды изменились после проверки
+                    </span>
                   </>
                 )}
               </div>
@@ -359,7 +406,7 @@ function AuditWorkspace({
             {canEdit && (
               <button
                 type="button"
-                className="audit-refresh-btn"
+                className={clsx('audit-refresh-btn', report.stale && !checking && 'is-attention')}
                 disabled={rerun.isPending}
                 onClick={() => {
                   if (rerun.isPending) return
@@ -405,7 +452,7 @@ function AuditWorkspace({
               <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect) } as CSSProperties}>
                 <div
                   className="audit-stage-canvas"
-                  onDoubleClick={canEdit ? openStudio : undefined}
+                  onDoubleClick={canEdit ? () => openStudio() : undefined}
                   style={{ cursor: canEdit ? 'pointer' : 'default' }}
                   title={canEdit ? 'Двойной клик — редактировать слайд в Студии' : undefined}
                 >
@@ -532,7 +579,7 @@ function AuditWorkspace({
                     <button
                       type="button"
                       className="audit-editor-toggle-btn audit-editor-toggle-btn--primary"
-                      onClick={openStudio}
+                      onClick={() => openStudio()}
                       title="Открыть этот слайд в Студии (или двойной клик по слайду)"
                     >
                       <Pencil size={14} />
@@ -638,146 +685,150 @@ function AuditWorkspace({
                     <div className="audit-filter-row-2">
                       <button
                         type="button"
-                        className={clsx('audit-kind-pill', kind === 'all' && 'is-active')}
-                        onClick={() => setKind('all')}
+                        className={clsx('audit-kind-pill', severityFilter === 'all' && 'is-active')}
+                        onClick={() => setSeverityFilter('all')}
                       >
-                        Все
+                        Все {inScope.length}
                       </button>
-                      <button
-                        type="button"
-                        className={clsx('audit-kind-pill', kind === 'deterministic' && 'is-active')}
-                        onClick={() => setKind('deterministic')}
-                      >
-                        Детерм.
-                      </button>
-                      <button
-                        type="button"
-                        className={clsx('audit-kind-pill', kind === 'contextual' && 'is-active')}
-                        onClick={() => setKind('contextual')}
-                      >
-                        Контекст.
-                      </button>
+                      {SEVERITY_FILTERS.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className={clsx('audit-kind-pill', `audit-kind-pill--${key}`, severityFilter === key && 'is-active')}
+                          disabled={!severityCounts[key] && severityFilter !== key}
+                          onClick={() => setSeverityFilter(severityFilter === key ? 'all' : key)}
+                        >
+                          {label} {severityCounts[key] ?? 0}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   {visible.length === 0 ? (
                     <p className="audit-empty">
-                      {scope === 'slide' ? 'На этом слайде замечаний нет' : 'Замечаний нет — колода готова к экспорту'}
+                      {checking
+                        ? 'Проверка идёт — замечания появятся здесь'
+                        : scope === 'slide'
+                          ? 'На этом слайде замечаний нет'
+                          : 'Замечаний нет — колода готова к экспорту'}
                     </p>
                   ) : (
                     <ul className="audit-issues-scroll">
-                      {visible.map((issue) => (
-                        <li
-                          key={issue.id}
-                          className={clsx('audit-issue-card', activeIssue === issue.id && 'is-active')}
-                          onMouseEnter={() => setActiveIssue(issue.id)}
-                          onMouseLeave={() => setActiveIssue(null)}
-                          onClick={() => {
-                            if (issue.slide_index !== null) setSlideIndex(issue.slide_index)
-                            setActiveIssue(issue.id)
-                          }}
-                        >
-                          <div className="audit-issue-card__header">
-                            <div className="audit-issue-card__title-row">
-                              <label
-                                className={clsx('audit-custom-checkbox', checked.has(issue.id) && 'is-checked')}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="audit-custom-checkbox__input"
-                                  checked={checked.has(issue.id)}
-                                  onChange={() => toggle(issue.id)}
-                                  aria-label="Выбрать"
-                                />
-                                <span className="audit-custom-checkbox__box" aria-hidden="true">
-                                  {checked.has(issue.id) && <Check size={11} strokeWidth={3.2} color="#ffffff" />}
-                                </span>
-                              </label>
-                              <div className="audit-issue-severity-icon">
-                                <SeverityIcon severity={issue.severity} />
-                              </div>
-                              <strong className="audit-issue-title">{issue.check_title}</strong>
-                            </div>
-
-                            <div className="audit-issue-more-wrapper" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                className="audit-issue-more-btn"
-                                title="Действия"
-                                onClick={() => setOpenMenuIssueId(openMenuIssueId === issue.id ? null : issue.id)}
-                              >
-                                <MoreHorizontal size={16} />
-                              </button>
-                              {openMenuIssueId === issue.id && (
-                                <div className="audit-issue-dropdown-menu">
-                                  {issue.slide_index !== null && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSlideIndex(issue.slide_index!)
-                                        setOpenMenuIssueId(null)
-                                      }}
-                                    >
-                                      Перейти к слайду {issue.slide_index + 1}
-                                    </button>
+                      {[...groups.entries()].map(([groupIndex, issues]) => (
+                        <li key={String(groupIndex)} className="audit-issue-group">
+                          {scope === 'all' && (
+                            <button
+                              type="button"
+                              className={clsx('audit-issue-group__head', groupIndex === slideIndex && 'is-current')}
+                              disabled={groupIndex === null}
+                              onClick={() => groupIndex !== null && setSlideIndex(groupIndex)}
+                            >
+                              {groupIndex === null ? (
+                                <span>Вся колода</span>
+                              ) : (
+                                <>
+                                  <span>Слайд {groupIndex + 1}</span>
+                                  {slides[groupIndex]?.title && (
+                                    <span className="audit-issue-group__title">· {slides[groupIndex].title}</span>
                                   )}
-                                  {issue.fixable && canEdit && (
-                                    <button
-                                      type="button"
-                                      disabled={resolve.isPending}
-                                      onClick={() => {
-                                        if (resolve.isPending) return
-                                        resolve.mutate({ ids: [issue.id], action: 'fix' })
-                                        setOpenMenuIssueId(null)
-                                      }}
-                                    >
-                                      {resolve.isPending ? 'Исправляем…' : 'Исправить автоматически'}
-                                    </button>
-                                  )}
-                                  {canEdit && (
-                                    <button
-                                      type="button"
-                                      disabled={resolve.isPending}
-                                      onClick={() => {
-                                        if (resolve.isPending) return
-                                        resolve.mutate({ ids: [issue.id], action: 'ignore' })
-                                        setOpenMenuIssueId(null)
-                                      }}
-                                    >
-                                      Скрыть замечание
-                                    </button>
-                                  )}
-                                </div>
+                                </>
                               )}
-                            </div>
-                          </div>
-
-                          <p className="audit-issue-desc">{issue.message}</p>
-
-                          <div className="audit-issue-badges">
-                            {issue.slide_index !== null && (
-                              <span className="audit-badge-pill audit-badge-pill--slide">
-                                Слайд {issue.slide_index + 1}
-                              </span>
-                            )}
-                            <span className={clsx('audit-badge-pill', `audit-badge-pill--${issue.severity}`)}>
-                              {SEVERITY_LABELS[issue.severity]}
-                            </span>
-                            <span className="audit-badge-pill audit-badge-pill--kind">
-                              {issue.kind === 'deterministic' ? 'Детерминированная' : 'Контекстуальная'}
-                            </span>
-                            <span className="audit-badge-pill audit-badge-pill--category">
-                              {report.categories[issue.category] ?? issue.category}
-                            </span>
-                          </div>
-
-                          {issue.fixable && (
-                            <div className="audit-issue-autofix">
-                              <CheckSquare size={13} className="audit-issue-autofix-icon" />
-                              <span>Автоисправление: {issue.fix_hint ?? 'доступно'}</span>
-                            </div>
+                              <span className="audit-issue-group__count">{issues.length}</span>
+                            </button>
                           )}
+                          <ul className="audit-issue-group__list">
+                            {issues.map((issue) => (
+                              <li
+                                key={issue.id}
+                                className={clsx('audit-issue-card', activeIssue === issue.id && 'is-active')}
+                                onMouseEnter={() => setActiveIssue(issue.id)}
+                                onMouseLeave={() => setActiveIssue(null)}
+                                onClick={() => {
+                                  if (issue.slide_index !== null) setSlideIndex(issue.slide_index)
+                                  setActiveIssue(issue.id)
+                                }}
+                              >
+                                <div className="audit-issue-card__header">
+                                  <div className="audit-issue-card__title-row">
+                                    {canEdit && (
+                                      <label
+                                        className={clsx('audit-custom-checkbox', checked.has(issue.id) && 'is-checked')}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          className="audit-custom-checkbox__input"
+                                          checked={checked.has(issue.id)}
+                                          onChange={() => toggle(issue.id)}
+                                          aria-label="Выбрать"
+                                        />
+                                        <span className="audit-custom-checkbox__box" aria-hidden="true">
+                                          {checked.has(issue.id) && <Check size={11} strokeWidth={3.2} color="#ffffff" />}
+                                        </span>
+                                      </label>
+                                    )}
+                                    <div className="audit-issue-severity-icon" title={SEVERITY_LABELS[issue.severity]}>
+                                      <SeverityIcon severity={issue.severity} />
+                                    </div>
+                                    <strong className="audit-issue-title">{issue.check_title}</strong>
+                                  </div>
+                                  <span className="audit-badge-pill audit-badge-pill--category">
+                                    {report.categories[issue.category] ?? issue.category}
+                                  </span>
+                                </div>
+
+                                <p className="audit-issue-desc">{issue.message}</p>
+
+                                {notFixed.has(issue.id) && (
+                                  <p className="audit-issue-notfixed">
+                                    <TriangleAlert size={13} />
+                                    <span>{notFixed.get(issue.id)}</span>
+                                  </p>
+                                )}
+
+                                {canEdit && (
+                                  <div className="audit-issue-actions" onClick={(e) => e.stopPropagation()}>
+                                    {issue.fixable && (
+                                      <button
+                                        type="button"
+                                        className="audit-issue-action audit-issue-action--fix"
+                                        title={issue.fix_hint ? `Что изменится: ${issue.fix_hint}` : 'Исправить автоматически'}
+                                        disabled={resolve.isPending}
+                                        onClick={() => resolve.mutate({ ids: [issue.id], action: 'fix' })}
+                                      >
+                                        <WandSparkles size={13} className={clsx(resolvingIds.has(issue.id) && 'spin')} />
+                                        <span>{resolvingIds.has(issue.id) ? 'Исправляем…' : 'Исправить'}</span>
+                                      </button>
+                                    )}
+                                    {issue.slide_index !== null && (
+                                      <button
+                                        type="button"
+                                        className="audit-issue-action"
+                                        title="Открыть слайд в Студии и поправить вручную"
+                                        onClick={() => openStudio(issue.slide_index!)}
+                                      >
+                                        <Pencil size={13} />
+                                        <span>В Студии</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="audit-issue-action audit-issue-action--quiet"
+                                      title="Скрыть замечание — оно не вернётся при следующих проверках"
+                                      disabled={resolve.isPending}
+                                      onClick={() => resolve.mutate({ ids: [issue.id], action: 'ignore' })}
+                                    >
+                                      <Ban size={13} />
+                                      <span>Скрыть</span>
+                                    </button>
+                                  </div>
+                                )}
+                                {issue.fixable && issue.fix_hint && canEdit && (
+                                  <p className="audit-issue-autofix">Исправление: {issue.fix_hint}</p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
                         </li>
                       ))}
                     </ul>
@@ -785,42 +836,44 @@ function AuditWorkspace({
 
                   {(canEdit || resolvedIssues.length > 0) && (
                     <div className="audit-panel-footer">
-                      {canEdit && (
+                      {canEdit && (checkedIds.length > 0 || fixableVisible.length > 0) && (
                         <div className="audit-bottom-actions-panel">
-                          <button
-                            type="button"
-                            className="audit-select-fixable-link"
-                            disabled={fixableVisible.length === 0}
-                            onClick={() => setChecked(new Set(fixableVisible.map((issue) => issue.id)))}
-                          >
-                            Выбрать исправимые ({fixableVisible.length})
-                          </button>
-                          <div className="audit-action-buttons-row">
+                          {checkedIds.length > 0 ? (
+                            <div className="audit-action-buttons-row">
+                              <button
+                                type="button"
+                                className="audit-btn-hide"
+                                disabled={resolve.isPending}
+                                onClick={() => resolve.mutate({ ids: checkedIds, action: 'ignore' })}
+                              >
+                                <Ban size={15} />
+                                <span>Скрыть ({checkedIds.length})</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="audit-btn-fix"
+                                disabled={resolve.isPending || checkedFixable.length === 0}
+                                title={checkedFixable.length === 0 ? 'Среди выбранных нет исправимых автоматически' : undefined}
+                                onClick={() => resolve.mutate({ ids: checkedFixable, action: 'fix' })}
+                              >
+                                <WandSparkles size={15} className={clsx(resolve.isPending && 'spin')} />
+                                <span>{resolve.isPending ? 'Исправляем…' : `Исправить (${checkedFixable.length})`}</span>
+                              </button>
+                            </div>
+                          ) : (
                             <button
                               type="button"
-                              className="audit-btn-hide"
-                              disabled={checkedIds.length === 0 || resolve.isPending}
-                              onClick={() => {
-                                if (resolve.isPending || checkedIds.length === 0) return
-                                resolve.mutate({ ids: checkedIds, action: 'ignore' })
-                              }}
-                            >
-                              <Ban size={15} />
-                              <span>Скрыть</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="audit-btn-fix"
-                              disabled={checkedIds.length === 0 || resolve.isPending}
-                              onClick={() => {
-                                if (resolve.isPending || checkedIds.length === 0) return
-                                resolve.mutate({ ids: checkedIds, action: 'fix' })
-                              }}
+                              className="audit-btn-fix audit-btn-fix--wide"
+                              disabled={resolve.isPending}
+                              title="Исправить автоматически все показанные замечания, для которых это возможно"
+                              onClick={() => resolve.mutate({ ids: fixableVisible.map((issue) => issue.id), action: 'fix' })}
                             >
                               <WandSparkles size={15} className={clsx(resolve.isPending && 'spin')} />
-                              <span>{resolve.isPending ? 'Исправляем…' : `Исправить (${checkedIds.length})`}</span>
+                              <span>
+                                {resolve.isPending ? 'Исправляем…' : `Исправить всё, что можно (${fixableVisible.length})`}
+                              </span>
                             </button>
-                          </div>
+                          )}
                         </div>
                       )}
 

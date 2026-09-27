@@ -69,6 +69,8 @@ class AuditReport(BaseModel):
     checks: list[CheckOut]
     # Модель-судья контекстуальных проверок (AUDIT_MODEL или LLM_MODEL); None — не подключена.
     judge: str | None = None
+    # Слайды правили после последней проверки: замечания могут не совпадать с текущей версией.
+    stale: bool = False
 
 
 class ResolveRequest(BaseModel):
@@ -76,10 +78,18 @@ class ResolveRequest(BaseModel):
     action: Literal["fix", "ignore"] = "fix"
 
 
+class NotFixed(BaseModel):
+    """Замечание, которое исправить не вышло: id открытого замечания после перепроверки и причина."""
+
+    issue_id: uuid.UUID
+    reason: str
+
+
 class ResolveResponse(BaseModel):
     applied: int
     report: AuditReport
     variant: VariantOut
+    not_fixed: list[NotFixed] = Field(default_factory=list)
 
 
 class RegenerateSlideResponse(ResolveResponse):

@@ -23,7 +23,7 @@ from app.pipeline.content.image_matcher import assign_content_images_to_drafts
 from app.pipeline.content.ingest import sources_digest
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
-from app.pipeline.layout.composer import assign_layouts, compose_single_variant
+from app.pipeline.layout.composer import assign_layouts, compose_single_variant, relayout_edited_slide
 from app.pipeline.layout.matcher import assign_patterns
 from app.pipeline.planning.editor import EditError, edit_slide
 from app.pipeline.planning.outline import build_outline, group_labels
@@ -111,12 +111,19 @@ async def get_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> 
 
 
 @router.post("/{variant_id}/audit/run", response_model=AuditReport)
-async def rerun_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession) -> AuditReport:
-    """Перезапуск аудита: судья проверяет слайды без вердикта (новые, изменённые, прошлые неответы)."""
+async def rerun_audit(variant_id: uuid.UUID, user: CurrentUser, db: DbSession, arq: Arq) -> AuditReport:
+    """Перезапуск аудита: судья проверяет слайды без вердикта (новые, изменённые, прошлые неответы).
+    Если превью ещё перерисовывается после правок, проверки по рендеру догонят, когда рендер закончится."""
     variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    ctx = await build_audit_context(db, presentation, presentation.template)
+    template = presentation.template
+    ctx = await build_audit_context(db, presentation, template)
     await review_variant(variant, ctx)
     await refresh_audit(db, variant, ctx)
+    if not await schedule_render(db, arq, variant, template, audit=True):
+        renders = variant.renders or {}
+        if renders.get("status") == "pending":
+            # Рендер уже в очереди без аудита — просим задачу проверить колоду, когда она закончит.
+            variant.renders = {**renders, "audit": True}
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="audit")
     return await audit_report(db, variant)
@@ -129,12 +136,13 @@ async def resolve(
     variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
     template = presentation.template
     ctx = await build_audit_context(db, presentation, template)
-    applied = await resolve_issues(db, variant, payload.issue_ids, payload.action, ctx, template)
+    applied, not_fixed = await resolve_issues(db, variant, payload.issue_ids, payload.action, ctx, template)
     await schedule_render(db, arq, variant, template, audit=True)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="audit")
     return ResolveResponse(
         applied=applied,
+        not_fixed=not_fixed,
         report=await audit_report(db, variant),
         variant=await _variant_payload(db, variant, presentation),
     )
@@ -247,6 +255,12 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     return await _variant_payload(db, variant, presentation)
 
 
+async def _after_manual_edit(db, arq, variant, presentation, template) -> None:
+    """После ручной правки слайдов только перерендер превью. Аудит сам не перезапускается — только по кнопке
+    «Перезапустить аудит»; до тех пор отчёт помечен как устаревший (AuditReport.stale)."""
+    await schedule_render(db, arq, variant, template)
+
+
 @router.patch("/{variant_id}/slides/{slide_id}", response_model=ResolveResponse)
 async def update_slide(
     variant_id: uuid.UUID,
@@ -271,15 +285,13 @@ async def update_slide(
             "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
             "element_fonts", "element_scales", "element_boxes", "element_crops",
             "block_density", "background_color", "text_color", "accent_color", "element_colors",
-            "element_backgrounds", "element_bolds", "element_aligns", "is_bold", "text_background_color",
+            "element_backgrounds", "element_bolds", "element_aligns", "element_radii", "is_bold", "text_background_color",
             "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
         ):
             setattr(slide, field, val)
 
     variant.slides = [s.model_dump(mode="json") for s in slides]
-    # При ручном редактировании НЕ запускаем повторный аудит: пользователь сам решает,
-    # какой текст и стиль ему нужен, и система не должна критиковать его правки.
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -329,7 +341,7 @@ async def update_all_slides(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Презентация должна содержать хотя бы один слайд")
 
     variant.slides = [s.model_dump(mode="json") for s in payload.slides]
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -368,7 +380,7 @@ async def create_slide(
         slides.append(new_slide)
 
     variant.slides = [s.model_dump(mode="json") for s in slides]
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -408,7 +420,7 @@ async def duplicate_slide(
     slides.insert(target_idx + 1, duplicated_slide)
 
     variant.slides = [s.model_dump(mode="json") for s in slides]
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -440,7 +452,7 @@ async def delete_slide(
 
     slides.pop(target_idx)
     variant.slides = [s.model_dump(mode="json") for s in slides]
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -476,7 +488,7 @@ async def reorder_slides(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный список идентификаторов слайдов")
 
     variant.slides = [s.model_dump(mode="json") for s in reordered]
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -531,7 +543,7 @@ async def upload_slide_image(
         target.kind = "image_text"
 
     variant.slides = [s.model_dump(mode="json") for s in slides]
-    await schedule_render(db, arq, variant, template)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -610,8 +622,7 @@ async def regenerate_slide(
             result.slide, template.patterns, template.layout_roles or {}, template.layouts or [], position=variant.position
         )
     variant.slides = [s.model_dump(mode="json") for s in slides]
-    await refresh_audit(db, variant, ctx)
-    await schedule_render(db, arq, variant, template, audit=True)
+    await _after_manual_edit(db, arq, variant, presentation, template)
     await db.commit()
     await publish_presentation_update(redis_client, presentation.id, kind="slide")
 
@@ -621,14 +632,6 @@ async def regenerate_slide(
         report=await audit_report(db, variant),
         variant=await _variant_payload(db, variant, presentation),
     )
-
-
-def relayout_edited_slide(slide: Slide, patterns, roles: dict, layouts: list, *, position: int = 0) -> None:
-    """После правки моделью новый текст мог перестать помещаться в паттерн — тогда слайду подбирается другой.
-    Остальные слайды колоды не менялись, их вёрстку не трогаем. Не вызывается, если паттерн выбрал пользователь."""
-    names = {layout["key"]: layout["name"] for layout in layouts}
-    assign_layouts([slide], roles, names)
-    assign_patterns([slide], patterns, position=position, layout_names=names, keep=True)
 
 
 DEFAULT_INSTRUCTION = "Улучши слайд: заголовок — вывод, тезисы короче и конкретнее, без воды"

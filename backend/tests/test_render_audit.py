@@ -132,6 +132,22 @@ def test_template_conformance():
     assert "integrity.raster_slide" in found
 
 
+def test_user_styling_is_not_criticized():
+    """Шрифт, кегль и цвет, выбранные в редакторе, — осознанный выбор: проверки шаблона их не критикуют."""
+    facts = {"fonts": ["Comic Sans MS"], "colors": ["#FF00AA"], "sizes": [20.0, 17.3]}
+    styled = slide(
+        element_fonts={"title": "Comic Sans MS"},
+        element_scales={"title": 1.3},
+        element_colors={"title": "#FF00AA"},
+    )
+    found, _ = audit([styled], {"s1": page(CLEAN_LINES, {"title": TITLE, "bullets": BODY}, **facts)})
+    for check_id in ("template.fonts", "template.font_sizes", "template.palette"):
+        assert check_id not in found, f"{check_id} критикует оформление пользователя"
+    # Тот же слайд без правок оформления — замечания на месте.
+    found, _ = audit([slide()], {"s1": page(CLEAN_LINES, {"title": TITLE, "bullets": BODY}, **facts)})
+    assert {"template.fonts", "template.font_sizes", "template.palette"} <= set(found)
+
+
 def test_text_squeezed_below_type_scale():
     found, _ = audit([slide()], {"s1": page(CLEAN_LINES, {"title": TITLE, "bullets": BODY}, sizes=[6.0, 20.0])})
     assert "мельче шкалы шаблона" in found["template.font_sizes"][0].message
@@ -196,3 +212,59 @@ def test_real_render_lines(deck_parts):
         lines = text_lines(doc[0])
     assert any("подготовку" in item["text"] for item in lines)
     assert all(-0.01 <= item["bbox"][0] <= 1.01 for item in lines)
+
+
+def test_template_design_is_not_criticized_but_user_moves_are():
+    """Слайд из шаблона: где стоят его элементы, решил дизайнер — «картинка в обрез» не ошибка.
+    Тот же элемент, сдвинутый пользователем за край, — ошибка."""
+    from app.pipeline.audit.geometry import user_placed
+
+    bleed = {"image": [0.55, -0.05, 0.5, 1.1]}  # картинка слайда-примера «в обрез»
+    lines = [line("Сервис сокращает подготовку колоды", 0.07, 0.10, 0.50, 0.16, 32)]
+    template_slide = slide(pattern_id="s19")
+    found, _ = audit([template_slide], {"s1": page(lines, {"title": TITLE, **bleed})})
+    assert "layout.out_of_bounds" not in found
+
+    moved = slide(pattern_id="s19", element_boxes={"image": [0.55, -0.05, 0.5, 1.1]})
+    found, _ = audit([moved], {"s1": page(lines, {"title": TITLE, **bleed})})
+    assert "layout.out_of_bounds" in found
+
+    assert user_placed(slide(), "title"), "слайд на макете вёрстает сборка — проверяется"
+    assert not user_placed(template_slide, "title")
+    assert user_placed(slide(pattern_id="s1", element_boxes={"content": [0, 0, 1, 1]}), "bullets")
+    assert user_placed(template_slide, "image.2"), "плавающее фото добавил пользователь"
+
+
+@pytest.mark.skipif(not libreoffice_available(), reason="LibreOffice не установлен")
+def test_clean_template_deck_has_no_layout_findings(parsed):
+    """Эталон: колода, собранная сервисом на шаблоне без правок, не получает замечаний по положению
+    и оформлению уровня error/warning — иначе аудит ругает дизайн самого шаблона."""
+    from app.pipeline.audit.catalog import catalog_by_id
+    from tests.test_patterns import compose
+
+    path, result = parsed
+    theme = slide_theme(result.tokens, result.layouts, result.roles)
+    slides = compose(parsed)[0].slides
+    deck = build_deck(path, slides, roles=result.roles, theme=theme, patterns=result.patterns, strict=False)
+    renders = {}
+    with pymupdf.open(stream=pptx_to_pdf(deck.data), filetype="pdf") as doc:
+        for index, (spec, pdf_page) in enumerate(zip(slides, doc)):
+            facts = dict(deck.facts[index], lines=text_lines(pdf_page))
+            renders[spec.id] = {"facts": facts, "targets": deck.targets[index]}
+    ctx = AuditContext(
+        theme=theme,
+        layout_keys={layout["key"] for layout in result.layouts},
+        limits=limits(),
+        tokens=result.tokens,
+        inventory=template_inventory(path),
+        renders=renders,
+        render_status="ready",
+    )
+    catalog = catalog_by_id()
+    results, _ = run_checks(slides, ctx)
+    noisy = [
+        f"{r.check.id}: {r.finding.message}"
+        for r in results
+        if catalog[r.check.id].method == "render" and r.check.severity in {"error", "warning"}
+    ]
+    assert not noisy, noisy

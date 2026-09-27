@@ -56,6 +56,19 @@ def check(check_id: str) -> Callable[[CheckFn], CheckFn]:
 # --- помощники ------------------------------------------------------------------
 
 
+def user_styled(slide: Slide, prop: str) -> bool:
+    """Пользователь сам задал оформление в редакторе: шрифт (font), кегль (size) или цвет (color).
+    Проверки соответствия шаблону такие слайды не критикуют — это осознанный выбор, а не ошибка сборки."""
+    if prop == "font":
+        return bool(slide.font_family or slide.element_fonts)
+    if prop == "size":
+        return any(scale != 1 for scale in (slide.element_scales or {}).values())
+    if prop == "color":
+        own_colors = any(shape.template_shape_id is None and shape.color for shape in slide.shapes or [])
+        return bool(slide.text_color or slide.element_colors or own_colors)
+    return False
+
+
 def bullet_items(slide: Slide) -> Iterator[tuple[str, str]]:
     for i, bullet in enumerate(slide.bullets):
         yield f"bullets.{i}", bullet

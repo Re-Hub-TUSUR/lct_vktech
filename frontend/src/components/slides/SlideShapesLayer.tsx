@@ -162,7 +162,7 @@ export function SlideShapesLayer({
         onPointerDown={(e) => handleShapePointerDown(e, shape)}
       >
         {isImage && shape.image_url ? (
-          <CroppedImage url={shape.image_url} crop={shape.crop} box={[shape.x, shape.y, shape.width, shape.height]} slideAspect={aspect} />
+          <CroppedImage url={shape.image_url} crop={shape.crop} box={[shape.x, shape.y, shape.width, shape.height]} slideAspect={aspect} radius={shape.radius} />
         ) : (
           !isLine &&
           (shape.text || editingTextId === shape.id) && (

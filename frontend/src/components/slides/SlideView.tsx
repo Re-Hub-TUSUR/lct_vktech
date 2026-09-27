@@ -716,6 +716,7 @@ function InteractiveSlideView({
             crop={slide.element_crops?.image}
             box={imageLayerBox}
             slideAspect={theme.aspect || 16 / 9}
+            radius={slide.element_radii?.image}
           />
         </div>
       )}
@@ -1116,6 +1117,7 @@ function SlideContent({
           crop={slide.element_crops?.image}
           box={custom('image')}
           slideAspect={theme.aspect || 16 / 9}
+          radius={slide.element_radii?.image}
         />
       ) : (
         <>

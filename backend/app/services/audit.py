@@ -8,6 +8,8 @@
 """
 
 import asyncio
+import hashlib
+import json
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, replace
@@ -41,10 +43,9 @@ from app.pipeline.audit.review import (
 )
 from app.pipeline.audit.runner import CheckRun, run_checks
 from app.pipeline.export.facts import template_inventory
-from app.pipeline.layout.composer import assign_layouts
-from app.pipeline.layout.matcher import assign_patterns
+from app.pipeline.layout.composer import relayout_edited_slide
 from app.pipeline.planning.outline import purpose_label
-from app.schemas.audit import AuditIssueOut, AuditReport, AuditSummary, CheckOut
+from app.schemas.audit import AuditIssueOut, AuditReport, AuditSummary, CheckOut, NotFixed
 from app.schemas.slide import Slide
 from app.services.renders import render_salt, renders_supported, slide_facts_by_id
 from app.services.templates import template_theme
@@ -181,6 +182,11 @@ def _fixable(check: CheckInfo, finding: Finding) -> bool:
     return check.id in FIXES
 
 
+def slides_hash(slides: list) -> str:
+    """Отпечаток содержимого слайдов: по нему отчёт понимает, что слайды правили после проверки."""
+    return hashlib.sha1(json.dumps(slides or [], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 async def refresh_audit(db: AsyncSession, variant: Variant, ctx: AuditContext) -> AuditOutcome:
     """Перезапускает проверки: открытые проблемы пересоздаются, игнорированные не возвращаются."""
     ignored = set(
@@ -216,6 +222,7 @@ async def refresh_audit(db: AsyncSession, variant: Variant, ctx: AuditContext) -
         "judge": ctx.judge,
         "checks": {check_id: {"state": run.state, "note": run.note} for check_id, run in runs.items()},
         "checked_at": utcnow().isoformat(),
+        "slides_hash": slides_hash(variant.slides),
     }
     await db.flush()
     return AuditOutcome(runs=runs, open_issues=open_issues)
@@ -228,7 +235,8 @@ async def resolve_issues(
     action: str,
     ctx: AuditContext,
     template: Template | None,
-) -> int:
+) -> tuple[int, list[NotFixed]]:
+    """Скрывает или исправляет замечания. Возвращает число действительно исправленных и те, что остались."""
     generation = await db.get(Generation, variant.generation_id)
     if generation is not None:
         snapshot_skills = [
@@ -249,13 +257,16 @@ async def resolve_issues(
         for issue in issues:
             issue.status, issue.resolved_at = "ignored", now
         await db.flush()
-        return len(issues)
+        return len(issues), []
 
     roles = template.layout_roles if template else {}
     content_key = roles.get("content")
+    before = {slide.id: slide.model_dump(mode="json") for slide in load_slides(variant)}
     content_name = next((l["name"] for l in (template.layouts if template else []) if l["key"] == content_key), None)
-    refs = [IssueRef(str(i.id), i.check_id, i.slide_id, i.target, i.evidence, i.message) for i in issues if i.fixable]
     catalog = catalog_by_id()
+    # Исправимость — по текущему состоянию (модель подключена или нет), а не по флагу из прошлой проверки.
+    fixable = {str(i.id) for i in issues if i.check_id in catalog and _fixable(catalog[i.check_id], i)}
+    refs = [IssueRef(str(i.id), i.check_id, i.slide_id, i.target, i.evidence, i.message) for i in issues if str(i.id) in fixable]
     slides = load_slides(variant)
     applied: list[str] = []
     # Сначала текст, который пишет модель, потом правила: разбить слайд, удалить дубликат и т. п.
@@ -282,11 +293,13 @@ async def resolve_issues(
     applied += by_rules
     apply_custom_style_rules(slides, ctx.custom_skills)
     if template is not None:
-        # После правок содержимое могло перестать помещаться в паттерн (или начать помещаться в другой):
-        # подходящие паттерны сохраняются, остальные слайды подбираются заново.
-        names = {layout["key"]: layout["name"] for layout in template.layouts or []}
-        assign_layouts(slides, roles, names)
-        assign_patterns(slides, template.patterns, position=variant.position, layout_names=names, keep=True)
+        # После правки содержимое могло перестать помещаться в паттерн — вёрстка подбирается заново, но только
+        # у слайдов, которые правка изменила: соседей и выбранные пользователем макеты не трогаем.
+        for slide in slides:
+            if before.get(slide.id) != slide.model_dump(mode="json"):
+                relayout_edited_slide(
+                    slide, template.patterns, roles, template.layouts or [], position=variant.position
+                )
     variant.slides = [slide.model_dump(mode="json") for slide in slides]
     applied_ids = set(applied)
     for issue in issues:
@@ -294,7 +307,28 @@ async def resolve_issues(
             issue.status, issue.resolved_at = "fixed", now
     await db.flush()
     await refresh_audit(db, variant, ctx)
-    return len(applied_ids)
+
+    # Честный итог: если после правки проверка снова находит то же самое (тот же отпечаток), замечание
+    # не исправлено — «исправленная» запись удаляется, остаётся открытое замечание с причиной.
+    still_open = {
+        issue.fingerprint: issue
+        for issue in await db.scalars(
+            select(AuditIssue).where(AuditIssue.variant_id == variant.id, AuditIssue.status == "open")
+        )
+    }
+    not_fixed: list[NotFixed] = []
+    for issue in issues:
+        reopened = still_open.get(issue.fingerprint)
+        if reopened is None:
+            continue
+        if str(issue.id) in applied_ids:
+            applied_ids.discard(str(issue.id))
+            await db.delete(issue)
+            not_fixed.append(NotFixed(issue_id=reopened.id, reason="После правки проверка снова находит эту проблему"))
+        elif str(issue.id) in fixable:
+            not_fixed.append(NotFixed(issue_id=reopened.id, reason="Автоматически исправить не удалось — поправьте в Студии"))
+    await db.flush()
+    return len(applied_ids), not_fixed
 
 
 async def issue_counts(db: AsyncSession, variant_ids: list[uuid.UUID]) -> dict[uuid.UUID, Counter[str]]:
@@ -383,7 +417,8 @@ async def audit_report(db: AsyncSession, variant: Variant) -> AuditReport:
                 message=i.message,
                 target=i.target,
                 evidence=i.evidence,
-                fixable=i.fixable,
+                # Считается сейчас, а не при проверке: подключили модель — «Исправить» появляется сразу.
+                fixable=i.status == "open" and i.check_id in catalog and _fixable(catalog[i.check_id], i),
                 fix_hint=catalog[i.check_id].fix if i.check_id in catalog else None,
                 status=i.status,
                 created_at=i.created_at,
@@ -393,4 +428,6 @@ async def audit_report(db: AsyncSession, variant: Variant) -> AuditReport:
         ],
         checks=checks,
         judge=review.get("judge"),
+        # Аудит не перезапускается сам после ручных правок — отчёт подсказывает, что он устарел.
+        stale=bool(review.get("slides_hash")) and review["slides_hash"] != slides_hash(variant.slides),
     )
