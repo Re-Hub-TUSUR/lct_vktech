@@ -2,6 +2,8 @@ import clsx from 'clsx'
 import { useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 
 import type { SlideShape, SlideTheme } from '../../api/types'
+import { applyFrameCrop, frameAspect, knownSize, visibleRegion } from '../../lib/imageCrop'
+import { CroppedImage } from './CroppedImage'
 import { TransformFrame } from './TransformFrame'
 
 interface SlideShapesLayerProps {
@@ -139,11 +141,6 @@ export function SlideShapesLayer({
     const isImage = shape.kind === 'image'
     const template = isTemplateShape(shape)
     const fill = shape.color || theme.accent
-    const crop = shape.crop || [0, 0, 0, 0]
-    const clipPath = crop.some((v) => v > 0)
-      ? `inset(${crop[0] * 100}% ${crop[1] * 100}% ${crop[2] * 100}% ${crop[3] * 100}%)`
-      : undefined
-
     return (
       <div
         key={shape.id}
@@ -160,17 +157,12 @@ export function SlideShapesLayer({
           opacity: template ? shape.opacity ?? 1 : 1,
           borderRadius: cornerRadius(shape, aspect),
           border: shape.border ? '2px solid var(--slide-text)' : undefined,
-          clipPath,
+          overflow: isImage ? 'hidden' : undefined,
         }}
         onPointerDown={(e) => handleShapePointerDown(e, shape)}
       >
         {isImage && shape.image_url ? (
-          <img
-            src={shape.image_url}
-            alt=""
-            draggable={false}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          />
+          <CroppedImage url={shape.image_url} crop={shape.crop} box={[shape.x, shape.y, shape.width, shape.height]} slideAspect={aspect} />
         ) : (
           !isLine &&
           (shape.text || editingTextId === shape.id) && (
@@ -215,6 +207,9 @@ export function SlideShapesLayer({
           box={[selectedShape.x, selectedShape.y, selectedShape.width, selectedShape.height]}
           previewTarget={`shape:${selectedShape.id}`}
           dragAnywhere
+          lockAspect={selectedShape.kind === 'image'}
+          // Линия — это длина: высоту рамки не меняем, иначе она превращается в плашку.
+          handleSet={selectedShape.kind === 'line' ? ['e', 'w'] : undefined}
           isImage={selectedShape.kind === 'image'}
           canCrop={selectedShape.kind === 'image'}
           crop={selectedShape.crop}
@@ -230,7 +225,14 @@ export function SlideShapesLayer({
           onUpdateBox={(newBox) =>
             onUpdateShape?.(selectedShape.id, { x: newBox[0], y: newBox[1], width: newBox[2], height: newBox[3] })
           }
-          onUpdateCrop={(newCrop) => onUpdateShape?.(selectedShape.id, { crop: newCrop })}
+          onUpdateCrop={(frameCrop) => {
+            // Модель PowerPoint: рамка фигуры сужается до видимой части, обрезка — ровно эта часть исходника.
+            const shapeBox: [number, number, number, number] = [selectedShape.x, selectedShape.y, selectedShape.width, selectedShape.height]
+            const region = visibleRegion(selectedShape.crop, knownSize(selectedShape.image_url), frameAspect(shapeBox, aspect))
+            const next = applyFrameCrop(shapeBox, frameCrop, region)
+            onUpdateShape?.(selectedShape.id, { crop: next.crop, x: next.box[0], y: next.box[1], width: next.box[2], height: next.box[3] })
+          }}
+          onResetCrop={() => onUpdateShape?.(selectedShape.id, { crop: null })}
           onToggleCrop={() => setCroppingShapeId((prev) => (prev === selectedShape.id ? null : selectedShape.id))}
           onCloseCrop={() => setCroppingShapeId(null)}
           onDelete={!isTemplateShape(selectedShape) ? () => onDeleteShape?.(selectedShape.id) : undefined}

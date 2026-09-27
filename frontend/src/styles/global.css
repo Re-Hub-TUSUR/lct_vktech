@@ -748,7 +748,6 @@ select {
   border-radius: 7px;
 }
 
-
 /* ===== Бейджи ===== */
 .badge {
   display: inline-flex;
@@ -2277,6 +2276,17 @@ a:hover > .template-card,
 .variant-card__reroll:active:not(:disabled) {
   transform: scale(0.95);
 }
+/* Тёмная тема: кнопка инвертирована — тёмная подложка и светлая иконка (иначе светлая иконка на белом не видна). */
+[data-theme='dark'] .variant-card__reroll {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(25, 29, 36, 0.92);
+  color: #f3f5f8;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+[data-theme='dark'] .variant-card__reroll:hover:not(:disabled) {
+  background: var(--color-surface-strong);
+  color: var(--color-primary);
+}
 .variant-card__tip {
   position: absolute;
   top: calc(100% + 12px);
@@ -2466,20 +2476,7 @@ a:hover > .template-card,
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
 }
 /* Панель инструментов редактирования а-ля Canva (заменяет аудит сверху) */
-.slide-edit-topbar {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: 10px var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
-  border: 2px solid var(--color-primary);
-  box-shadow: 0 4px 12px rgba(0, 119, 255, 0.12);
-  animation: slideDown 0.18s ease-out;
-}
+
 @keyframes slideDown {
   from {
     opacity: 0;
@@ -2490,149 +2487,6 @@ a:hover > .template-card,
     transform: translateY(0);
   }
 }
-.slide-edit-topbar__left,
-.slide-edit-topbar__right {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-.slide-edit-topbar__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 650;
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  background: var(--color-primary-soft);
-  color: var(--color-primary);
-}
-.slide-edit-history {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-muted);
-}
-.slide-edit-history .icon-btn-tiny {
-  width: 28px;
-  height: 28px;
-}
-.slide-edit-history .icon-btn-tiny:disabled {
-  opacity: .35;
-  cursor: not-allowed;
-}
-.slide-edit-topbar__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.slide-edit-topbar__label {
-  font-size: 13px;
-  color: var(--color-text-muted);
-  font-weight: 500;
-}
-.slide-edit-select {
-  padding: 4px 8px;
-  font-size: 13px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-strong);
-  width: auto;
-}
-.slide-edit-topbar__regenerate-popover {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 200px;
-  z-index: 50;
-  min-width: 380px;
-  padding: var(--space-3);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-}
-
-.slide-edit-shape-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 60;
-  min-width: 200px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.slide-edit-shape-menu__header {
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-text-subtle);
-  padding: 6px 10px 2px;
-}
-.slide-edit-shape-menu__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  background: none;
-  border: none;
-  font-size: 13px;
-  color: var(--color-text);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s;
-}
-.slide-edit-shape-menu__item:hover {
-  background: var(--color-surface-muted);
-}
-.slide-shape-icon-circle {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--color-primary);
-  display: inline-block;
-}
-.slide-shape-icon-badge {
-  width: 18px;
-  height: 10px;
-  border-radius: 9999px;
-  background: var(--color-primary);
-  display: inline-block;
-}
-.slide-shape-icon-rect {
-  width: 14px;
-  height: 14px;
-  border-radius: 3px;
-  background: var(--color-primary);
-  display: inline-block;
-}
-.slide-shape-icon-line {
-  width: 16px;
-  height: 3px;
-  background: var(--color-primary);
-  display: inline-block;
-}
-.slide-edit-topbar__shape-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--color-surface-muted);
-  padding: 4px 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-}
-
 
 .audit-summary__counts,
 .audit-summary-stats {
@@ -2956,21 +2810,6 @@ a:hover > .template-card,
 
   .audit-slides {
     max-height: none;
-  }
-
-  .slide-edit-topbar {
-    padding: 8px;
-    gap: 8px;
-  }
-
-  .slide-edit-topbar__left,
-  .slide-edit-topbar__right {
-    gap: 6px;
-  }
-
-  .slide-edit-topbar__label,
-  .slide-edit-topbar__badge {
-    font-size: 12px;
   }
 
   .audit-panel {
@@ -3303,45 +3142,6 @@ a:hover > .template-card,
 }
 .audit-notes.is-open .audit-notes__inner {
   padding-bottom: 14px;
-}
-
-.audit-speaker-notes-placeholder {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-  font-style: italic;
-}
-
-.audit-speaker-notes-text {
-  margin: 0;
-  font-size: 13.5px;
-  color: var(--color-text-muted);
-  line-height: 1.5;
-  font-weight: 400;
-  font-family: var(--font-sans);
-  white-space: pre-wrap;
-}
-
-.audit-speaker-notes-textarea {
-  display: block;
-  background: transparent;
-  border: 1px dashed var(--color-border-strong);
-  border-radius: 8px;
-  padding: 8px;
-  width: 100%;
-  min-height: 84px;
-  resize: vertical;
-  font-size: 13.5px;
-  font-family: var(--font-sans);
-  color: var(--color-text);
-  font-weight: 400;
-  line-height: 1.5;
-  outline: none;
-}
-
-.audit-speaker-notes-textarea:focus {
-  border-color: var(--color-primary);
-  background: var(--color-surface);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5429,8 +5229,6 @@ a:hover > .template-card,
   text-decoration: underline;
 }
 
-
-
 /* Полноэкранный показ всей презентации (кнопка «на весь экран» в аудите) */
 .slideshow {
   position: fixed;
@@ -7001,4 +6799,89 @@ span.gslides-title-input:hover {
   min-height: 0;
   overflow-y: auto;
   padding: 12px;
+}
+
+/* Панель выбранной фигуры в Студии */
+.gslides-shape-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-border);
+}
+.gslides-shape-bar__select,
+.gslides-shape-bar__text {
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 12px;
+}
+.gslides-shape-bar__text {
+  width: 130px;
+}
+.gslides-shape-bar__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Заметки докладчика на аудите: сворачиваются, только просмотр */
+.audit-notes {
+  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.audit-notes__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.audit-notes__toggle:hover {
+  color: var(--color-text);
+}
+.audit-notes__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+.audit-notes__text {
+  margin: 0;
+  padding: 0 12px 10px 32px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.audit-notes__text.is-empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+.audit-editor-toggle-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.audit-editor-toggle-btn--primary:hover {
+  filter: brightness(1.08);
 }

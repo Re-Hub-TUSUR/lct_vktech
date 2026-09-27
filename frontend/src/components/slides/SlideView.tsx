@@ -14,6 +14,8 @@ import {
 import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
 import { capacity, exportView, frameTarget } from '../../lib/exportSupport'
 import { fitFontSize } from '../../lib/fit'
+import { applyFrameCrop, frameAspect, knownSize, visibleRegion } from '../../lib/imageCrop'
+import { CroppedImage } from './CroppedImage'
 import { SlideChart } from './SlideChart'
 import { SlideShapesLayer } from './SlideShapesLayer'
 import { TransformFrame } from './TransformFrame'
@@ -58,7 +60,11 @@ interface SlideViewProps {
   onDeleteChart?: () => void
   onUpdateElementBox?: (target: string, box: [number, number, number, number]) => void
   onResetElementBox?: (target: string) => void
-  onUpdateElementCrop?: (target: string, crop: [number, number, number, number]) => void
+  /**
+   * Обрезка картинки (модель PowerPoint): crop — обрезка исходника или null (снять), box — новая рамка,
+   * суженная до видимой части. Обе правки приходят вместе, одним шагом истории.
+   */
+  onUpdateElementCrop?: (target: string, crop: [number, number, number, number] | null, box?: [number, number, number, number]) => void
 }
 
 /** Рендер слайда варианта, если превью актуально. */
@@ -140,28 +146,35 @@ function getDroppedTemplateShapeIds(pattern: SlidePattern | undefined, slide: Sl
   return dropped
 }
 
-/**
- * Рамки элементов из последней сборки годятся, только пока список тот же по составу: после вставки
- * или удаления пункта у нового элемента рамки нет, а номера остальных сдвинулись. Тогда рамки
- * отдельных пунктов отбрасываются, и список раскладывается потоком в рамке всего блока.
- */
-function matchingTargets(targets: Record<string, FrameRect> | undefined, slide: Slide) {
-  if (!targets) return undefined
-  const lists: Array<[string, number]> = [
-    ['bullets', slide.bullets?.length ?? 0],
-    ['columns', slide.columns?.length ?? 0],
-    ['kpis', slide.kpis?.length ?? 0],
-    ['timeline', slide.timeline?.length ?? 0],
-  ]
-  let result = targets
-  for (const [list, count] of lists) {
-    const unit = new RegExp(`^${list}\\.(\\d+)$`)
-    const keys = Object.keys(targets).filter((key) => unit.test(key))
-    if (keys.length && keys.length !== count) {
-      result = Object.fromEntries(Object.entries(result).filter(([key]) => !unit.test(key)))
-    }
-  }
-  return result
+/** Рамки элементов внутри блока контента from → те же относительные места в блоке to. */
+function remapChildren(targets: Record<string, FrameRect> | undefined, from: FrameRect, to: FrameRect) {
+  if (!targets) return targets
+  const inside = (r: FrameRect) =>
+    r[0] >= from[0] - 0.02 && r[1] >= from[1] - 0.02 && r[0] + r[2] <= from[0] + from[2] + 0.02 && r[1] + r[3] <= from[1] + from[3] + 0.02
+  const sx = to[2] / Math.max(from[2], 0.0001)
+  const sy = to[3] / Math.max(from[3], 0.0001)
+  return Object.fromEntries(
+    Object.entries(targets).map(([key, r]) =>
+      ['title', 'subtitle', 'content'].includes(key) || !inside(r)
+        ? [key, r]
+        : [key, [to[0] + (r[0] - from[0]) * sx, to[1] + (r[1] - from[1]) * sy, r[2] * sx, r[3] * sy] as FrameRect],
+    ),
+  )
+}
+
+/** Всё, от чего зависит раскладка слайда в сборке: рамки рендера верны, только пока это не менялось. */
+function layoutFingerprint(slide: Slide): string {
+  return [
+    slide.kind,
+    slide.pattern_id ?? '',
+    slide.layout_key ?? '',
+    slide.bullets?.length ?? 0,
+    slide.columns?.length ?? 0,
+    slide.kpis?.length ?? 0,
+    slide.timeline?.length ?? 0,
+    slide.image?.url ? 1 : 0,
+    slide.subtitle ? 1 : 0,
+  ].join('|')
 }
 
 const COVER_ROLES = { title: 'cover', section: 'section', closing: 'closing' } as const
@@ -211,10 +224,12 @@ function getElementStyle(target: string, slide: Slide): CSSProperties {
   const scale = slide.element_scales?.[target]
   const color = slide.element_colors?.[target]
   const bold = slide.element_bolds?.[target]
+  const align = slide.element_aligns?.[target]
   if (font) style.fontFamily = `"${font}", var(--slide-heading-font)`
   if (scale && scale !== 1) style.fontSize = `calc(1em * ${scale})`
   if (color) style.color = color
   if (bold != null) style.fontWeight = bold ? 700 : 400
+  if (align) style.textAlign = align
   return style
 }
 
@@ -264,7 +279,11 @@ interface EditCtx {
   focusRef?: { current: string | null }
   /** Элементы списка с этого номера не попадут в экспорт: в слайде-примере меньше мест. */
   overflowFrom?: number
+  /** Оформление поля из правок (шрифт, размер, цвет, жирность, выравнивание) — у каждого текста слайда. */
+  styleOf?: (field: string) => CSSProperties
 }
+
+const INLINE_TAGS = new Set(['span', 'strong', 'b'])
 
 const itemText = (node: HTMLElement) => (node.textContent || '').replace(/\u00a0/g, ' ')
 
@@ -292,8 +311,15 @@ type EditableTextProps = Omit<HTMLAttributes<HTMLElement>, 'children'> & {
  * вставка — только текстом. Пока поле в фокусе, React не трогает его содержимое (иначе при
  * перерисовке текст дублируется или курсор прыгает), а после отмены и повтора обновляет его сам.
  */
-function EditableText({ as: Tag = 'span', field, value, placeholder, edit, children, ...rest }: EditableTextProps) {
+function EditableText({ as: Tag = 'span', field, value, placeholder, edit, children, style, ...rest }: EditableTextProps) {
   const ref = useRef<HTMLElement>(null)
+  const own = edit.styleOf?.(field) ?? {}
+  // Выравнивание действует на блок: строчный элемент (подпись KPI, дата этапа) становится блочным.
+  const merged: CSSProperties = {
+    ...own,
+    ...style,
+    ...(own.textAlign && typeof Tag === 'string' && INLINE_TAGS.has(Tag) ? { display: 'block' } : {}),
+  }
   const { editable, onElementSelect, onFieldChange, onListItem, focusRef } = edit
 
   useLayoutEffect(() => {
@@ -312,7 +338,7 @@ function EditableText({ as: Tag = 'span', field, value, placeholder, edit, child
 
   if (!editable) {
     return (
-      <Tag {...rest}>
+      <Tag {...rest} style={merged}>
         {children}
         {value}
       </Tag>
@@ -327,6 +353,7 @@ function EditableText({ as: Tag = 'span', field, value, placeholder, edit, child
   return (
     <Tag
       {...rest}
+      style={merged}
       ref={ref}
       contentEditable
       suppressContentEditableWarning
@@ -435,22 +462,17 @@ function InteractiveSlideView({
   const slideRef = useRef<HTMLDivElement>(null)
   const [measuredBox, setMeasuredBox] = useState<FrameRect | null>(null)
 
-  // Редактор использует геометрию уже собранного слайда. Кэшируем targets последнего рендера,
-  // чтобы геометрия не сбрасывалась, пока после сохранения идёт фоновый перерендер .pptx.
-  const lastKnownTargetsRef = useRef<Record<string, FrameRect>>({})
+  // Редактор использует геометрию уже собранного слайда. Рендер передают, только пока он собран ровно
+  // из этого слайда; его рамки кэшируются, чтобы геометрия не сбрасывалась, пока после сохранения идёт
+  // фоновый перерендер .pptx. Но кэш годится лишь при той же структуре слайда: после смены типа, шаблона,
+  // картинки или числа элементов старые рамки кладут блоки друг на друга.
+  const fingerprint = layoutFingerprint(slide)
+  const lastKnownTargetsRef = useRef<{ fingerprint: string; targets: Record<string, FrameRect> } | null>(null)
   if (referenceRender?.targets) {
-    lastKnownTargetsRef.current = { ...lastKnownTargetsRef.current, ...referenceRender.targets }
+    lastKnownTargetsRef.current = { fingerprint, targets: referenceRender.targets }
   }
-
-  const effectiveTargets = useMemo(
-    () =>
-      matchingTargets(
-        referenceRender?.targets || (Object.keys(lastKnownTargetsRef.current).length > 0 ? lastKnownTargetsRef.current : undefined),
-        slide,
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [referenceRender, slide.bullets, slide.columns, slide.kpis, slide.timeline],
-  )
+  const cached = lastKnownTargetsRef.current
+  const effectiveTargets = cached && cached.fingerprint === fingerprint ? cached.targets : undefined
   const referenceBodyTarget = contentTargetForKind(slide.kind)
   const referenceBodyBox = useMemo(() => {
     if (!effectiveTargets || !referenceBodyTarget) return undefined
@@ -477,11 +499,15 @@ function InteractiveSlideView({
 
   const displaySlide = useMemo(() => {
     if (!effectiveTargets && !cleanSlideBoxes) return slide
+    // Пользователь сдвинул или растянул блок контента: рамки вложенных элементов из сборки (список,
+    // пункты, картинка «текста с изображением») переезжают вместе с ним — как их разложит сборка.
+    const movedContent = cleanSlideBoxes?.content
+    const reference = movedContent && referenceBodyBox ? remapChildren(effectiveTargets, referenceBodyBox, movedContent) : effectiveTargets
     return {
       ...slide,
       element_boxes: {
         ...(referenceBodyBox ? { content: referenceBodyBox } : {}),
-        ...(effectiveTargets || {}),
+        ...(reference || {}),
         ...(cleanSlideBoxes || {}),
       },
     }
@@ -489,6 +515,15 @@ function InteractiveSlideView({
 
   const pattern = slide.pattern_id && theme?.patterns ? theme.patterns.find((p) => p.id === slide.pattern_id) : undefined
   const droppedShapeIds = useMemo(() => getDroppedTemplateShapeIds(pattern, slide), [pattern, slide])
+
+  // Картинка вне текстовой вёрстки (обложка, слайд-пример с местом под фото): рамка — как у сборки.
+  const imageLayerBox: FrameRect | undefined =
+    slide.image?.url && slide.kind !== 'image_text' && slide.kind !== 'bullets' && (slide.kind === 'title' || pattern)
+      ? ((rawSlide.element_boxes?.image as FrameRect | undefined) ??
+        effectiveTargets?.image ??
+        pattern?.images?.[0]?.bbox ??
+        (slide.kind === 'title' ? [0.06, 0.06, 0.16, 0.08] : [0.55, 0.25, 0.38, 0.55]))
+      : undefined
 
   const layoutKey = slide.layout_key || pattern?.layout_key || undefined
   const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
@@ -561,10 +596,8 @@ function InteractiveSlideView({
     }
 
     const slideElem = slideRef.current
-    // Рамка изображения совпадает с видимым media-слоем, а не с декоративным контейнером слота.
-    const node =
-      (frameKey === 'image' && slideElem.querySelector<HTMLElement>('[data-element-id="image"] img')) ||
-      slideElem.querySelector<HTMLElement>(`[data-element-id="${frameKey}"]`)
+    // Контейнер картинки обрезает её (overflow: hidden) и совпадает с видимой частью; сам <img> бывает больше.
+    const node = slideElem.querySelector<HTMLElement>(`[data-element-id="${frameKey}"]`)
     const slideRect = slideElem.getBoundingClientRect()
     if (node && slideRect.width > 0 && slideRect.height > 0) {
       const rect = node.getBoundingClientRect()
@@ -595,8 +628,17 @@ function InteractiveSlideView({
     onListItem,
     focusRef,
     overflowFrom: cap?.unit === 'items' && cap.used > cap.max ? cap.max : undefined,
+    styleOf: (field) => getElementStyle(field, slide),
   }
   const framed = skin?.frames?.title ? skin : undefined
+  // Кегль заголовка — как у сборки. Своя рамка на слайде-примере: текст ужимается под исходный слот,
+  // а рамка лишь двигается (pattern_fill); на макете — фиксированный кегль шаблона без подгонки (_render).
+  // Без своей рамки — подгонка под рамку, как автоподбор плейсхолдера.
+  const titleFit: FrameRect | null | undefined = rawSlide.element_boxes?.title
+    ? pattern
+      ? (pattern.title?.bbox ?? null)
+      : null
+    : undefined
   return (
     <div
       ref={slideRef}
@@ -628,6 +670,7 @@ function InteractiveSlideView({
       {framed ? (
         <FramedSlide
           slide={displaySlide}
+          titleFit={titleFit}
           skin={framed}
           theme={theme}
           flag={flag}
@@ -650,6 +693,31 @@ function InteractiveSlideView({
         </div>
       )}
 
+      {/* Картинка обложки и слайдов из шаблона, у которых она не входит в текстовую вёрстку:
+          там же, куда её кладёт сборка (pptx_export._place_image), поверх текста и под фигурами пользователя. */}
+      {imageLayerBox && slide.image?.url && (
+        <div
+          data-element-id="image"
+          className={clsx('slide__image-layer', flag('image'))}
+          style={{ ...box(imageLayerBox), zIndex: 2 }}
+          onClick={
+            editable
+              ? (e) => {
+                  e.stopPropagation()
+                  onElementSelect?.('image')
+                }
+              : undefined
+          }
+        >
+          <CroppedImage
+            url={slide.image.url}
+            crop={slide.element_crops?.image}
+            box={imageLayerBox}
+            slideAspect={theme.aspect || 16 / 9}
+          />
+        </div>
+      )}
+
       <SlideShapesLayer
         shapes={effectiveShapes}
         theme={theme}
@@ -667,6 +735,7 @@ function InteractiveSlideView({
           box={effectiveBox}
           previewTarget={frame.target}
           resizable={frame.mode === 'resize'}
+          lockAspect={frame.target === 'image'}
           isImage={frame.target === 'image'}
           canCrop={frame.target === 'image' && !!slide.image?.url}
           isCropping={frame.target === 'image' && isCroppingImage}
@@ -674,7 +743,16 @@ function InteractiveSlideView({
           label={getElementLabel(frame.target)}
           hasCustomPosition={!!rawSlide.element_boxes?.[frame.target]}
           onUpdateBox={(newBox) => onUpdateElementBox?.(frame.target, newBox)}
-          onUpdateCrop={(newCrop) => onUpdateElementCrop?.(frame.target, newCrop)}
+          onUpdateCrop={(frameCrop) => {
+            const region = visibleRegion(
+              slide.element_crops?.image,
+              knownSize(slide.image?.url),
+              frameAspect(effectiveBox, theme.aspect || 16 / 9),
+            )
+            const next = applyFrameCrop(effectiveBox, frameCrop, region)
+            onUpdateElementCrop?.('image', next.crop, next.box)
+          }}
+          onResetCrop={() => onUpdateElementCrop?.('image', null)}
           onResetBox={() => onResetElementBox?.(frame.target)}
           onToggleCrop={() => setIsCroppingImage((prev) => !prev)}
           onCloseCrop={() => setIsCroppingImage(false)}
@@ -744,7 +822,17 @@ interface LayoutProps {
 }
 
 /** Раскладка по областям макета шаблона. */
-function FramedSlide({ slide, skin, theme, flag, render, edit, onImageClick, onDeleteChart }: LayoutProps & { skin: LayoutSkin }) {
+function FramedSlide({
+  slide,
+  skin,
+  theme,
+  flag,
+  render,
+  edit,
+  onImageClick,
+  onDeleteChart,
+  titleFit,
+}: LayoutProps & { skin: LayoutSkin; titleFit?: FrameRect | null }) {
   const frames = skin.frames
   const cover = isCover(slide)
   const defaultTitleRect: FrameRect = frames?.title || (cover ? [0.08, 0.22, 0.84, 0.32] : [0.06, 0.08, 0.88, 0.14])
@@ -757,7 +845,9 @@ function FramedSlide({ slide, skin, theme, flag, render, edit, onImageClick, onD
   ]
   const subtitleRect: FrameRect = (slide.element_boxes?.['subtitle'] as FrameRect) || defaultSubtitleRect
   const bodyRect: FrameRect = (slide.element_boxes?.['content'] as FrameRect) || frames?.body || [0.06, 0.24, 0.88, 0.66]
-  const size = fitFontSize(slide.title, Math.min(skin.title?.size ?? (cover ? 5 : 3.1), 8), titleRect, theme.aspect)
+  const baseSize = Math.min(skin.title?.size ?? (cover ? 5 : 3.1), 8)
+  // titleFit: undefined — подгонка под рамку заголовка; прямоугольник — под исходный слот; null — без подгонки.
+  const size = titleFit === null ? baseSize : fitFontSize(slide.title, baseSize, titleFit ?? titleRect, theme.aspect)
   const Heading = cover ? 'h1' : 'h2'
 
   return (
@@ -772,7 +862,8 @@ function FramedSlide({ slide, skin, theme, flag, render, edit, onImageClick, onD
           justifyContent: ANCHOR[skin.title?.anchor ?? ''] ?? 'flex-start',
           textAlign: ALIGN[skin.title?.align ?? ''] ?? 'left',
           fontWeight: skin.title?.bold === false ? 400 : 700,
-          overflow: 'hidden',
+          // В своей рамке текст не обрезается: в .pptx он тоже выйдет за её край, пусть это будет видно сразу.
+          overflow: titleFit === undefined ? 'hidden' : 'visible',
         }}
         onClick={selectBlock(edit, 'title')}
       >
@@ -1002,17 +1093,11 @@ function SlideContent({
   const elStyle = (target: string) => getElementStyle(target, slide)
   const custom = (target: string) => slide.element_boxes?.[target] as FrameRect | undefined
 
-  const imageCrop = slide.element_crops?.['image']
-  const imageCropStyle: CSSProperties =
-    imageCrop && imageCrop.some((v) => v > 0)
-      ? { clipPath: `inset(${imageCrop[0] * 100}% ${imageCrop[1] * 100}% ${imageCrop[2] * 100}% ${imageCrop[3] * 100}%)` }
-      : {}
-
   const imageElement = (
     <div
       data-element-id="image"
       className={clsx('slide__image', slide.image?.url && 'slide__image--filled', flag('image'))}
-      style={{ ...placed(custom('image'), containerBox, 15), ...imageCropStyle }}
+      style={{ position: 'relative', overflow: 'hidden', ...placed(custom('image'), containerBox, 15) }}
       onClick={
         editable
           ? (e) => {
@@ -1024,7 +1109,12 @@ function SlideContent({
       }
     >
       {slide.image?.url ? (
-        <img src={slide.image.url} alt="" draggable={false} />
+        <CroppedImage
+          url={slide.image.url}
+          crop={slide.element_crops?.image}
+          box={custom('image')}
+          slideAspect={theme.aspect || 16 / 9}
+        />
       ) : (
         <>
           <ImageIcon />

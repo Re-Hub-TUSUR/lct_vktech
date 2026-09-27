@@ -1505,7 +1505,8 @@
 .slide__custom-block {
   position: absolute;
   box-sizing: border-box;
-  overflow: hidden;
+  /* Как текстовое поле в .pptx: текст, не влезший в рамку, виден, а не обрезан молча. */
+  overflow: visible;
   z-index: 10;
 }
 .slide__custom-block > * {
@@ -1519,4 +1520,13 @@
   opacity: 0.35;
   outline: 1.5px dashed #f59e0b;
   outline-offset: 2px;
+}
+
+/* Картинка вне текстовой вёрстки (обложка, слайд-пример с местом под фото) */
+.slide__image-layer {
+  position: absolute;
+  overflow: hidden;
+}
+.slide--editable .slide__image-layer {
+  cursor: pointer;
 }

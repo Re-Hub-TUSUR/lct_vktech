@@ -1,13 +1,12 @@
-import type { Slide, SlideShape, SlideTheme } from '../api/types'
+import type { Slide, SlideShape, SlideTheme, TextAlign } from '../api/types'
 
 // Что из ручных правок попадает в собранный .pptx (backend/app/pipeline/export/pptx_export.py и pattern_fill.py).
 // Редактор показывает и предлагает только это — иначе превью расходится с экспортом.
 //
-// Слайд по паттерну — клон слайда-примера: типографика и цвета остаются шаблонными, переносятся
-// текст, положение блоков, картинка и фигуры. Слайд на макете собирается заново: у него
-// дополнительно шрифт и цвет текста слайда и оформление заголовка, подзаголовка и тезисов.
+// Оформление текста (шрифт, размер, цвет, жирность, выравнивание) переносится у любого текстового поля —
+// и на слайде из шаблона, и на макете (backend text_style.py). Положение блоков — не у всех: см. boxMode.
 
-export type StyleProp = 'font' | 'scale' | 'color' | 'bold'
+export type StyleProp = 'font' | 'scale' | 'color' | 'bold' | 'align'
 
 /** resize — рамка целиком (положение и размер), move — только сдвиг, null — блок не двигается. */
 export type BoxMode = 'resize' | 'move' | null
@@ -77,18 +76,72 @@ export function frameTarget(
   return null
 }
 
-/** Оформление отдельного элемента (element_fonts, element_scales, element_colors, element_bolds). */
-export function elementStyleSupported(slide: Slide, theme: SlideTheme, target: string, prop: StyleProp): boolean {
-  if (isPatternSlide(slide, theme)) return false
-  if (target === 'title') return true
-  if (target === 'subtitle') return COVER_KINDS.has(slide.kind)
-  if (unitIndex(target, 'bullets') && BULLET_KINDS.has(slide.kind)) return prop === 'font' || prop === 'scale'
-  return false
+/** Текстовое поле, оформление которого переносит сборка (text_style.py на бэкенде). */
+const TEXT_FIELD =
+  /^(title|subtitle|bullets\.\d+|columns\.\d+\.(title|bullets\.\d+)|kpis\.\d+\.(value|label)|timeline\.\d+\.(date|title|text)|quote\.(text|author)|table\.columns\.\d+|table\.rows\.\d+\.\d+|chart\.caption)$/
+
+export function isTextField(target: string): boolean {
+  return TEXT_FIELD.test(target)
+}
+
+/**
+ * Оформление поля (element_fonts, element_scales, element_colors, element_bolds, element_aligns): у любого
+ * текстового поля — и на слайде из шаблона, и на макете. Исключение — подпись диаграммы слайда-примера:
+ * у неё там нет своего текста, подпись рисует сама диаграмма шаблона.
+ */
+export function elementStyleSupported(slide: Slide, theme: SlideTheme, target: string, _prop: StyleProp): boolean {
+  if (!isTextField(target)) return false
+  return !(target === 'chart.caption' && isPatternSlide(slide, theme))
 }
 
 /** Шрифт и цвет текста всего слайда (font_family, text_color). */
-export function slideStyleSupported(slide: Slide, theme: SlideTheme): boolean {
-  return !isPatternSlide(slide, theme)
+export function slideStyleSupported(_slide: Slide, _theme: SlideTheme): boolean {
+  return true
+}
+
+/** Все текстовые поля выделенного: само поле или тексты блока (карточки, этапа, списка, таблицы…). */
+export function textFieldsOf(slide: Slide, target: string): string[] {
+  if (isTextField(target)) return [target]
+  const unit = target.match(/^(columns|kpis|timeline)\.(\d+)$/)
+  if (unit) {
+    const i = Number(unit[2])
+    if (unit[1] === 'columns') {
+      return [`columns.${i}.title`, ...(slide.columns[i]?.bullets ?? []).map((_, j) => `columns.${i}.bullets.${j}`)]
+    }
+    if (unit[1] === 'kpis') return [`kpis.${i}.value`, `kpis.${i}.label`]
+    return [`timeline.${i}.date`, `timeline.${i}.title`, `timeline.${i}.text`]
+  }
+  const bullets = () => slide.bullets.map((_, i) => `bullets.${i}`)
+  const columns = () => slide.columns.flatMap((_, i) => textFieldsOf(slide, `columns.${i}`))
+  const kpis = () => slide.kpis.flatMap((_, i) => textFieldsOf(slide, `kpis.${i}`))
+  const timeline = () => slide.timeline.flatMap((_, i) => textFieldsOf(slide, `timeline.${i}`))
+  const table = () =>
+    slide.table
+      ? [
+          ...slide.table.columns.map((_, c) => `table.columns.${c}`),
+          ...slide.table.rows.flatMap((row, r) => row.map((_, c) => `table.rows.${r}.${c}`)),
+        ]
+      : []
+  switch (target) {
+    case 'bullets':
+      return bullets()
+    case 'columns':
+      return columns()
+    case 'kpis':
+      return kpis()
+    case 'timeline':
+      return timeline()
+    case 'table':
+      return table()
+    case 'quote':
+      return ['quote.text', 'quote.author']
+    case 'chart':
+      return ['chart.caption']
+    case 'content':
+      return [...bullets(), ...columns(), ...kpis(), ...timeline(), ...table(), ...(slide.quote ? ['quote.text', 'quote.author'] : [])]
+    default:
+      return []
+  }
 }
 
 function pick<T>(map: Record<string, T> | null | undefined, keep: (key: string) => boolean): Record<string, T> {
@@ -101,18 +154,13 @@ function pick<T>(map: Record<string, T> | null | undefined, keep: (key: string) 
  */
 export function exportView(slide: Slide, theme: SlideTheme): Slide {
   const supports = (prop: StyleProp) => (key: string) => elementStyleSupported(slide, theme, key, prop)
-  const slideStyle = slideStyleSupported(slide, theme)
   const bolds = pick(slide.element_bolds, supports('bold'))
-  // is_bold слайда сборка применяет к заголовку и подзаголовку, а не ко всему тексту.
-  if (slideStyle && slide.is_bold != null) {
-    for (const target of ['title', 'subtitle']) {
-      if (!(target in bolds) && elementStyleSupported(slide, theme, target, 'bold')) bolds[target] = slide.is_bold
-    }
+  // is_bold слайда сборка на макете применяет к заголовку и подзаголовку, а не ко всему тексту.
+  if (slide.is_bold != null && !isPatternSlide(slide, theme)) {
+    for (const target of ['title', 'subtitle']) if (!(target in bolds)) bolds[target] = slide.is_bold
   }
   return {
     ...slide,
-    font_family: slideStyle ? slide.font_family : null,
-    text_color: slideStyle ? slide.text_color : null,
     font_size_scale: null,
     text_background_color: null,
     background_color: null,
@@ -123,6 +171,7 @@ export function exportView(slide: Slide, theme: SlideTheme): Slide {
     element_scales: pick(slide.element_scales, supports('scale')),
     element_colors: pick(slide.element_colors, supports('color')),
     element_bolds: bolds,
+    element_aligns: pick(slide.element_aligns, supports('align')),
   }
 }
 
@@ -131,49 +180,65 @@ export interface Typography {
   canScale: boolean
   canColor: boolean
   canBold: boolean
-  /** Адрес элемента для element_*; null — правка всего слайда или фигуры. */
-  element: string | null
+  canAlign: boolean
+  /** Поля, к которым применяется правка (element_*); пусто — правка всего слайда или фигуры. */
+  elements: string[]
   font: string
   scale: number
+  color: string | null
+  bold: boolean
+  align: TextAlign | null
   /** Почему инструменты недоступны. */
   hint?: string
 }
 
-/** Что из типографики можно менять у выделенного: фигуры, текстового поля или слайда целиком. */
+/** Что из типографики можно менять у выделенного: фигуры, текстового поля, блока или слайда целиком. */
 export function typographyTarget(
   slide: Slide,
   theme: SlideTheme,
   activeElement: string | null,
   shape?: SlideShape,
 ): Typography {
-  const none = { canFont: false, canScale: false, canColor: false, canBold: false, element: null, font: '', scale: 1 }
+  const none: Typography = {
+    canFont: false,
+    canScale: false,
+    canColor: false,
+    canBold: false,
+    canAlign: false,
+    elements: [],
+    font: '',
+    scale: 1,
+    color: null,
+    bold: false,
+    align: null,
+  }
   if (shape) {
     // У добавленной фигуры сборка переносит гарнитуру и цвет заливки; у фигуры шаблона — только текст и цвет.
     const own = shape.template_shape_id == null
     return { ...none, canFont: own, font: shape.font_family || '', hint: own ? undefined : 'Текст фигуры шаблона наследует её оформление' }
   }
   if (activeElement) {
-    const can = (prop: StyleProp) => elementStyleSupported(slide, theme, activeElement, prop)
-    if (!can('font') && !can('scale') && !can('color') && !can('bold')) {
-      return { ...none, hint: isPatternSlide(slide, theme) ? UNSUPPORTED_STYLE_HINT : UNSUPPORTED_ELEMENT_HINT }
-    }
+    const elements = textFieldsOf(slide, activeElement).filter((field) => elementStyleSupported(slide, theme, field, 'font'))
+    if (elements.length === 0) return { ...none, hint: UNSUPPORTED_ELEMENT_HINT }
+    const first = elements[0]
     return {
-      canFont: can('font'),
-      canScale: can('scale'),
-      canColor: can('color'),
-      canBold: can('bold'),
-      element: activeElement,
-      font: slide.element_fonts?.[activeElement] || slide.font_family || '',
-      scale: slide.element_scales?.[activeElement] ?? 1,
+      canFont: true,
+      canScale: true,
+      canColor: true,
+      canBold: true,
+      canAlign: true,
+      elements,
+      font: slide.element_fonts?.[first] || slide.font_family || '',
+      scale: slide.element_scales?.[first] ?? 1,
+      color: slide.element_colors?.[first] || slide.text_color || null,
+      bold: slide.element_bolds?.[first] ?? first === 'title',
+      align: slide.element_aligns?.[first] ?? null,
     }
   }
-  const ok = slideStyleSupported(slide, theme)
-  return { ...none, canFont: ok, canColor: ok, font: slide.font_family || '', hint: ok ? undefined : UNSUPPORTED_STYLE_HINT }
+  return { ...none, canFont: true, canColor: true, font: slide.font_family || '', color: slide.text_color || null }
 }
 
-export const UNSUPPORTED_STYLE_HINT =
-  'Слайд собран из слайда-примера шаблона: в экспорт попадают текст, положение блоков, картинки и фигуры, а шрифты и цвета остаются шаблонными'
-export const UNSUPPORTED_ELEMENT_HINT = 'Для этого элемента оформление в экспорт не переносится'
+export const UNSUPPORTED_ELEMENT_HINT = 'Выберите текст на слайде — у этого элемента нет своего текста'
 
 export interface Capacity {
   /** Сколько мест в слайде-примере (элементов) или знаков в его текстовом блоке. */

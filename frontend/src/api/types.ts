@@ -89,6 +89,8 @@ export interface TableData {
   rows: string[][]
 }
 
+export type TextAlign = 'left' | 'center' | 'right' | 'justify'
+
 export interface Slide {
   id: string
   kind: SlideKind
@@ -126,6 +128,8 @@ export interface Slide {
   element_backgrounds?: Record<string, string> | null
   is_bold?: boolean | null
   element_bolds?: Record<string, boolean> | null
+  /** Выравнивание текста поля. */
+  element_aligns?: Record<string, TextAlign> | null
 }
 
 export interface SlideUpdate {
@@ -157,6 +161,8 @@ export interface SlideUpdate {
   element_backgrounds?: Record<string, string> | null
   is_bold?: boolean | null
   element_bolds?: Record<string, boolean> | null
+  /** Выравнивание текста поля. */
+  element_aligns?: Record<string, TextAlign> | null
   image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
   layout_key?: string | null
   layout_name?: string | null

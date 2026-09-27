@@ -9,62 +9,27 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Edit3,
   Info,
-  Maximize2,
-  Minimize2,
   MoreHorizontal,
+  Pencil,
   Play,
   RefreshCw,
   TriangleAlert,
   WandSparkles,
   X,
-  ExternalLink,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, useAudit, usePresentation, useVariant } from '../api/queries'
-import type {
-  AuditCheck,
-  AuditIssue,
-  AuditReport,
-  CheckKind,
-  RegenerateSlideResponse,
-  Presentation,
-  ResolveResponse,
-  Severity,
-  Slide,
-  SlideKind,
-  SlidePattern,
-  SlideShape,
-  SlideUpdate,
-  VariantDetail,
-} from '../api/types'
-import { ImagePickerModal } from '../components/ImagePickerModal'
-import { ConfirmDialog } from '../components/ConfirmDialog'
+import type { AuditCheck, AuditIssue, AuditReport, CheckKind, ResolveResponse, Severity, VariantDetail } from '../api/types'
 import { PresentationHeader } from '../components/PresentationHeader'
-import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
-import { SlideContentPanel } from '../components/SlideContentPanel'
-import { SlideDesignModal } from '../components/SlideDesignModal'
-import { SlideEditToolbar } from '../components/SlideEditToolbar'
 import { SlideView, slideRender, type Highlights } from '../components/slides/SlideView'
 import { Slideshow } from '../components/slides/Slideshow'
 import { useToast } from '../components/Toast'
 import { Badge, Button, EmptyState, ErrorState, FullPageSpinner } from '../components/ui'
 import { countLabel } from '../lib/format'
-import {
-  canvasListAction,
-  changeKind,
-  fieldPatch,
-  mergeDraft,
-  regenerateInstruction,
-  removeSlideImage,
-  selectLayout,
-  selectPattern,
-  setSlideImage,
-} from '../lib/slideEdits'
 import { CHECK_METHOD_LABELS, CHECK_STATUS_LABELS, SEVERITY_LABELS, SLIDE_KIND_LABELS } from '../lib/labels'
 
 const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 }
@@ -133,7 +98,6 @@ export function AuditPage() {
         detail={variant.data}
         report={audit.data}
         canEdit={presentation.data.access_role !== 'viewer'}
-        presentation={presentation.data}
       />
     </div>
   )
@@ -143,12 +107,10 @@ function AuditWorkspace({
   detail,
   report,
   canEdit,
-  presentation,
 }: {
   detail: VariantDetail
   report: AuditReport
   canEdit: boolean
-  presentation: Presentation
 }) {
   const queryClient = useQueryClient()
   const notify = useToast()
@@ -181,23 +143,25 @@ function AuditWorkspace({
   const slides = variant.slides
   const currentSlide = slides[Math.min(slideIndex, slides.length - 1)]
 
-  // Режим инлайн-редактирования: правки хранятся по id слайда синхронно
-  const [isEditing, setIsEditing] = useState(false)
-  const [activeElement, setActiveElement] = useState<string | null>(null)
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
-  const [imagePickerMode, setImagePickerMode] = useState<'slide' | 'floating' | 'shape'>('slide')
-  const [slideEdits, setSlideEdits] = useState<Record<string, SlideUpdate>>({})
-  const [showDesignModal, setShowDesignModal] = useState(false)
-  const [editPanelTab, setEditPanelTab] = useState<'content' | 'ai'>('content')
-  const [showImagePicker, setShowImagePicker] = useState(false)
-  const [showDiscardDialog, setShowDiscardDialog] = useState(false)
-  const [draftHistory, setDraftHistory] = useState<
-    Record<string, { past: SlideUpdate[]; future: SlideUpdate[] }>
-  >({})
-  const [isSavingAll, setIsSavingAll] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const layoutRef = useRef<HTMLDivElement>(null)
-  const saveInProgressRef = useRef(false)
+  // Заметки докладчика можно свернуть; выбор запоминается в браузере.
+  const [notesCollapsed, setNotesCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('audit.notesCollapsed') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleNotes = () =>
+    setNotesCollapsed((prev) => {
+      try {
+        localStorage.setItem('audit.notesCollapsed', prev ? '0' : '1')
+      } catch {
+        // хранилище недоступно (приватный режим) — просто не запоминаем
+      }
+      return !prev
+    })
+  const openStudio = () => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)
 
   // Рабочая область аудита (миниатюры, слайд, панель замечаний) занимает ровно оставшуюся часть экрана,
   // поэтому страница не прокручивается целиком, а каждая колонка прокручивается сама.
@@ -228,27 +192,6 @@ function AuditWorkspace({
     }
   }, [])
 
-  // Вычисляем активный слайд синхронно: правки накладываются на текущий слайд!
-  // Это исключает рассинхронизацию или показ чужого слайда при переключении.
-  const activeSlide = useMemo<Slide>(() => {
-    if (!currentSlide) return currentSlide
-    const edits = slideEdits[currentSlide.id]
-    const effectivePatternId = edits?.pattern_id !== undefined ? edits.pattern_id : currentSlide.pattern_id
-    const pattern = effectivePatternId && theme?.patterns
-      ? theme.patterns.find((p) => p.id === effectivePatternId)
-      : undefined
-    const baseShapes: SlideShape[] = edits?.shapes != null
-      ? edits.shapes
-      : (currentSlide.shapes && currentSlide.shapes.length > 0
-          ? currentSlide.shapes
-          : (effectivePatternId ? (pattern?.shapes || []) : []))
-    // Черновик перекрывает все поля, которые в нём заданы (включая заметки и оформление).
-    return { ...mergeDraft(currentSlide, edits), shapes: baseShapes }
-  }, [currentSlide, slideEdits, theme?.patterns])
-
-  const hasDraftChanges = (draft: SlideUpdate | undefined) => Boolean(draft && Object.keys(draft).length > 0)
-  const hasChanges = Object.values(slideEdits).some(hasDraftChanges)
-  const hasCurrentSlideChanges = currentSlide ? hasDraftChanges(slideEdits[currentSlide.id]) : false
   const openIssues = report.issues.filter((issue) => issue.status === 'open')
   const resolvedIssues = report.issues.filter((issue) => issue.status !== 'open')
 
@@ -285,30 +228,6 @@ function AuditWorkspace({
   }
 
   const [showTour, setShowTour] = useState(true)
-  const [isZenMode, setIsZenMode] = useState(false)
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (
-        isEditing ||
-        e.ctrlKey ||
-        e.metaKey ||
-        e.altKey ||
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        (e.target as HTMLElement)?.isContentEditable
-      ) {
-        return
-      }
-      if (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я') {
-        setIsZenMode((prev) => !prev)
-      } else if (e.key === 'Escape' && isZenMode) {
-        setIsZenMode(false)
-      }
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [isEditing, isZenMode])
 
   const currentTourIndex = useMemo(() => {
     if (!activeIssue) return 0
@@ -330,7 +249,7 @@ function AuditWorkspace({
   }
 
   useEffect(() => {
-    if (isEditing || !showTour || openIssues.length === 0) return
+    if (!showTour || openIssues.length === 0) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === '[' || (e.key === 'ArrowLeft' && e.altKey)) {
@@ -341,7 +260,7 @@ function AuditWorkspace({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isEditing, showTour, openIssues, currentTourIndex])
+  }, [showTour, openIssues, currentTourIndex])
 
   const resolve = useMutation({
     mutationFn: ({ ids, action }: { ids: string[]; action: 'fix' | 'ignore' }) =>
@@ -367,403 +286,6 @@ function AuditWorkspace({
     onError: (error) => notify(error.message, 'error'),
   })
 
-  const updateSlideMutation = useMutation({
-    mutationFn: ({ slideId, updates }: { slideId: string; updates: SlideUpdate }) =>
-      api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, updates),
-    onSuccess: (result) => {
-      applyResult(result)
-      notify('Слайд сохранён')
-    },
-    onError: (error) => notify(error.message, 'error'),
-  })
-
-  const uploadImageMutation = useMutation({
-    mutationFn: (file: File) => {
-      const formData = new FormData()
-      formData.append('file', file)
-      // Upload the asset first; the slide itself stays untouched until the
-      // user presses «Готово». This keeps «Выйти без сохранения» reliable.
-      return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
-    },
-    onSuccess: (result) => {
-      handleSelectContentImage(result.url, result.filename)
-      notify('Изображение успешно загружено на слайд')
-    },
-    onError: (error) => notify(error.message, 'error'),
-  })
-
-  const uploadVariantImageMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData()
-      formData.append('file', file)
-      return api.post<{ url: string; filename: string }>(`/variants/${variant.id}/upload-image`, formData)
-    },
-    onError: (error) => notify(error.message, 'error'),
-  })
-
-  // Правка слайда моделью по сообщению из чата; ответ модели показывает ассистент, ошибку — тоже он.
-  const regenerateSlideMutation = useMutation({
-    // draft — черновик, который нужно сохранить (например, с только что применённым шаблоном);
-    // keepPattern — шаблон выбран пользователем, сервер не подбирает другой.
-    mutationFn: async ({
-      slideId,
-      instruction,
-      draft,
-      keepPattern = false,
-    }: {
-      slideId: string
-      instruction: string
-      draft?: SlideUpdate
-      keepPattern?: boolean
-    }) => {
-      // Модель правит сохранённый слайд: сначала сохраняем черновик, иначе ручные правки пропадут.
-      const pending = draft ?? slideEdits[slideId]
-      if (hasDraftChanges(pending)) {
-        await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${slideId}`, {
-          ...pending,
-          shapes: pending?.shapes ?? activeSlide.shapes,
-        })
-      }
-      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, {
-        instruction,
-        keep_pattern: keepPattern,
-      })
-    },
-    onSuccess: (result, { slideId }) => {
-      applyResult(result)
-      setSlideEdits((prev) => {
-        const next = { ...prev }
-        delete next[slideId]
-        return next
-      })
-      setDraftHistory((prev) => {
-        const next = { ...prev }
-        delete next[slideId]
-        return next
-      })
-      notify('Слайд обновлён')
-    },
-  })
-
-  // Ввод в одно поле подряд (coalesceKey) — один шаг истории, а не шаг на каждую букву.
-  const lastChangeRef = useRef<{ key: string; at: number } | null>(null)
-  const handleSlideChange = (updates: SlideUpdate, coalesceKey?: string) => {
-    if (!currentSlide || saveInProgressRef.current) return
-    const slideId = currentSlide.id
-    const currentDraft = slideEdits[slideId] || {}
-    const now = Date.now()
-    const key = coalesceKey ? `${slideId}:${coalesceKey}` : null
-    const merge = Boolean(key && lastChangeRef.current?.key === key && now - lastChangeRef.current.at < 1200)
-    lastChangeRef.current = key ? { key, at: now } : null
-    if (!merge) {
-      setDraftHistory((prev) => ({
-        ...prev,
-        [slideId]: {
-          past: [...(prev[slideId]?.past || []), currentDraft].slice(-40),
-          future: [],
-        },
-      }))
-    }
-    setSlideEdits((prev) => ({
-      ...prev,
-      [slideId]: {
-        ...(prev[slideId] || {}),
-        ...updates,
-      },
-    }))
-  }
-
-  const handleUndo = () => {
-    if (!currentSlide || saveInProgressRef.current) return
-    const slideId = currentSlide.id
-    const history = draftHistory[slideId]
-    if (!history?.past.length) return
-    const previous = history.past[history.past.length - 1]
-    const currentDraft = slideEdits[slideId] || {}
-    setSlideEdits((prev) => {
-      const next = { ...prev }
-      if (Object.keys(previous).length === 0) delete next[slideId]
-      else next[slideId] = previous
-      return next
-    })
-    setDraftHistory((prev) => ({
-      ...prev,
-      [slideId]: { past: history.past.slice(0, -1), future: [currentDraft, ...history.future].slice(0, 40) },
-    }))
-  }
-
-  const handleRedo = () => {
-    if (!currentSlide || saveInProgressRef.current) return
-    const slideId = currentSlide.id
-    const history = draftHistory[slideId]
-    if (!history?.future.length) return
-    const nextDraft = history.future[0]
-    const currentDraft = slideEdits[slideId] || {}
-    setSlideEdits((prev) => {
-      const next = { ...prev }
-      if (Object.keys(nextDraft).length === 0) delete next[slideId]
-      else next[slideId] = nextDraft
-      return next
-    })
-    setDraftHistory((prev) => ({
-      ...prev,
-      [slideId]: { past: [...history.past, currentDraft].slice(-40), future: history.future.slice(1) },
-    }))
-  }
-
-  const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>) => {
-    const currentShapes = activeSlide.shapes || []
-    const next = currentShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s))
-    handleSlideChange({ shapes: next })
-  }
-
-  const handleDeleteShape = (shapeId: string) => {
-    const currentShapes = activeSlide.shapes || []
-    const next = currentShapes.filter((s) => s.id !== shapeId)
-    handleSlideChange({ shapes: next })
-    if (selectedShapeId === shapeId) setSelectedShapeId(null)
-  }
-
-  const handleUpdateElementBox = (target: string, box: [number, number, number, number]) => {
-    if (!currentSlide) return
-    const currentBoxes = activeSlide.element_boxes || {}
-    const nextBoxes = { ...currentBoxes, [target]: box }
-    handleSlideChange({ element_boxes: nextBoxes })
-  }
-
-  const handleResetElementBox = (target: string) => {
-    if (!currentSlide) return
-    const currentBoxes = { ...(activeSlide.element_boxes || {}) }
-    delete currentBoxes[target]
-    const currentCrops = { ...(activeSlide.element_crops || {}) }
-    delete currentCrops[target]
-    handleSlideChange({ element_boxes: currentBoxes, element_crops: currentCrops })
-    notify('Положение блока сброшено к шаблону')
-  }
-
-  const handleUpdateElementCrop = (target: string, crop: [number, number, number, number]) => {
-    if (!currentSlide) return
-    const currentCrops = activeSlide.element_crops || {}
-    const nextCrops = { ...currentCrops, [target]: crop }
-    handleSlideChange({ element_crops: nextCrops })
-  }
-
-  const handleAddFloatingImage = () => {
-    setImagePickerMode('floating')
-    setShowImagePicker(true)
-  }
-
-  const handleSelectContentImage = (imageUrl: string, filename: string) => {
-    if (!currentSlide) return
-    if (imagePickerMode === 'floating') {
-      const id = Math.random().toString(36).substring(2, 10)
-      const newShape: SlideShape = {
-        id,
-        kind: 'image',
-        image_url: imageUrl,
-        x: 0.3,
-        y: 0.25,
-        width: 0.4,
-        height: 0.4,
-        color: 'transparent',
-        opacity: 1,
-        border: false,
-      }
-      const currentShapes = activeSlide.shapes || []
-      handleSlideChange({ shapes: [...currentShapes, newShape] })
-      setSelectedShapeId(id)
-      setActiveElement(null)
-      setShowImagePicker(false)
-      notify('Плавающее изображение добавлено на слайд')
-      return
-    }
-
-    if (imagePickerMode === 'shape' && selectedShapeId) {
-      handleUpdateShape(selectedShapeId, { image_url: imageUrl })
-      setShowImagePicker(false)
-      notify('Изображение обновлено')
-      return
-    }
-
-    handleSlideChange(setSlideImage(activeSlide, imageUrl, `Изображение из контент-пакета: ${filename}`))
-    notify('Изображение выбрано из контент-пакета')
-  }
-
-  const handleRemoveSlideImage = () => {
-    if (!currentSlide) return
-    handleSlideChange(removeSlideImage(activeSlide))
-    notify('Изображение удалено со слайда')
-  }
-
-  const handleChangeKind = (newKind: SlideKind) => {
-    if (!currentSlide) return
-    handleSlideChange(changeKind(activeSlide, newKind))
-  }
-
-  const handleSelectPattern = (pattern: SlidePattern) => {
-    if (!currentSlide) return
-    handleSlideChange(selectPattern(activeSlide, pattern, theme))
-  }
-
-  const handleSelectLayout = (layoutKey: string, layoutName: string) => {
-    if (!currentSlide) return
-    handleSlideChange(selectLayout(activeSlide, layoutKey, layoutName, theme))
-  }
-
-  // Окно «Шаблон слайда»: переписать текст моделью под выбранный (или тот же) слайд-пример.
-  const handleRegenerateWithTemplate = async (pattern: SlidePattern | null, wish: string) => {
-    if (!currentSlide) return
-    const instruction = regenerateInstruction(pattern, wish)
-    if (!pattern) {
-      await regenerateSlideMutation.mutateAsync({ slideId: currentSlide.id, instruction, keepPattern: true })
-      return
-    }
-    const patch = selectPattern(activeSlide, pattern, theme)
-    handleSlideChange(patch)
-    const draft = { ...(slideEdits[currentSlide.id] || {}), ...patch } as SlideUpdate
-    await regenerateSlideMutation.mutateAsync({ slideId: currentSlide.id, instruction, draft, keepPattern: true })
-  }
-
-  const handleListItem = (field: string, action: 'insert' | 'remove', text: string) => {
-    if (!currentSlide || saveInProgressRef.current) return undefined
-    const result = canvasListAction(activeSlide, field, action, text)
-    if (!result) return undefined
-    handleSlideChange(result.patch)
-    return result.focus
-  }
-
-  const handleFieldChange = (path: string, value: string) => {
-    if (!currentSlide || saveInProgressRef.current) return
-    const patch = fieldPatch(activeSlide, path, value)
-    if (patch) handleSlideChange(patch, path === 'notes' ? 'notes' : undefined)
-  }
-
-  useEffect(() => {
-    // Состояние выбора относится к конкретному слайду. Иначе после переключения
-    // рамка старого элемента накладывается на новый слайд.
-    setSelectedShapeId(null)
-    setActiveElement(null)
-    setImagePickerMode('slide')
-  }, [slideIndex])
-
-  const handleSaveSlide = async () => {
-    if (!currentSlide || saveInProgressRef.current) return
-    saveInProgressRef.current = true
-    setIsSavingAll(true)
-    try {
-      const edits = slideEdits[currentSlide.id]
-      if (hasDraftChanges(edits)) {
-        try {
-          await updateSlideMutation.mutateAsync({
-            slideId: currentSlide.id,
-            updates: {
-              ...edits,
-              shapes: activeSlide.shapes,
-            },
-          })
-        } catch {
-          // The mutation already shows the server error. Keep all local drafts
-          // so the user can retry without losing work.
-          return
-        }
-      }
-      // PATCH записывает весь массив слайдов варианта. Сохраняем остальные
-      // слайды последовательно, чтобы запросы не перезаписывали друг друга.
-      const otherEntries = Object.entries(slideEdits).filter(([id, draft]) => id !== currentSlide.id && hasDraftChanges(draft))
-      const failedSlideIds: string[] = []
-      for (const [sId, sEdits] of otherEntries) {
-        try {
-          await api.patch<ResolveResponse>(`/variants/${variant.id}/slides/${sId}`, sEdits)
-        } catch (err) {
-          console.error(`Failed to save slide ${sId}:`, err)
-          failedSlideIds.push(sId)
-        }
-      }
-      if (otherEntries.length > 0) {
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: queryKeys.variant(variant.id) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.audit(variant.id) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.variants(detail.presentation.id) }),
-        ])
-      }
-      if (failedSlideIds.length > 0) {
-        notify(`Не удалось сохранить ${failedSlideIds.length} ${countLabel(failedSlideIds.length, ['слайд', 'слайда', 'слайдов'])}. Черновики оставлены для повтора.`, 'error')
-        return
-      }
-      setSlideEdits({})
-      setDraftHistory({})
-      setIsEditing(false)
-      setActiveElement(null)
-      setSelectedShapeId(null)
-    } finally {
-      saveInProgressRef.current = false
-      setIsSavingAll(false)
-    }
-  }
-
-  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      await uploadImageMutation.mutateAsync(file)
-      e.target.value = ''
-    }
-  }
-
-  const discardEditing = () => {
-    // Один сеанс редактирования может менять несколько слайдов. Сбрасываем
-    // весь локальный буфер, иначе правка «прячется» и попадёт в следующий Save.
-    setSlideEdits({})
-    setDraftHistory({})
-    setIsEditing(false)
-    setActiveElement(null)
-    setSelectedShapeId(null)
-    setShowDiscardDialog(false)
-  }
-
-  const handleCloseEdit = () => {
-    if (saveInProgressRef.current) return
-    if (hasChanges) {
-      setShowDiscardDialog(true)
-      return
-    }
-    discardEditing()
-  }
-
-  useEffect(() => {
-    if (!isEditing) return
-    const handleEditorShortcut = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      const isField =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        Boolean(target?.isContentEditable)
-
-      if ((event.metaKey || event.ctrlKey) && !isField && event.key.toLowerCase() === 'z') {
-        event.preventDefault()
-        if (event.shiftKey) handleRedo()
-        else handleUndo()
-        return
-      }
-      if ((event.metaKey || event.ctrlKey) && !isField && event.key.toLowerCase() === 'y') {
-        event.preventDefault()
-        handleRedo()
-        return
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        if (!updateSlideMutation.isPending && !isSavingAll && !saveInProgressRef.current) void handleSaveSlide()
-        return
-      }
-      if (event.key === 'Escape' && !isField && !showDesignModal && !showImagePicker && !showDiscardDialog) {
-        event.preventDefault()
-        handleCloseEdit()
-      }
-    }
-    window.addEventListener('keydown', handleEditorShortcut)
-    return () => window.removeEventListener('keydown', handleEditorShortcut)
-  }, [isEditing, hasChanges, showDesignModal, showImagePicker, showDiscardDialog, updateSlideMutation.isPending, isSavingAll, slideEdits, draftHistory])
-
   const toggle = (issueId: string) =>
     setChecked((current) => {
       const next = new Set(current)
@@ -774,62 +296,9 @@ function AuditWorkspace({
 
   const checkedIds = [...checked].filter((issueId) => openIssues.some((issue) => issue.id === issueId))
   const { summary } = report
-  const isEditorBusy =
-    isSavingAll ||
-    updateSlideMutation.isPending ||
-    uploadImageMutation.isPending ||
-    uploadVariantImageMutation.isPending ||
-    regenerateSlideMutation.isPending
-
   return (
     <>
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: 'none' }}
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-        onChange={handleImageFileChange}
-      />
-
-      <div className={clsx('audit-layout', isZenMode && 'is-zen')} ref={layoutRef}>
-        {canEdit && isEditing && currentSlide ? (
-          <SlideEditToolbar
-            slide={activeSlide}
-            theme={theme}
-            activeElement={activeElement}
-            selectedShapeId={selectedShapeId}
-            onSelectShape={(id) => {
-              setSelectedShapeId(id)
-              if (id) setActiveElement(null)
-            }}
-            onChange={handleSlideChange}
-            onSave={handleSaveSlide}
-            onTriggerImageUpload={() => {
-              setImagePickerMode('slide')
-              setShowImagePicker(true)
-            }}
-            onOpenImagePicker={() => {
-              if (selectedShapeId && activeSlide.shapes?.some((s) => s.id === selectedShapeId && s.kind === 'image')) {
-                setImagePickerMode('shape')
-              } else {
-                setImagePickerMode('slide')
-              }
-              setShowImagePicker(true)
-            }}
-            onAddFloatingImage={handleAddFloatingImage}
-            onResetElementBox={handleResetElementBox}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            canUndo={Boolean(currentSlide && draftHistory[currentSlide.id]?.past.length)}
-            canRedo={Boolean(currentSlide && draftHistory[currentSlide.id]?.future.length)}
-            onOpenDesignModal={() => setShowDesignModal(true)}
-            onOpenContent={() => setEditPanelTab('content')}
-            onClose={handleCloseEdit}
-            isSaving={updateSlideMutation.isPending || isSavingAll}
-            isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
-            hasChanges={hasChanges}
-          />
-        ) : (
+      <div className="audit-layout" ref={layoutRef}>
           <div className="audit-summary-bar">
             <div className="audit-summary-left">
               <div className="audit-summary-stats">
@@ -902,7 +371,6 @@ function AuditWorkspace({
               </button>
             )}
           </div>
-        )}
         <nav className="audit-slides" aria-label="Слайды">
           {slides.map((slide, index) => {
             const issues = bySlide.get(slide.id) ?? []
@@ -913,9 +381,7 @@ function AuditWorkspace({
                 type="button"
                 className={clsx('audit-slide', index === slideIndex && 'is-active')}
                 aria-current={index === slideIndex ? 'true' : undefined}
-                disabled={isEditing && isEditorBusy}
                 onClick={() => {
-                  if (isEditing && isEditorBusy) return
                   setSlideIndex(index)
                   setScope('slide')
                 }}
@@ -939,51 +405,24 @@ function AuditWorkspace({
               <div className="audit-stage-card" style={{ '--slide-aspect': String(theme.aspect) } as CSSProperties}>
                 <div
                   className="audit-stage-canvas"
-                  onDoubleClick={() => {
-                    if (canEdit && !isEditing) setIsEditing(true)
-                  }}
-                  style={{ cursor: canEdit && !isEditing ? 'pointer' : 'default' }}
-                  title={canEdit && !isEditing ? 'Двойной клик для редактирования слайда' : undefined}
+                  onDoubleClick={canEdit ? openStudio : undefined}
+                  style={{ cursor: canEdit ? 'pointer' : 'default' }}
+                  title={canEdit ? 'Двойной клик — редактировать слайд в Студии' : undefined}
                 >
+                  {/* Рендер собранного .pptx (как в экспорте) с подсветкой замечаний аудита */}
                   <SlideView
                     key={currentSlide.id}
-                    slide={activeSlide}
+                    slide={currentSlide}
                     theme={theme}
                     number={slideIndex + 1}
-                    preferInteractive
-                    highlights={isEditing ? undefined : highlights}
-                    activeTarget={isEditing ? undefined : activeTarget}
+                    highlights={highlights}
+                    activeTarget={activeTarget}
                     render={slideRender(variant, slideIndex)}
-                    editable={isEditing}
-                    hasEdits={hasCurrentSlideChanges}
-                    selectedShapeId={selectedShapeId}
-                    selectedElementId={activeElement}
-                    onSelectShape={(id) => {
-                      setSelectedShapeId(id)
-                      if (id) setActiveElement(null)
-                    }}
-                    onUpdateShape={handleUpdateShape}
-                    onDeleteShape={handleDeleteShape}
-                    onElementSelect={(el) => {
-                      setActiveElement(el)
-                      if (el) setSelectedShapeId(null)
-                    }}
-                    onFieldChange={handleFieldChange}
-                    onListItem={handleListItem}
-                    onImageClick={() => {
-                      setActiveElement('image')
-                      setSelectedShapeId(null)
-                      setImagePickerMode('slide')
-                      setShowImagePicker(true)
-                    }}
-                    onUpdateElementBox={handleUpdateElementBox}
-                    onResetElementBox={handleResetElementBox}
-                    onUpdateElementCrop={handleUpdateElementCrop}
                   />
                 </div>
               </div>
 
-              {!isEditing && showTour && openIssues.length > 0 && currentTourIssue && (
+              {showTour && openIssues.length > 0 && currentTourIssue && (
                 <div className="audit-tour-bar" role="region" aria-label="Пошаговый тур по замечаниям аудита">
                   <div className="row row--xs" style={{ alignItems: 'center' }}>
                     <button
@@ -1075,7 +514,7 @@ function AuditWorkspace({
                 </div>
 
                 <div className="audit-stage-bottom-right">
-                  {!isEditing && openIssues.length > 0 && !showTour && (
+                  {openIssues.length > 0 && !showTour && (
                     <button type="button" className="audit-editor-toggle-btn" onClick={() => setShowTour(true)}>
                       <span>Тур по замечаниям ({openIssues.length})</span>
                     </button>
@@ -1089,61 +528,31 @@ function AuditWorkspace({
                     <Play size={14} />
                     <span>Слайд-шоу</span>
                   </button>
-                  <button
-                    type="button"
-                    className={clsx('audit-editor-toggle-btn', isZenMode && 'is-active')}
-                    onClick={() => setIsZenMode(!isZenMode)}
-                    title={isZenMode ? 'Выйти из фокус-режима (Z или Esc)' : 'Фокус-режим: скрыть боковые панели (хоткей Z)'}
-                  >
-                    {isZenMode ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                    <span>{isZenMode ? 'Выйти из фокуса' : 'Фокус'}</span>
-                  </button>
                   {canEdit && (
-                    <>
-                      <button
-                        type="button"
-                        className={clsx('audit-editor-toggle-btn', isEditing && 'is-active')}
-                        onClick={() => {
-                          if (isEditing) {
-                            handleCloseEdit()
-                          } else {
-                            setIsEditing(true)
-                          }
-                        }}
-                      >
-                        <Edit3 size={15} />
-                        <span>{isEditing ? 'Выйти из редактора' : 'Режим редактора'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="audit-editor-toggle-btn"
-                        onClick={() => navigate(`/presentations/${detail.presentation.id}/editor?slide=${slideIndex}`)}
-                        title="Открыть в полноэкранной студии"
-                      >
-                        <ExternalLink size={14} />
-                        <span>Студия</span>
-                      </button>
-                    </>
+                    <button
+                      type="button"
+                      className="audit-editor-toggle-btn audit-editor-toggle-btn--primary"
+                      onClick={openStudio}
+                      title="Открыть этот слайд в Студии (или двойной клик по слайду)"
+                    >
+                      <Pencil size={14} />
+                      <span>Редактировать в Студии</span>
+                    </button>
                   )}
                 </div>
               </div>
 
-              {/* Блок «Заметки докладчика» */}
-              <div className="audit-speaker-notes-box">
-                {isEditing ? (
-                  <textarea
-                    className="audit-speaker-notes-textarea"
-                    placeholder="Заметки докладчика..."
-                    value={activeSlide.notes || ''}
-                    onChange={(e) => handleFieldChange('notes', e.target.value)}
-                  />
-                ) : activeSlide.notes ? (
-                  <div className="audit-speaker-notes-content">
-                    <span className="audit-speaker-notes-title">Заметки докладчика:</span>
-                    <span className="audit-speaker-notes-text">{activeSlide.notes}</span>
-                  </div>
-                ) : (
-                  <span className="audit-speaker-notes-placeholder">Заметки докладчика</span>
+              {/* Заметки докладчика: только просмотр (правятся в Студии), можно свернуть */}
+              <div className={clsx('audit-notes', notesCollapsed && 'is-collapsed')}>
+                <button type="button" className="audit-notes__toggle" onClick={toggleNotes} aria-expanded={!notesCollapsed}>
+                  {notesCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                  <span>Заметки докладчика</span>
+                  {notesCollapsed && currentSlide.notes && <span className="audit-notes__dot" title="У слайда есть заметки" />}
+                </button>
+                {!notesCollapsed && (
+                  <p className={clsx('audit-notes__text', !currentSlide.notes && 'is-empty')}>
+                    {currentSlide.notes || 'Нет заметок'}
+                  </p>
                 )}
               </div>
             </>
@@ -1151,53 +560,6 @@ function AuditWorkspace({
         </section>
 
         <aside className="audit-panel">
-          {canEdit && isEditing && currentSlide ? (
-            <>
-              <div className="audit-panel-tabs">
-                <button
-                  type="button"
-                  className={clsx('audit-panel-tab', editPanelTab === 'content' && 'is-active')}
-                  onClick={() => setEditPanelTab('content')}
-                >
-                  <span>Содержимое</span>
-                </button>
-                <button
-                  type="button"
-                  className={clsx('audit-panel-tab', editPanelTab === 'ai' && 'is-active')}
-                  onClick={() => setEditPanelTab('ai')}
-                >
-                  <span>AI-ассистент</span>
-                </button>
-              </div>
-              {editPanelTab === 'content' ? (
-                <div className="audit-panel-content">
-                  <SlideContentPanel
-                    slide={activeSlide}
-                    theme={theme}
-                    onChange={handleSlideChange}
-                    onOpenTemplates={() => setShowDesignModal(true)}
-                    selectedElement={activeElement}
-                    onSelectElement={(field) => {
-                      setActiveElement(field)
-                      setSelectedShapeId(null)
-                    }}
-                  />
-                </div>
-              ) : (
-                <SlideAssistantPanel
-                  slide={activeSlide}
-                  theme={theme}
-                  slideIndex={slideIndex}
-                  onRegenerate={async (instruction) =>
-                    (await regenerateSlideMutation.mutateAsync({ slideId: activeSlide.id, instruction })).reply}
-                  onChangeKind={handleChangeKind}
-                  onSelectPattern={handleSelectPattern}
-                  onOpenDesignModal={() => setShowDesignModal(true)}
-                  isRegenerating={regenerateSlideMutation.isPending}
-                />
-              )}
-            </>
-          ) : (
             <>
               <div className="audit-panel-tabs">
                 <button
@@ -1482,61 +844,8 @@ function AuditWorkspace({
                 </>
               )}
             </>
-          )}
         </aside>
       </div>
-
-      {currentSlide && (
-        <SlideDesignModal
-          isOpen={showDesignModal}
-          slide={activeSlide}
-          theme={theme}
-          onSelectPattern={handleSelectPattern}
-          onSelectLayout={handleSelectLayout}
-          onRegenerate={canEdit ? handleRegenerateWithTemplate : undefined}
-          onClose={() => setShowDesignModal(false)}
-        />
-      )}
-
-      {currentSlide && (
-        <ImagePickerModal
-          isOpen={showImagePicker}
-          presentationId={presentation.id}
-          contentFiles={presentation.files ?? []}
-          currentImageUrl={
-            imagePickerMode === 'shape'
-              ? activeSlide.shapes?.find((s) => s.id === selectedShapeId)?.image_url
-              : activeSlide.image?.url
-          }
-          onClose={() => setShowImagePicker(false)}
-          onSelectImage={handleSelectContentImage}
-          onUploadImage={async (file) => {
-            if (imagePickerMode === 'floating') {
-              const res = await uploadVariantImageMutation.mutateAsync(file)
-              handleSelectContentImage(res.url, res.filename)
-            } else if (imagePickerMode === 'shape' && selectedShapeId) {
-              const res = await uploadVariantImageMutation.mutateAsync(file)
-              handleUpdateShape(selectedShapeId, { image_url: res.url })
-              setShowImagePicker(false)
-              notify('Изображение обновлено')
-            } else {
-              await uploadImageMutation.mutateAsync(file)
-            }
-          }}
-          onRemoveImage={imagePickerMode === 'slide' && activeSlide.image?.url ? handleRemoveSlideImage : undefined}
-          isUploading={isSavingAll || uploadImageMutation.isPending || uploadVariantImageMutation.isPending}
-        />
-      )}
-
-      {showDiscardDialog && (
-        <ConfirmDialog
-          title="Выйти без сохранения?"
-          text="В редакторе есть несохранённые изменения. Они будут удалены для всех слайдов этой сессии."
-          confirmLabel="Выйти без сохранения"
-          onConfirm={discardEditing}
-          onClose={() => setShowDiscardDialog(false)}
-        />
-      )}
 
       {slideshowOpen && (
         <Slideshow
