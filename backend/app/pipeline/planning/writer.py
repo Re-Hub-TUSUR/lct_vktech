@@ -18,7 +18,7 @@ from typing import Any
 from app.core.config import settings
 from app.pipeline.ai.llm import Usage, ask, in_parallel, llm_enabled, open_client
 from app.pipeline.planning.planner import SERVICE_KINDS, TONES
-from app.pipeline.skills import get_skill
+from app.pipeline.skills import custom_skill_context, get_skill
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +344,7 @@ def write_slides(
     language: str = "ru",
     tone: str = "business",
     audience: str = "",
+    custom_skills: list[dict[str, Any]] | None = None,
 ) -> CopyResult:
     """Заполняет спецификации текстами. Спецификации меняются на месте."""
     if not llm_enabled():
@@ -371,6 +372,7 @@ def write_slides(
         "language": "русский" if language == "ru" else "английский",
         "sources": sources or "(материалов нет)",
     }
+    custom_context = custom_skill_context(custom_skills, {"all", "text"})
     targets = [spec for spec in specs if spec.get("plan_kind") and spec["plan_kind"] not in SERVICE_KINDS]
     usage = Usage()
     result = CopyResult(usage=usage, source="llm")
@@ -383,6 +385,8 @@ def write_slides(
             for key, value in values.items():
                 system = system.replace("{" + key + "}", value)
                 user = user.replace("{" + key + "}", value)
+            if custom_context:
+                system += "\n\nДополнительные пользовательские правила:\n" + custom_context
             schema = slide_schema(spec["plan_kind"], limits)
             label = f"слайд «{spec.get('topic')}»"
             answer = ask(http, system=system, user=user, schema=schema, usage=usage, label=label)

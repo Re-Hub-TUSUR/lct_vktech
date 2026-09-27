@@ -43,6 +43,8 @@ class AuditContext:
     materials: str = ""  # тексты контент-пакета без брифа
     tone: str = "business"
     audience: str = ""
+    # Snapshot пользовательских правил презентации для автоисправлений.
+    custom_skills: list[dict[str, Any]] = field(default_factory=list)
     # Шаблон: сам шаблон, его токены (сетка, шкала кеглей, логотипы) и всё, что встречается в его файле.
     template: Any = None
     tokens: dict[str, Any] = field(default_factory=dict)

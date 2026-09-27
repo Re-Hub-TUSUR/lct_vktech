@@ -4,11 +4,13 @@ import { useEffect, useRef } from 'react'
 import { api } from './client'
 import type {
   AuditReport,
+  CustomSkillRecord,
   Generation,
   MetaOptions,
   Presentation,
   PresentationListItem,
   SkillInfo,
+  SkillPreset,
   TemplateDetail,
   TemplateSummary,
   VariantDetail,
@@ -19,6 +21,8 @@ export const queryKeys = {
   me: ['me'] as const,
   options: ['meta', 'options'] as const,
   skills: ['meta', 'skills'] as const,
+  customSkills: ['custom-skills'] as const,
+  skillPresets: ['skill-presets'] as const,
   templates: ['templates'] as const,
   template: (id: string) => ['templates', id] as const,
   presentations: ['presentations'] as const,
@@ -45,6 +49,14 @@ export function useOptions() {
 
 export function useSkills() {
   return useQuery({ queryKey: queryKeys.skills, queryFn: () => api.get<SkillInfo[]>('/meta/skills'), staleTime: Infinity })
+}
+
+export function useCustomSkills() {
+  return useQuery({ queryKey: queryKeys.customSkills, queryFn: () => api.get<CustomSkillRecord[]>('/skills') })
+}
+
+export function useSkillPresets() {
+  return useQuery({ queryKey: queryKeys.skillPresets, queryFn: () => api.get<SkillPreset[]>('/skills/presets'), staleTime: Infinity })
 }
 
 export function useTemplates() {

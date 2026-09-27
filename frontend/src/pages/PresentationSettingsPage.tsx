@@ -5,11 +5,12 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api, contentFileUrl } from '../api/client'
-import { queryKeys, useOptions, usePresentation, useProjects, useTemplates } from '../api/queries'
-import type { GenerationSettings, Presentation, PresentationInput, Purpose } from '../api/types'
+import { queryKeys, useCustomSkills, useOptions, usePresentation, useProjects, useTemplates } from '../api/queries'
+import type { CustomSkill, GenerationSettings, Presentation, PresentationInput, Purpose } from '../api/types'
 import { FileDrop } from '../components/FileDrop'
 import { FolderIcon } from '../components/FolderIcon'
 import { PresentationHeader } from '../components/PresentationHeader'
+import { SkillsPicker, skillSource } from '../components/SkillsPicker'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
@@ -24,6 +25,27 @@ const DEFAULT_SETTINGS: GenerationSettings = {
   variant_axis: 'density',
   generate_images: false,
   speaker_notes: true,
+  custom_skills: [],
+}
+
+function bumpSkillVersion(version: string): string {
+  const [major, minor, patch] = version.split('.').map(Number)
+  return `${Number.isFinite(major) ? major : 1}.${Number.isFinite(minor) ? minor : 0}.${(Number.isFinite(patch) ? patch : 0) + 1}`
+}
+
+/**
+ * Готовит скиллы к сохранению: пустые разовые правила отбрасываются, у отредактированных разовых повышается версия.
+ * Версию шаблонов и скиллов библиотеки задаёт источник, а переключение тумблера версию не меняет.
+ */
+function savedSkillVersions(current: CustomSkill[], previous: CustomSkill[], libraryIds: Set<string>): CustomSkill[] {
+  return current
+    .filter((skill) => skillSource(skill, libraryIds) !== 'local' || skill.instruction.trim())
+    .map((skill) => {
+      const old = previous.find((item) => item.id === skill.id)
+      if (!old || skillSource(skill, libraryIds) !== 'local') return skill
+      const changed = old.title !== skill.title || old.kind !== skill.kind || old.instruction !== skill.instruction
+      return changed ? { ...skill, version: bumpSkillVersion(old.version) } : skill
+    })
 }
 
 interface FormState {
@@ -99,6 +121,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const templates = useTemplates()
   const projects = useProjects()
   const options = useOptions()
+  const customSkills = useCustomSkills()
 
   const [form, setForm] = useState<FormState>(() =>
     initialState(presentation, searchParams.get('template'), searchParams.get('project'))
@@ -140,6 +163,7 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const canEdit = !presentation || presentation.access_role !== 'viewer'
   const isGenerating = presentation?.status === 'generating'
   const isBusy = Boolean(step || isSubmitting || isGenerating)
+  const enabledSkills = (form.settings.custom_skills ?? []).filter((skill) => skill.enabled).length
   const canSubmit = canEdit && form.title.trim().length > 0 && selectedTemplate?.status === 'ready' && !isBusy
 
   const removeExisting = async (fileId: string) => {
@@ -159,7 +183,14 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
       brief: form.brief,
       template_id: form.templateId,
       project_id: form.projectId,
-      settings: form.settings,
+      settings: {
+        ...form.settings,
+        custom_skills: savedSkillVersions(
+          form.settings.custom_skills ?? [],
+          presentation?.settings.custom_skills ?? [],
+          new Set((customSkills.data ?? []).map((skill) => skill.id))
+        ),
+      },
     }
     try {
       setStep('Сохраняем настройки…')
@@ -458,6 +489,18 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               />
             </div>
           </Card>
+
+          <Card>
+            <div className="card__header">
+              <h2>5. Скиллы</h2>
+              <small className="muted">{countLabel(enabledSkills, ['скилл включён', 'скилла включено', 'скиллов включено'])}</small>
+            </div>
+            <p className="muted">
+              Дополнительные правила для агентов: стиль речи, подача под аудиторию, структура. Версии включённых скиллов
+              фиксируются в запуске генерации.
+            </p>
+            <SkillsPicker value={form.settings.custom_skills ?? []} onChange={(value) => setOption('custom_skills', value)} />
+          </Card>
         </div>
 
         <aside className="settings-summary">
@@ -479,6 +522,10 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               <div>
                 <dt>Контент-пакет</dt>
                 <dd>{countLabel(files.length + existingFiles.length, ['файл', 'файла', 'файлов'])}</dd>
+              </div>
+              <div>
+                <dt>Скиллы</dt>
+                <dd>{enabledSkills ? countLabel(enabledSkills, ['включён', 'включено', 'включено']) : 'не подключены'}</dd>
               </div>
             </dl>
             {error ? <ErrorState error={error} /> : null}

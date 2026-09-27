@@ -199,7 +199,11 @@ export function GenerationPage() {
                 <li key={skill.name}>
                   <span>{skill.title}</span>
                   <span className="row">
-                    <Badge tone={skill.runtime === 'mock' ? 'warning' : 'neutral'}>{skill.runtime}</Badge>
+                    {skill.runtime === 'custom' ? (
+                      <Badge tone="purple">скилл</Badge>
+                    ) : (
+                      <Badge tone={skill.runtime === 'mock' ? 'warning' : 'neutral'}>{skill.runtime}</Badge>
+                    )}
                     <code>v{skill.version}</code>
                   </span>
                 </li>

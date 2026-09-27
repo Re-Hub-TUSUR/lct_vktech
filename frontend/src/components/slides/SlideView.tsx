@@ -409,10 +409,12 @@ function selectBlock(edit: EditCtx, target: string, ownOnly = false) {
 // --- Слайд ---------------------------------------------------------------
 
 export function SlideView(props: SlideViewProps) {
-  // На рабочей сцене аудита/редактора, либо если слайд имеет несохранённые правки или кастомные
-  // позиции, показываем живой DOM: растр перерисовывается в фоне и отстаёт от правок.
-  const hasCustomPositions = Boolean(props.slide.element_boxes && Object.keys(props.slide.element_boxes).length > 0)
-  const shouldUseInteractive = props.preferInteractive || props.editable || props.hasEdits || hasCustomPositions
+  // Рендер передают, только если он собран ровно из этого слайда (сервер отдаёт рендер текущей ревизии,
+  // редакторы не подкладывают его при несохранённых правках) — тогда показываем его: это и есть экспорт.
+  // Живая вёрстка — только на рабочей сцене редактора и для слайдов с правками. Сдвинутые блоки больше
+  // не повод отказываться от рендера: иначе обложка из слайда-примера (фон — картинка внутри примера)
+  // в показе и миниатюрах превращалась в тёмный прямоугольник.
+  const shouldUseInteractive = props.preferInteractive || props.editable || props.hasEdits
 
   if (!shouldUseInteractive && props.render) {
     return (

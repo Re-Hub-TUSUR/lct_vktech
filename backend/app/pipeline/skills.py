@@ -65,5 +65,69 @@ def get_skill(name: str) -> Skill:
     return skills[name]
 
 
-def skills_snapshot() -> list[dict[str, Any]]:
-    return [skill.ref() for skill in load_skills().values()]
+@dataclass(frozen=True)
+class SkillPreset:
+    """Шаблонный пользовательский скилл из стандартной комплектации (backend/skills/presets/*.yaml)."""
+
+    id: str
+    title: str
+    description: str
+    kind: str
+    version: str
+    instruction: str
+
+
+PRESET_PREFIX = "preset:"
+
+
+@lru_cache(maxsize=1)
+def load_skill_presets() -> list[SkillPreset]:
+    presets: list[SkillPreset] = []
+    for path in sorted((settings.skills_dir / "presets").glob("*.yaml")):
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        presets.append(
+            SkillPreset(
+                id=PRESET_PREFIX + str(data.get("id") or path.stem),
+                title=data.get("title", path.stem),
+                description=(data.get("description") or "").strip(),
+                kind=data.get("kind", "all"),
+                version=str(data.get("version", "1.0.0")),
+                instruction=(data.get("instruction") or "").strip(),
+            )
+        )
+    return presets
+
+
+def skills_snapshot(custom: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    result = [skill.ref() for skill in load_skills().values()]
+    for item in custom or []:
+        if not item.get("enabled", True) or not str(item.get("instruction") or "").strip():
+            continue
+        skill_id = str(item.get("id") or item.get("name") or "custom")
+        result.append({
+            "name": skill_id,
+            "title": str(item.get("title") or item.get("name") or skill_id),
+            "version": str(item.get("version") or "1.0.0"),
+            "runtime": "custom",
+            "model": None,
+            "source": "custom",
+            "skill_id": skill_id,
+            "kind": str(item.get("kind") or "all"),
+            "instruction": str(item.get("instruction") or "")[:12000],
+        })
+    return result
+
+
+def custom_skill_context(custom: list[dict[str, Any]] | None, kinds: set[str] | None = None) -> str:
+    chunks = []
+    for item in custom or []:
+        if not item.get("enabled", True):
+            continue
+        kind = str(item.get("kind") or "all")
+        if kinds and kind not in kinds and kind != "all":
+            continue
+        instruction = str(item.get("instruction") or "").strip()[:4000]
+        if instruction:
+            title = str(item.get("title") or item.get("name") or "Пользовательское правило").strip()[:120]
+            chunks.append(f"[{title}]\n{instruction}")
+    return "\n\n".join(chunks)[:12000]

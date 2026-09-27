@@ -5,6 +5,7 @@ from app.models.presentation import ContentFile, Notification, Presentation, Pre
 from app.models.project import Project, ProjectMember, ProjectShareLink
 from app.models.template import Template
 from app.models.user import User
+from app.models.custom_skill import CustomSkill
 
 __all__ = [
     "AuditIssue",
@@ -21,4 +22,5 @@ __all__ = [
     "Template",
     "User",
     "Variant",
+    "CustomSkill",
 ]

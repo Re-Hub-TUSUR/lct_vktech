@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuditIssue, ContentFile, Presentation, Template, Variant
+from app.models import AuditIssue, ContentFile, Generation, Presentation, Template, Variant
 from app.models.base import utcnow
 from app.pipeline.ai.llm import judge_model, llm_enabled
 from app.pipeline.audit.catalog import AuditContext, CheckInfo, Finding, catalog_by_id, categories, limits, load_catalog
@@ -26,6 +26,7 @@ from app.pipeline.audit.fixes import (
     IssueRef,
     apply_editor_fixes,
     apply_fixes,
+    apply_custom_style_rules,
     editor_issues,
 )
 from app.pipeline.audit.review import (
@@ -66,6 +67,13 @@ async def build_audit_context(db: AsyncSession, presentation: Presentation, temp
         if text
     ]
     options = presentation.settings or {}
+    latest_generation = await db.scalar(
+        select(Generation).where(Generation.presentation_id == presentation.id).order_by(Generation.created_at.desc())
+    )
+    snapshot_skills = [
+        skill for skill in (latest_generation.skills if latest_generation else [])
+        if skill.get("source") == "custom" and skill.get("instruction")
+    ]
     judge = judge_model()
     return AuditContext(
         theme=template_theme(template),
@@ -80,6 +88,7 @@ async def build_audit_context(db: AsyncSession, presentation: Presentation, temp
         materials="\n\n".join(texts),
         tone=options.get("tone", "business"),
         audience=options.get("audience") or "",
+        custom_skills=snapshot_skills or list(options.get("custom_skills") or []),
         tokens=(template.tokens if template else None) or {},
         inventory=await asyncio.to_thread(template_inventory, template.file_path if template else None),
         render_status="pending" if renders_supported(template) else "unavailable",
@@ -220,6 +229,14 @@ async def resolve_issues(
     ctx: AuditContext,
     template: Template | None,
 ) -> int:
+    generation = await db.get(Generation, variant.generation_id)
+    if generation is not None:
+        snapshot_skills = [
+            skill for skill in (generation.skills or [])
+            if skill.get("source") == "custom" and skill.get("instruction")
+        ]
+        if snapshot_skills:
+            ctx = replace(ctx, custom_skills=snapshot_skills)
     issues = list(
         await db.scalars(
             select(AuditIssue).where(
@@ -252,6 +269,7 @@ async def resolve_issues(
             tone=ctx.tone,
             audience=ctx.audience,
             patterns=ctx.patterns,
+            custom_skills=ctx.custom_skills,
         )
         slides, applied = await asyncio.to_thread(apply_editor_fixes, slides, by_model, catalog, editor, ctx.limits)
     done = set(applied)
@@ -262,6 +280,7 @@ async def resolve_issues(
         FixContext(limits=ctx.limits, content_layout_key=content_key, content_layout_name=content_name),
     )
     applied += by_rules
+    apply_custom_style_rules(slides, ctx.custom_skills)
     if template is not None:
         # После правок содержимое могло перестать помещаться в паттерн (или начать помещаться в другой):
         # подходящие паттерны сохраняются, остальные слайды подбираются заново.

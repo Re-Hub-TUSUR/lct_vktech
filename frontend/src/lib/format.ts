@@ -1,3 +1,5 @@
+import type { SkillKind } from '../api/types'
+
 const dateFormatter = new Intl.DateTimeFormat('ru-RU', {
   day: 'numeric',
   month: 'short',
@@ -113,4 +115,15 @@ export function getImageKindLabel(category?: string | null): string {
     default:
       return 'Изображение'
   }
+}
+
+export const SKILL_KIND_OPTIONS: { value: SkillKind; label: string }[] = [
+  { value: 'all', label: 'Вся генерация' },
+  { value: 'text', label: 'Тексты и структура' },
+  { value: 'design', label: 'Дизайн' },
+  { value: 'audit', label: 'Аудит' },
+]
+
+export function skillKindLabel(kind: string): string {
+  return SKILL_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? kind
 }

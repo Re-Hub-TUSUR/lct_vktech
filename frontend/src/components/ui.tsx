@@ -279,20 +279,33 @@ export function Toggle({
   onChange,
   label,
   hint,
+  disabled = false,
+  ariaLabel,
 }: {
   checked: boolean
   onChange: (checked: boolean) => void
-  label: string
+  /** Без подписи — только переключатель (например, в строке списка); тогда нужен ariaLabel. */
+  label?: string
   hint?: string
+  disabled?: boolean
+  ariaLabel?: string
 }) {
   return (
-    <label className="toggle">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    <label className={clsx('toggle', disabled && 'is-disabled')}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        aria-label={ariaLabel}
+        onChange={(event) => onChange(event.target.checked)}
+      />
       <span className="toggle__track" aria-hidden />
-      <span className="toggle__text">
-        <span>{label}</span>
-        {hint && <small>{hint}</small>}
-      </span>
+      {label && (
+        <span className="toggle__text">
+          <span>{label}</span>
+          {hint && <small>{hint}</small>}
+        </span>
+      )}
     </label>
   )
 }
