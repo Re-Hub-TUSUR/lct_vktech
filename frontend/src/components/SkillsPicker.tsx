@@ -20,6 +20,19 @@ interface SourceSkill {
   instruction: string
 }
 
+/** Снимок скилла для настроек презентации: версия фиксируется в каждом запуске. */
+export function skillSnapshot(skill: SourceSkill): Omit<CustomSkill, 'source'> {
+  return {
+    id: skill.id,
+    title: skill.title,
+    description: skill.description,
+    kind: skill.kind,
+    instruction: skill.instruction,
+    version: skill.version,
+    enabled: true,
+  }
+}
+
 function snapshot(skill: SourceSkill, source: SkillSource): CustomSkill {
   return {
     id: skill.id,
@@ -111,7 +124,9 @@ export function SkillsPicker({ value, onChange }: { value: CustomSkill[]; onChan
     return false
   })
   const local = value.filter((skill) => skillSource(skill, libraryIds) === 'local')
-  const libraryVisible = (library.data ?? []).filter((skill) => skill.enabled || attached.has(skill.id))
+  // «Включён по умолчанию» (страница «Скиллы») решает только, подключать ли скилл к новым презентациям:
+  // в настройках видна вся библиотека.
+  const libraryVisible = library.data ?? []
   const outdated = (skill: SourceSkill) => {
     const current = attached.get(skill.id)
     return current && current.version !== skill.version ? current : undefined

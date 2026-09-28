@@ -59,6 +59,8 @@ class SlideTheme(BaseModel):
     layouts: dict[str, LayoutSkin] = {}
     roles: dict[str, str | None] = {}
     patterns: list[dict[str, Any]] = []
+    # Палитра из разбора шаблона (до 8 самых частых цветов): цвета, которые Студия предлагает для текста и фигур.
+    palette: list[str] = []
 
 
 class TemplateSummary(BaseModel):

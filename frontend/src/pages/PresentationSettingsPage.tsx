@@ -1,16 +1,16 @@
 import { useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { FileCode, FileText, Sparkles, Trash2, X } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api, contentFileUrl } from '../api/client'
-import { queryKeys, useCustomSkills, useOptions, usePresentation, useProjects, useTemplates } from '../api/queries'
+import { queryKeys, useCustomSkills, useOptions, usePresentation, useProjects, useSkillPresets, useTemplates } from '../api/queries'
 import type { CustomSkill, GenerationSettings, Presentation, PresentationInput, Purpose } from '../api/types'
 import { FileDrop } from '../components/FileDrop'
 import { FolderIcon } from '../components/FolderIcon'
 import { PresentationHeader } from '../components/PresentationHeader'
-import { SkillsPicker, skillSource } from '../components/SkillsPicker'
+import { SkillsPicker, skillSnapshot, skillSource } from '../components/SkillsPicker'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
@@ -131,6 +131,19 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const [step, setStep] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<unknown>(null)
+
+  // Новая презентация: скиллы, включённые по умолчанию на странице «Скиллы», подключаются сразу.
+  const skillPresets = useSkillPresets()
+  const defaultsApplied = useRef(Boolean(presentation))
+  useEffect(() => {
+    if (defaultsApplied.current || !skillPresets.data || !customSkills.data) return
+    defaultsApplied.current = true
+    const defaults: CustomSkill[] = [
+      ...skillPresets.data.filter((skill) => skill.enabled).map((skill) => ({ ...skillSnapshot(skill), source: 'preset' as const })),
+      ...customSkills.data.filter((skill) => skill.enabled).map((skill) => ({ ...skillSnapshot(skill), source: 'library' as const })),
+    ]
+    if (defaults.length) setForm((current) => ({ ...current, settings: { ...current.settings, custom_skills: defaults } }))
+  }, [skillPresets.data, customSkills.data])
 
   // Шаблон по умолчанию — первый готовый.
   useEffect(() => {

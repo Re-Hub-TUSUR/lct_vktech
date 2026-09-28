@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { ImageIcon, Trash2 } from 'lucide-react'
 import {
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -13,6 +14,7 @@ import {
 
 import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
 import { capacity, exportView, frameTarget } from '../../lib/exportSupport'
+import { slideMotionCss, type PlayItem } from '../../lib/motion'
 import { fitFontSize } from '../../lib/fit'
 import { applyFrameCrop, frameAspect, knownSize, visibleRegion } from '../../lib/imageCrop'
 import { CroppedImage } from './CroppedImage'
@@ -65,6 +67,17 @@ interface SlideViewProps {
    * суженная до видимой части. Обе правки приходят вместе, одним шагом истории.
    */
   onUpdateElementCrop?: (target: string, crop: [number, number, number, number] | null, box?: [number, number, number, number]) => void
+  /** Скрытые элементы (Slide.hidden_elements берутся сами; сюда — для превью без сохранения). */
+  hiddenTargets?: string[]
+  /** Проигрываемые анимации элементов (lib/motion.ts); смена массива перезапускает их. */
+  play?: PlayItem[]
+  /**
+   * Режим Студии: рамки без своих панелей действий (их даёт плавающая панель), кадрирование управляется
+   * снаружи — cropTarget ('image' или shape:<id>), закреплённые элементы (Slide.locked_elements) не двигаются.
+   */
+  studio?: boolean
+  cropTarget?: string | null
+  onCropTargetChange?: (target: string | null) => void
 }
 
 /** Рендер слайда варианта, если превью актуально. */
@@ -107,7 +120,7 @@ function contentTargetForKind(kind: Slide['kind']): string | null {
  * Идентификаторы шаблонных фигур, которые принадлежат неиспользованным слотам или юнитам.
  * В PPTX-экспорте (pattern_fill.py drop()) они удаляются, поэтому не должны рисоваться в DOM.
  */
-function getDroppedTemplateShapeIds(pattern: SlidePattern | undefined, slide: Slide): Set<number> {
+export function getDroppedTemplateShapeIds(pattern: SlidePattern | undefined, slide: Slide): Set<number> {
   const dropped = new Set<number>()
   if (!pattern) return dropped
 
@@ -455,9 +468,27 @@ function InteractiveSlideView({
   onResetElementBox,
   onUpdateElementCrop,
   render: referenceRender,
+  hiddenTargets,
+  play,
+  studio = false,
+  cropTarget,
+  onCropTargetChange,
 }: SlideViewProps) {
   const slide = useMemo(() => exportView(rawSlide, theme), [rawSlide, theme])
-  const [isCroppingImage, setIsCroppingImage] = useState(false)
+  const [ownCrop, setOwnCrop] = useState<string | null>(null)
+  // Кадрирование: в Студии им управляет плавающая панель, иначе — кнопка рамки.
+  const cropping = onCropTargetChange ? (cropTarget ?? null) : ownCrop
+  const setCropping = onCropTargetChange ?? setOwnCrop
+  const isCroppingImage = cropping === 'image'
+  const setIsCroppingImage = (value: boolean | ((prev: boolean) => boolean)) =>
+    setCropping((typeof value === 'function' ? value(isCroppingImage) : value) ? 'image' : null)
+  const scopeId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  const hidden = hiddenTargets ?? rawSlide.hidden_elements
+  const motionCss = useMemo(
+    () => slideMotionCss(`[data-sv="${scopeId}"]`, hidden, editable, play),
+    [scopeId, hidden, editable, play],
+  )
+  const locked = new Set(rawSlide.locked_elements ?? [])
   const normalizedTarget = normalizeTarget(selectedElementId)
   const frame = editable && normalizedTarget ? frameTarget(slide, theme, normalizedTarget) : null
   const frameKey = frame?.target ?? null
@@ -646,6 +677,7 @@ function InteractiveSlideView({
       ref={slideRef}
       className={clsx('slide', `slide--${slide.kind}`, skin?.image && 'slide--skinned', editable && 'slide--editable', flag('slide'), className)}
       style={style}
+      data-sv={scopeId}
       onPointerDown={
         editable
           ? (e) => {
@@ -659,6 +691,7 @@ function InteractiveSlideView({
           : undefined
       }
     >
+      {motionCss && <style>{motionCss}</style>}
       {skin?.image && <img className="slide__bg" src={skin.image} alt="" draggable={false} loading="lazy" />}
       {templatePictures.map((pic, idx) => (
         <img
@@ -729,6 +762,10 @@ function InteractiveSlideView({
         onSelectShape={onSelectShape}
         onUpdateShape={onUpdateShape}
         onDeleteShape={onDeleteShape}
+        studio={studio}
+        lockedIds={locked}
+        croppingShapeId={cropping?.startsWith('shape:') ? cropping.slice(6) : null}
+        onCroppingChange={(id) => setCropping(id ? `shape:${id}` : null)}
       />
 
       {/* Рамка трансформации: только для блоков, чьё положение переносит сборка */}
@@ -744,6 +781,8 @@ function InteractiveSlideView({
           isCropping={frame.target === 'image' && isCroppingImage}
           crop={slide.element_crops?.[frame.target]}
           label={getElementLabel(frame.target)}
+          hideToolbar={studio}
+          locked={locked.has(frame.target)}
           hasCustomPosition={!!rawSlide.element_boxes?.[frame.target]}
           onUpdateBox={(newBox) => onUpdateElementBox?.(frame.target, newBox)}
           onUpdateCrop={(frameCrop) => {

@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { Check, Crop, Move, RotateCcw, Trash2 } from 'lucide-react'
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 
 export type HandleType = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
@@ -8,6 +8,40 @@ type CropRect = [number, number, number, number]
 type BoxRect = [number, number, number, number]
 
 const EMPTY_CROP: CropRect = [0, 0, 0, 0]
+const CORNERS: HandleType[] = ['nw', 'ne', 'se', 'sw']
+
+// Направляющие привязки (в пространстве слайда 960×540): центр слайда и поля шаблона.
+const SLIDE_W = 960
+const SLIDE_H = 540
+const SNAP_PX = 6
+const SNAP_X = [480, 48, 912]
+type Guide = { axis: 'x' | 'y'; pos: number }
+
+/** Привязка перемещаемой рамки к центру слайда и полям шаблона (x = 48, x + w = 912). */
+function snapBox(box: BoxRect): { box: BoxRect; guides: Guide[] } {
+  let [x, y] = box
+  const [, , w, h] = box
+  const guides: Guide[] = []
+  const px = (v: number) => v * SLIDE_W
+  const py = (v: number) => v * SLIDE_H
+  const cx = px(x + w / 2)
+  const cy = py(y + h / 2)
+  if (Math.abs(cx - SNAP_X[0]) < SNAP_PX) {
+    x = (SNAP_X[0] - px(w) / 2) / SLIDE_W
+    guides.push({ axis: 'x', pos: SNAP_X[0] })
+  } else if (Math.abs(px(x) - SNAP_X[1]) < SNAP_PX) {
+    x = SNAP_X[1] / SLIDE_W
+    guides.push({ axis: 'x', pos: SNAP_X[1] })
+  } else if (Math.abs(px(x + w) - SNAP_X[2]) < SNAP_PX) {
+    x = (SNAP_X[2] - px(w)) / SLIDE_W
+    guides.push({ axis: 'x', pos: SNAP_X[2] })
+  }
+  if (Math.abs(cy - SLIDE_H / 2) < SNAP_PX) {
+    y = (SLIDE_H / 2 - py(h) / 2) / SLIDE_H
+    guides.push({ axis: 'y', pos: SLIDE_H / 2 })
+  }
+  return { box: [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000, w, h], guides }
+}
 
 export interface TransformFrameProps {
   box: BoxRect // [x, y, w, h] normalized 0..1
@@ -27,6 +61,10 @@ export interface TransformFrameProps {
   /** Какие ручки размера показывать (у линии — только боковые). По умолчанию все восемь. */
   handleSet?: HandleType[]
   onDoubleClick?: () => void
+  /** Элемент закреплён (панель «Слои»): рамка видна, но двигать и тянуть её нельзя. */
+  locked?: boolean
+  /** Свои действия рамки (обрезать, сбросить, удалить) не показываются — их даёт плавающая панель Студии. */
+  hideToolbar?: boolean
   onUpdateBox: (newBox: BoxRect) => void
   /** data-element-id or shape:<id>; used for an imperative drag preview. */
   previewTarget?: string
@@ -68,6 +106,8 @@ export function TransformFrame({
   lockAspect = false,
   handleSet,
   onDoubleClick,
+  locked = false,
+  hideToolbar = false,
   onUpdateBox,
   previewTarget,
   onUpdateCrop,
@@ -82,6 +122,7 @@ export function TransformFrame({
   const [isDragging, setIsDragging] = useState(false)
   const [draftBox, setDraftBox] = useState(box)
   const [draftCrop, setDraftCrop] = useState<CropRect>(EMPTY_CROP)
+  const [guides, setGuides] = useState<Guide[]>([])
   const interactionRef = useRef<'move' | 'resize' | 'crop' | null>(null)
   const draftBoxRef = useRef(box)
   const draftCropRef = useRef<CropRect>(EMPTY_CROP)
@@ -202,6 +243,10 @@ export function TransformFrame({
 
   // Обработка перемещения блока
   const handleMovePointerDown = (e: ReactPointerEvent) => {
+    if (locked) {
+      e.stopPropagation()
+      return
+    }
     if (isCropping || interactionRef.current) return
     resetMovePreview()
     e.preventDefault()
@@ -225,6 +270,7 @@ export function TransformFrame({
       }
       interactionRef.current = null
       setIsDragging(false)
+      setGuides([])
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerCancel)
@@ -241,12 +287,9 @@ export function TransformFrame({
       const newX = Math.max(0, Math.min(1 - origW, origX + dx))
       const newY = Math.max(0, Math.min(1 - origH, origY + dy))
 
-      const next: [number, number, number, number] = [
-        Math.round(newX * 1000) / 1000,
-        Math.round(newY * 1000) / 1000,
-        origW,
-        origH,
-      ]
+      const snapped = snapBox([newX, newY, origW, origH])
+      const next = snapped.box
+      setGuides(snapped.guides)
       draftBoxRef.current = next
       setDraftBox(next)
       // Перемещение не меняет width/height, поэтому preview не должен
@@ -292,6 +335,7 @@ export function TransformFrame({
       }
       interactionRef.current = null
       setIsDragging(false)
+      setGuides([])
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerCancel)
@@ -402,6 +446,7 @@ export function TransformFrame({
       }
       interactionRef.current = null
       setIsDragging(false)
+      setGuides([])
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
       window.removeEventListener('pointercancel', onPointerCancel)
@@ -469,24 +514,25 @@ export function TransformFrame({
         return
       }
 
-      const step = e.shiftKey ? 0.05 : 0.01
+      // Сдвиг стрелками: 1 px слайда 960×540, с Shift — 10 px.
+      const stepX = (e.shiftKey ? 10 : 1) / SLIDE_W
+      const stepY = (e.shiftKey ? 10 : 1) / SLIDE_H
+      const round = (v: number) => Math.round(v * 10000) / 10000
+      const arrow = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)
+      if (arrow && locked) return
 
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        const newX = Math.max(0, x - step)
-        onUpdateBox([Math.round(newX * 1000) / 1000, y, w, h])
+        onUpdateBox([round(Math.max(0, x - stepX)), y, w, h])
       } else if (e.key === 'ArrowRight') {
         e.preventDefault()
-        const newX = Math.min(1 - w, x + step)
-        onUpdateBox([Math.round(newX * 1000) / 1000, y, w, h])
+        onUpdateBox([round(Math.min(1 - w, x + stepX)), y, w, h])
       } else if (e.key === 'ArrowUp') {
         e.preventDefault()
-        const newY = Math.max(0, y - step)
-        onUpdateBox([x, Math.round(newY * 1000) / 1000, w, h])
+        onUpdateBox([x, round(Math.max(0, y - stepY)), w, h])
       } else if (e.key === 'ArrowDown') {
         e.preventDefault()
-        const newY = Math.min(1 - h, y + step)
-        onUpdateBox([x, Math.round(newY * 1000) / 1000, w, h])
+        onUpdateBox([x, round(Math.min(1 - h, y + stepY)), w, h])
       } else if (e.key === 'Escape') {
         if (isCropping) {
           e.preventDefault()
@@ -500,9 +546,14 @@ export function TransformFrame({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [x, y, w, h, isCropping, onUpdateBox, onCloseCrop, onDelete])
+  }, [x, y, w, h, isCropping, locked, onUpdateBox, onCloseCrop, onDelete])
 
   const handles: HandleType[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+  // Линия направляющей внутри рамки: координаты слайда → проценты рамки.
+  const guideStyle = (guide: Guide): CSSProperties =>
+    guide.axis === 'x'
+      ? { left: `${((guide.pos / SLIDE_W - x) / w) * 100}%`, top: `${(-y / h) * 100}%`, height: `${(1 / h) * 100}%`, width: 1 }
+      : { top: `${((guide.pos / SLIDE_H - y) / h) * 100}%`, left: `${(-x / w) * 100}%`, width: `${(1 / w) * 100}%`, height: 1 }
 
   return (
     <div
@@ -511,9 +562,10 @@ export function TransformFrame({
         'transform-frame',
         isImage && 'transform-frame--image',
         !isImage && 'transform-frame--structural',
-        dragAnywhere && 'transform-frame--drag-body',
+        dragAnywhere && !locked && 'transform-frame--drag-body',
         isDragging && 'is-dragging',
-        isCropping && 'is-cropping'
+        isCropping && 'is-cropping',
+        locked && 'is-locked'
       )}
       style={{
         left: `${x * 100}%`,
@@ -591,16 +643,28 @@ export function TransformFrame({
           />
 
           {/* Ручка перемещения по центру сверху */}
-          <div
-            className="transform-frame__move-handle"
-            onPointerDown={handleMovePointerDown}
-            title="Переместить блок"
-          >
-            <Move size={12} />
-          </div>
+          {!locked && (
+            <div
+              className="transform-frame__move-handle"
+              onPointerDown={handleMovePointerDown}
+              title="Переместить блок"
+            >
+              <Move size={12} />
+            </div>
+          )}
 
-          {/* 8 маркеров изменения размера */}
-          {resizable && (handleSet ?? handles).map((hName) => (
+          {/* Направляющие привязки и размер во время перетаскивания */}
+          {guides.map((guide) => (
+            <span key={`${guide.axis}${guide.pos}`} className="transform-frame__guide" style={guideStyle(guide)} />
+          ))}
+          {isDragging && (
+            <span className="transform-frame__size">
+              {Math.round(w * SLIDE_W)} × {Math.round(h * SLIDE_H)}
+            </span>
+          )}
+
+          {/* Угловые маркеры размера (у линии — боковые) */}
+          {resizable && !locked && (handleSet ?? CORNERS).map((hName) => (
             <span
               key={hName}
               className={clsx('transform-frame__handle', `handle--${hName}`)}
@@ -609,7 +673,8 @@ export function TransformFrame({
             />
           ))}
 
-          {/* Плавающая панель действий над рамкой */}
+          {/* Плавающая панель действий над рамкой (в Студии её заменяет своя панель) */}
+          {!hideToolbar && (
           <div className="transform-frame__toolbar" onPointerDown={(e) => e.stopPropagation()}>
             {label && <span className="transform-frame__badge">{label}</span>}
 
@@ -648,6 +713,7 @@ export function TransformFrame({
               </button>
             )}
           </div>
+          )}
         </>
       )}
     </div>

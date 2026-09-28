@@ -93,6 +93,25 @@ export interface TableData {
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify'
 
+export type AnimationType = 'fade' | 'up' | 'zoom' | 'left' | 'wipe'
+export type AnimationTrigger = 'click' | 'with' | 'after'
+export type TransitionType = 'none' | 'fade' | 'push' | 'zoom' | 'wipe'
+
+/** Анимация появления элемента; порядок в Slide.animations — порядок показа. */
+export interface SlideAnimation {
+  /** Адрес элемента (title, bullets.1, columns.0, image, chart…) или shape:<id>. */
+  target: string
+  type: AnimationType
+  duration_ms: number
+  delay_ms: number
+  trigger: AnimationTrigger
+}
+
+export interface SlideTransition {
+  type: TransitionType
+  duration_ms: number
+}
+
 export interface Slide {
   id: string
   kind: SlideKind
@@ -134,67 +153,33 @@ export interface Slide {
   element_aligns?: Record<string, TextAlign> | null
   /** Скругление углов картинки слайда (ключ image), как SlideShape.radius. */
   element_radii?: Record<string, number> | null
-}
-
-export interface SlideUpdate {
-  kind?: SlideKind | null
-  title?: string | null
-  subtitle?: string | null
-  summary?: string | null
-  bullets?: string[] | null
-  columns?: Column[] | null
-  kpis?: Kpi[] | null
-  timeline?: TimelineItem[] | null
-  quote?: { text: string; author: string | null } | null
-  table?: TableData | null
-  chart?: ChartData | null
-  shapes?: SlideShape[] | null
-  notes?: string | null
-  font_family?: string | null
-  font_size_scale?: number | null
-  element_fonts?: Record<string, string> | null
-  element_scales?: Record<string, number> | null
-  element_boxes?: Record<string, [number, number, number, number]> | null
-  element_crops?: Record<string, [number, number, number, number]> | null
-  block_density?: 'compact' | 'normal' | 'spacious' | null
-  background_color?: string | null
-  text_color?: string | null
-  text_background_color?: string | null
-  accent_color?: string | null
-  element_colors?: Record<string, string> | null
-  element_backgrounds?: Record<string, string> | null
-  is_bold?: boolean | null
-  element_bolds?: Record<string, boolean> | null
-  /** Выравнивание текста поля. */
-  element_aligns?: Record<string, TextAlign> | null
-  /** Скругление углов картинки слайда (ключ image), как SlideShape.radius. */
-  element_radii?: Record<string, number> | null
-  image?: { prompt: string; url: string | null; status: 'placeholder' | 'generated' } | null
-  layout_key?: string | null
-  layout_name?: string | null
-  pattern_id?: string | null
-}
-
-export interface CreateSlideRequest {
-  kind?: SlideKind
-  title?: string
-  subtitle?: string | null
-  position?: number | null
-}
-
-export interface ReorderSlidesRequest {
-  slide_ids: string[]
-}
-
-export interface BatchSlidesUpdate {
-  slides: Slide[]
+  /** Анимации элементов (по порядку показа) и переход к слайду — переносятся в .pptx. */
+  animations?: SlideAnimation[]
+  transition?: SlideTransition | null
+  /** Скрытые элементы (панель «Слои») не попадают в сборку. */
+  hidden_elements?: string[]
+  /** Закреплённые элементы: в Студии их нельзя двигать. */
+  locked_elements?: string[]
 }
 
 export interface RegenerateSlideRequest {
   instruction?: string | null
   style?: string | null
+  keep_pattern?: boolean
+  /** Скиллы, включённые в Студии (id стандартных preset:… и библиотечных). */
+  skills?: string[]
 }
 
+/** Подсказка вёрстки в Студии › AI. */
+export type PatternHint = 'auto' | 'bullets' | 'columns' | 'cards' | 'timeline' | 'chart' | 'case'
+
+export interface GenerateSlideRequest {
+  prompt: string
+  pattern: PatternHint
+  skills: string[]
+  after_slide_id?: string | null
+  replace_slide_id?: string | null
+}
 
 export interface SurfaceColors {
   background: string
@@ -237,6 +222,8 @@ export interface SlideTheme {
   patterns?: SlidePattern[]
   icons?: Array<{ id: string; file: string; slide_index?: number; size_px?: number[] | null }>
   design?: Record<string, unknown>
+  /** Палитра из разбора шаблона (до 8 цветов) — цвета, которые Студия предлагает для текста и фигур. */
+  palette?: string[]
 }
 
 // --- Шаблоны --------------------------------------------------------------
@@ -429,6 +416,17 @@ export interface CustomSkill {
   description?: string
 }
 
+export interface SkillExample {
+  before: string
+  after: string
+}
+
+export interface SkillVersionInfo {
+  version: string
+  created_at: string | null
+  current: boolean
+}
+
 export interface SkillPreset {
   id: string
   title: string
@@ -436,12 +434,18 @@ export interface SkillPreset {
   kind: SkillKind
   version: string
   instruction: string
+  example: SkillExample
+  versions: SkillVersionInfo[]
+  /** Включён по умолчанию: подключается к новым презентациям и в Студии. */
+  enabled: boolean
 }
 
 export interface CustomSkillRecord extends CustomSkill {
   id: string
   description: string
+  example: SkillExample
   history: { version: string; instruction: string; created_at?: string | null }[]
+  versions: SkillVersionInfo[]
   created_at: string
   updated_at: string
 }
@@ -496,6 +500,15 @@ export interface Presentation {
   updated_at: string
 }
 
+/** Участник презентации на карточке «Мои презентации». */
+export interface PresentationPerson {
+  id: Uuid
+  full_name: string
+  initials: string
+  color: string
+  role: PresentationAccessRole
+}
+
 export interface PresentationListItem {
   id: Uuid
   title: string
@@ -512,6 +525,10 @@ export interface PresentationListItem {
   access_role: PresentationAccessRole
   owner: Pick<User, 'id' | 'full_name' | 'email'>
   updated_at: string
+  /** Другие участники, открытые обсуждения в Студии и замечания аудита. */
+  people: PresentationPerson[]
+  comments_open: number
+  issues_open: number
 }
 
 export interface PresentationInput {
@@ -794,9 +811,53 @@ export interface ResolveResponse {
   not_fixed?: { issue_id: Uuid; reason: string }[]
 }
 
-// Правка слайда из чата: что сделала модель — для ответа ассистента.
+// Правка или генерация слайда моделью (Студия › AI): что сделала модель — для истории.
 export interface RegenerateSlideResponse extends ResolveResponse {
   reply: string
+  /** Слайд, который создан или пересобран по описанию. */
+  slide_id?: string | null
+}
+
+// --- Студия: комментарии и присутствие ------------------------------------
+
+export interface Collaborator {
+  id: Uuid
+  full_name: string
+  initials: string
+  color: string
+}
+
+export interface CommentReply {
+  id: Uuid
+  author: Collaborator | null
+  text: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CommentThread {
+  id: Uuid
+  slide_id: string
+  /** Булавка в координатах слайда 960×540. */
+  x: number
+  y: number
+  target: string | null
+  author: Collaborator | null
+  text: string
+  resolved: boolean
+  resolved_at: string | null
+  replies: CommentReply[]
+  created_at: string
+  updated_at: string
+}
+
+export interface PresenceEntry {
+  user: Collaborator
+  slide_id: string | null
+  target: string | null
+  /** Курсор в координатах слайда 960×540. */
+  cursor: [number, number] | null
+  updated_at: number
 }
 
 // --- Справочники ----------------------------------------------------------

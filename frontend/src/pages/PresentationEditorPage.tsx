@@ -1,77 +1,102 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  AlignCenter,
-  AlignJustify,
-  AlignLeft,
-  AlignRight,
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
   BarChart3,
-  Bold,
-  Check,
   ChevronLeft,
-  ChevronRight,
-  Copy,
-  Download,
-  FileText,
+  Circle,
   Image as ImageIcon,
-  ImagePlus,
-  Info,
-  LayoutTemplate,
-  Maximize2,
+  Layers,
+  LoaderCircle,
+  MessageSquare,
+  MessageSquarePlus,
   Minus,
   Moon,
-  Palette,
+  PanelRightClose,
+  PanelRightOpen,
   Play,
-  Plus,
   Redo2,
-  Save,
-  Shapes,
   Sparkles,
+  Square,
   Sun,
-  Trash2,
   Type,
   Undo2,
+  UserPlus,
   X,
-  ZoomIn,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router'
 
 import { api } from '../api/client'
-import { queryKeys, usePresentation, useVariant } from '../api/queries'
+import { queryKeys, useComments, useCustomSkills, usePresentation, useSkillPresets, useVariant } from '../api/queries'
 import type {
+  AnimationType,
+  Collaborator,
+  CommentThread,
   ContentFile,
+  GenerateSlideRequest,
+  PatternHint,
+  Presentation,
+  RegenerateSlideRequest,
   RegenerateSlideResponse,
   ResolveResponse,
   Slide,
-  SlideKind,
+  SlideAnimation,
   SlidePattern,
   SlideShape,
   TextAlign,
+  TransitionType,
   VariantDetail,
 } from '../api/types'
+import { useAuth } from '../auth/AuthProvider'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ImagePickerModal } from '../components/ImagePickerModal'
-import { SlideAssistantPanel } from '../components/SlideAssistantPanel'
-import { SlideContentPanel } from '../components/SlideContentPanel'
-import { SlideDesignModal } from '../components/SlideDesignModal'
-import { getElementLabel, SlideView, slideRender } from '../components/slides/SlideView'
+import { ShareDialog } from '../components/ShareDialog'
+import { Avatar, CommentsPanel, type DraftThread } from '../components/studio/CommentsPanel'
+import { Filmstrip } from '../components/studio/Filmstrip'
+import { FloatingToolbar } from '../components/studio/FloatingToolbar'
+import { InspectorAI, type QuickEdit, type StudioSkill } from '../components/studio/InspectorAI'
+import { InspectorAnimation } from '../components/studio/InspectorAnimation'
+import { InspectorDesign, type Box, type DesignSelection } from '../components/studio/InspectorDesign'
+import { LayersPanel } from '../components/studio/LayersPanel'
+import {
+  bringToFront,
+  canDuplicate,
+  deleteElement,
+  duplicateElement,
+  isShapeTarget,
+  measureTarget,
+  newId,
+  patternOf,
+  readField,
+  shapesOf,
+  slideElements,
+  templateFonts,
+  templatePalette,
+  toggleHidden,
+  toggleLocked,
+} from '../components/studio/model'
+import { patternName, PatternsPanel, suitablePatterns } from '../components/studio/PatternsPanel'
+import { StageOverlay } from '../components/studio/StageOverlay'
+import { usePresence } from '../components/studio/usePresence'
+import { getElementLabel, normalizeTarget, SlideView, slideRender } from '../components/slides/SlideView'
 import { Slideshow } from '../components/slides/Slideshow'
 import { useToast } from '../components/Toast'
-import { Button, ErrorState, FullPageSpinner, Select, type SelectOption } from '../components/ui'
-import { typographyTarget } from '../lib/exportSupport'
+import { Button, ErrorState, FullPageSpinner } from '../components/ui'
+import vkLogo from '../assets/vk-logo.png'
+import { frameTarget, isTextField, typographyTarget } from '../lib/exportSupport'
 import { boxForImage, loadImageSize } from '../lib/imageCrop'
-import { SLIDE_KIND_LABELS } from '../lib/labels'
+import {
+  defaultAnimation,
+  EDITOR_TRANSITION_MS,
+  playAll,
+  playOne,
+  transitionClass,
+  type PlayItem,
+} from '../lib/motion'
 import {
   addChart,
   canvasListAction,
-  changeKind,
   fieldPatch,
-  regenerateInstruction,
-  removeChart,
   removeSlideImage,
   selectLayout,
   selectPattern,
@@ -103,72 +128,61 @@ export function PresentationEditorPage() {
   const initialSlideIndex = parseInt(searchParams.get('slide') || '0', 10)
 
   return (
-    <SlidesEditor
+    <StudioEditor
       key={variant.data.variant.id}
-      presentationId={id!}
+      presentation={presentation.data}
       detail={variant.data}
       initialIndex={isNaN(initialSlideIndex) ? 0 : initialSlideIndex}
+      initialThread={searchParams.get('comment')}
       canEdit={presentation.data.access_role !== 'viewer'}
       contentFiles={presentation.data.files ?? []}
     />
   )
 }
 
-interface SlidesEditorProps {
-  presentationId: string
-  /** Файлы контент-пакета: из них можно взять картинку на слайд. */
-  contentFiles: ContentFile[]
+interface StudioEditorProps {
+  presentation: Presentation
   detail: VariantDetail
   initialIndex: number
+  /** Обсуждение, которое открыть сразу (ссылка из уведомления). */
+  initialThread: string | null
   canEdit: boolean
+  /** Файлы контент-пакета: из них можно взять картинку на слайд. */
+  contentFiles: ContentFile[]
 }
 
-type ZoomMode = 'fit' | '50' | '75' | '100' | '125'
-type ColorTarget = 'text' | 'fill'
+type RailPanel = 'layers' | 'comments' | 'patterns'
+type InspectorTab = 'design' | 'anim' | 'ai'
+type ImageTarget = { mode: 'slide' | 'floating' | 'shape'; slideId: string; shapeId?: string }
 
 const HISTORY_LIMIT = 60
-/** Правки одного поля подряд (ввод в редакторе диаграммы, заметки) — один шаг истории. */
+/** Правки одного поля подряд (ввод текста, ползунки) — один шаг истории. */
 const COALESCE_MS = 1200
-const ZOOM_WIDTH: Record<Exclude<ZoomMode, 'fit'>, number> = { '50': 500, '75': 750, '100': 980, '125': 1200 }
-const ZOOM_OPTIONS: SelectOption<ZoomMode>[] = [
-  { value: 'fit', label: 'По размеру' },
-  { value: '50', label: '50%' },
-  { value: '75', label: '75%' },
-  { value: '100', label: '100%' },
-  { value: '125', label: '125%' },
-]
-const KIND_OPTIONS: SelectOption<SlideKind>[] = Object.entries(SLIDE_KIND_LABELS).map(([value, label]) => ({
-  value: value as SlideKind,
-  label,
-}))
-const SHAPE_KINDS: { kind: SlideShape['kind']; label: string; icon: ReactNode }[] = [
-  { kind: 'rect', label: 'Прямоугольник', icon: <span style={{ width: 12, height: 10, border: '1.5px solid currentColor', borderRadius: 2 }} /> },
-  { kind: 'circle', label: 'Круг', icon: <span style={{ width: 11, height: 11, border: '1.5px solid currentColor', borderRadius: '50%' }} /> },
-  { kind: 'badge', label: 'Бейдж / плашка', icon: <span style={{ width: 14, height: 8, border: '1.5px solid currentColor', borderRadius: 4 }} /> },
-  { kind: 'line', label: 'Линия-акцент', icon: <span style={{ width: 14, height: 2, background: 'currentColor' }} /> },
-]
-const ALIGN_OPTIONS: { value: TextAlign; label: string; icon: ReactNode }[] = [
-  { value: 'left', label: 'По левому краю', icon: <AlignLeft size={14} /> },
-  { value: 'center', label: 'По центру', icon: <AlignCenter size={14} /> },
-  { value: 'right', label: 'По правому краю', icon: <AlignRight size={14} /> },
-  { value: 'justify', label: 'По ширине', icon: <AlignJustify size={14} /> },
-]
-const PRESET_COLORS = [
-  '#000000', '#475569', '#94a3b8', '#e2e8f0', '#ffffff', '#ef4444', '#f97316', '#f59e0b',
-  '#10b981', '#06b6d4', '#0077ff', '#6366f1', '#8b5cf6', '#ec4899',
-]
+/** Автосохранение после паузы в правках. */
+const AUTOSAVE_MS = 2000
+const INSPECTOR_KEY = 'studio.inspectorOpen'
 
-const newId = () => Math.random().toString(36).slice(2, 10)
 const serialize = (slide: Slide) => JSON.stringify(slide)
 
-function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFiles }: SlidesEditorProps) {
+function readInspectorOpen(): boolean {
+  try {
+    return localStorage.getItem(INSPECTOR_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+function StudioEditor({ presentation, detail, initialIndex, initialThread, canEdit, contentFiles }: StudioEditorProps) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const notify = useToast()
+  const { user } = useAuth()
   const { variant, theme } = detail
   const { theme: uiTheme, toggleTheme: toggleUiTheme } = useTheme()
+  const presentationId = presentation.id
+  const templateName = presentation.template?.name ?? null
 
-  // История правок колоды: текущее состояние — stack[step]. saved — то, что лежит на сервере.
+  // --- История правок колоды: текущее состояние — stack[step]. saved — то, что лежит на сервере. ----
   const [history, setHistory] = useState(() => ({ stack: [variant.slides], step: 0 }))
   const [saved, setSaved] = useState<Slide[]>(variant.slides)
   const slides = history.stack[history.step]
@@ -179,51 +193,60 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
 
   const [activeElement, setActiveElement] = useState<string | null>(null)
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null)
-  const [zoomMode, setZoomMode] = useState<ZoomMode>('fit')
-  // Заметки докладчика: открыты или свёрнуты — запоминается в браузере.
-  const [notesOpen, setNotesOpenState] = useState(() => {
+  const [cropTarget, setCropTarget] = useState<string | null>(null)
+
+  const [railPanel, setRailPanel] = useState<RailPanel | null>(initialThread ? 'comments' : 'layers')
+  const [inspectorOpen, setInspectorOpenState] = useState(readInspectorOpen)
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('design')
+  const setInspectorOpen = (open: boolean) => {
+    setInspectorOpenState(open)
     try {
-      return localStorage.getItem('studio.notesOpen') === '1'
-    } catch {
-      return false
-    }
-  })
-  const setNotesOpen = (open: boolean) => {
-    setNotesOpenState(open)
-    try {
-      localStorage.setItem('studio.notesOpen', open ? '1' : '0')
+      localStorage.setItem(INSPECTOR_KEY, open ? '1' : '0')
     } catch {
       // хранилище недоступно (приватный режим) — просто не запоминаем
     }
   }
+  const openInspector = (tab: InspectorTab) => {
+    setInspectorTab(tab)
+    setInspectorOpen(true)
+  }
+
+  const [commentMode, setCommentMode] = useState(false)
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(initialThread)
+  const [draft, setDraft] = useState<DraftThread | null>(null)
+
+  const [play, setPlay] = useState<{ key: number; items: PlayItem[] | undefined }>({ key: 0, items: undefined })
+  const [transitionKey, setTransitionKey] = useState(0)
+
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiHint, setAiHint] = useState<PatternHint>('auto')
+  const [skillOverrides, setSkillOverrides] = useState<Record<string, boolean>>({})
+  const [aiBusy, setAiBusy] = useState<'generate' | 'replace' | QuickEdit | null>(null)
+  const [aiHistory, setAiHistory] = useState<string[]>([])
+
   const [slideshowOpen, setSlideshowOpen] = useState(false)
-  const [activeSidebarTab, setActiveSidebarTab] = useState<'content' | 'design' | 'ai'>('content')
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [filmstripCollapsed, setFilmstripCollapsed] = useState(false)
-  const [showDesignModal, setShowDesignModal] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [showLeaveDialog, setShowLeaveDialog] = useState(false)
-  const [openMenu, setOpenMenu] = useState<string | null>(null)
-  const [colorTarget, setColorTarget] = useState<ColorTarget | null>(null)
-  // Окно выбора картинки: куда вставлять, фиксируется при открытии (пока файл грузится, слайд могут сменить).
-  const [imagePicker, setImagePicker] = useState<{ mode: 'slide' | 'floating' | 'shape'; slideId: string; shapeId?: string } | null>(null)
+  const [imagePicker, setImagePicker] = useState<ImageTarget | null>(null)
 
   // --- Что изменено относительно сервера ---------------------------------------------------------
 
   const savedJson = useMemo(() => new Map(saved.map((s) => [s.id, serialize(s)])), [saved])
   const serverJson = useMemo(() => new Map(variant.slides.map((s, i) => [s.id, { json: serialize(s), index: i }])), [variant.slides])
   const slidesJson = useMemo(() => slides.map(serialize), [slides])
-  const hasChanges =
-    slides.length !== saved.length ||
-    slides.some((s, i) => s.id !== saved[i]?.id || slidesJson[i] !== savedJson.get(s.id))
+  const hasChanges = slides.length !== saved.length || slides.some((s, i) => s.id !== saved[i]?.id || slidesJson[i] !== savedJson.get(s.id))
   const hasChangesRef = useRef(hasChanges)
   hasChangesRef.current = hasChanges
 
   /** Рендер из собранного .pptx — только если он построен ровно по этому слайду. */
-  const renderFor = (slide: Slide | undefined, localIndex: number) => {
-    if (!slide) return undefined
-    const server = serverJson.get(slide.id)
-    return server && server.json === slidesJson[localIndex] ? slideRender(variant, server.index) : undefined
-  }
+  const renderFor = useCallback(
+    (slide: Slide | undefined, localIndex: number) => {
+      if (!slide) return undefined
+      const server = serverJson.get(slide.id)
+      return server && server.json === slidesJson[localIndex] ? slideRender(variant, server.index) : undefined
+    },
+    [serverJson, slidesJson, variant],
+  )
 
   // Чужие сохранения (SSE, автоисправления аудита) подхватываем, пока своих правок нет.
   useEffect(() => {
@@ -240,9 +263,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
   const commit = (update: (prev: Slide[]) => Slide[], coalesceKey?: string) => {
     if (!canEdit) return
     const now = Date.now()
-    const merge = Boolean(
-      coalesceKey && lastCommit.current?.key === coalesceKey && now - lastCommit.current.at < COALESCE_MS,
-    )
+    const merge = Boolean(coalesceKey && lastCommit.current?.key === coalesceKey && now - lastCommit.current.at < COALESCE_MS)
     lastCommit.current = coalesceKey ? { key: coalesceKey, at: now } : null
     setHistory((h) => {
       const current = h.stack[h.step]
@@ -273,49 +294,64 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     if (currentSlide) patchSlide(currentSlide.id, patch, coalesceKey)
   }
 
-  const goToSlide = (index: number) => {
-    setCurrentIndex(Math.max(0, Math.min(index, slides.length - 1)))
+  const clearSelection = () => {
     setActiveElement(null)
     setSelectedShapeId(null)
+    setCropTarget(null)
   }
+  const goToSlide = (index: number) => {
+    setCurrentIndex(Math.max(0, Math.min(index, slides.length - 1)))
+    clearSelection()
+    setDraft(null)
+  }
+  /** Выбор элемента по адресу: shape:<id> — фигура, иначе поле или блок слайда. */
+  const selectTarget = (target: string | null) => {
+    setCropTarget(null)
+    if (target && isShapeTarget(target)) {
+      setSelectedShapeId(target.slice(6))
+      setActiveElement(null)
+    } else {
+      setSelectedShapeId(null)
+      setActiveElement(target)
+    }
+  }
+
+  // --- Выделение -----------------------------------------------------------------------------
+
+  const pattern = currentSlide ? patternOf(currentSlide, theme) : undefined
+  const effectiveShapes: SlideShape[] = currentSlide ? shapesOf(currentSlide, theme) : []
+  const selectedShape = effectiveShapes.find((s) => s.id === selectedShapeId)
+  const selTarget = selectedShape ? `shape:${selectedShape.id}` : normalizeTarget(activeElement)
+  const frame = activeElement && currentSlide ? frameTarget(currentSlide, theme, activeElement) : null
+  const elements = useMemo(() => (currentSlide ? slideElements(currentSlide, theme) : []), [currentSlide, theme])
+  const labelOf = (target: string) => elements.find((element) => element.target === target)?.label ?? getElementLabel(target)
+  const palette = useMemo(() => templatePalette(theme), [theme])
+  const fonts = useMemo(() => templateFonts(theme), [theme])
 
   // --- Текст, фигуры, блоки ------------------------------------------------------------------
 
   const handleFieldChange = (path: string, value: string) => {
     if (!currentSlide) return
     const patch = fieldPatch(currentSlide, path, value)
-    if (patch) updateCurrentSlide(patch, path === 'notes' ? `notes:${currentSlide.id}` : undefined)
+    if (patch) updateCurrentSlide(patch, path === 'notes' ? `notes:${currentSlide.id}` : `field:${currentSlide.id}:${path}`)
   }
-
-  const pattern = currentSlide?.pattern_id ? theme.patterns?.find((p) => p.id === currentSlide.pattern_id) : undefined
-  const effectiveShapes: SlideShape[] = currentSlide?.shapes?.length ? currentSlide.shapes : pattern?.shapes || []
-  const selectedShape = effectiveShapes.find((s) => s.id === selectedShapeId)
 
   const handleUpdateShape = (shapeId: string, patch: Partial<SlideShape>, coalesceKey?: string) =>
     updateCurrentSlide({ shapes: effectiveShapes.map((s) => (s.id === shapeId ? { ...s, ...patch } : s)) }, coalesceKey)
 
-  const handleDeleteShape = (shapeId: string) => {
-    updateCurrentSlide({ shapes: effectiveShapes.filter((s) => s.id !== shapeId) })
-    if (selectedShapeId === shapeId) setSelectedShapeId(null)
-  }
-
-  const handleAddShape = (kind: SlideShape['kind']) => {
+  const handleAddShape = (kind: SlideShape['kind'] | 'text') => {
     const id = newId()
-    const shape: SlideShape = {
-      id,
-      kind,
-      x: 0.38,
-      y: 0.38,
-      width: kind === 'line' ? 0.3 : kind === 'circle' ? 0.14 : 0.22,
-      height: kind === 'line' ? 0.01 : kind === 'circle' ? 0.14 : 0.09,
-      color: theme.accent,
-      opacity: 1,
-      text: kind === 'line' ? null : kind === 'circle' ? '★' : 'Текст фигуры',
-      border: false,
-    }
+    const base = { id, opacity: 1, border: false, x: 0.38, y: 0.4 }
+    const shape: SlideShape =
+      kind === 'text'
+        ? { ...base, kind: 'rect', width: 0.27, height: 0.07, color: 'transparent', text: 'Новый текст' }
+        : kind === 'line'
+          ? { ...base, kind: 'line', x: 0.4, y: 0.5, width: 0.23, height: 0.008, color: theme.accent, text: null }
+          : kind === 'circle'
+            ? { ...base, kind: 'circle', x: 0.45, width: 0.094, height: 0.167, color: theme.accent, text: null }
+            : { ...base, kind: 'rect', width: 0.19, height: 0.2, color: theme.surface || theme.accent, text: null }
     updateCurrentSlide({ shapes: [...effectiveShapes, shape] })
-    setSelectedShapeId(id)
-    setActiveElement(null)
+    selectTarget(`shape:${id}`)
   }
 
   const handleUpdateElementBox = (target: string, box: [number, number, number, number]) =>
@@ -331,11 +367,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
   }
 
   // Обрезка и суженная под неё рамка — одной правкой (модель PowerPoint, lib/imageCrop.ts).
-  const handleUpdateElementCrop = (
-    target: string,
-    crop: [number, number, number, number] | null,
-    box?: [number, number, number, number],
-  ) => {
+  const handleUpdateElementCrop = (target: string, crop: [number, number, number, number] | null, box?: [number, number, number, number]) => {
     const crops = { ...(currentSlide.element_crops || {}) }
     if (crop) crops[target] = crop
     else delete crops[target]
@@ -343,6 +375,29 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
       element_crops: crops,
       ...(box ? { element_boxes: { ...(currentSlide.element_boxes || {}), [target]: box } } : {}),
     })
+  }
+
+  const handleListItem = (field: string, action: 'insert' | 'remove', text: string) => {
+    const result = canvasListAction(currentSlide, field, action, text)
+    if (!result) return undefined
+    updateCurrentSlide(result.patch)
+    return result.focus
+  }
+
+  const handleSelectPattern = (next: SlidePattern) => {
+    updateCurrentSlide(selectPattern(currentSlide, next, theme))
+    clearSelection()
+    setTransitionKey((key) => key + 1)
+    notify(`Паттерн «${patternName(next)}» применён, тексты сохранены`)
+  }
+
+  const deleteSelected = () => {
+    if (!selTarget || !currentSlide) return
+    const { patch, hidden } = deleteElement(currentSlide, theme, selTarget)
+    if (!Object.keys(patch).length) return
+    updateCurrentSlide(patch)
+    clearSelection()
+    if (hidden) notify('Элемент скрыт — вернуть его можно в «Слоях»', 'info')
   }
 
   // --- Слайды колоды -------------------------------------------------------------------------
@@ -368,7 +423,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
       title: 'Новый слайд',
       subtitle: null,
       summary: null,
-      bullets: ['Ключевой тезис слайда'],
+      bullets: ['Ключевой тезис', 'Второй тезис', 'Третий тезис'],
       columns: [],
       chart: null,
       table: null,
@@ -381,9 +436,13 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
       layout_key: theme.roles?.content ?? null,
       layout_name: null,
       pattern_id: null,
+      transition: currentSlide?.transition ?? null,
     }
-    commit((prev) => [...prev.slice(0, currentIndex + 1), slide, ...prev.slice(currentIndex + 1)])
+    const first = suitablePatterns(slide, theme)[0]
+    const placed = first ? { ...slide, ...selectPattern(slide, first, theme) } : slide
+    commit((prev) => [...prev.slice(0, currentIndex + 1), placed, ...prev.slice(currentIndex + 1)])
     goToSlide(currentIndex + 1)
+    setRailPanel('patterns')
   }
 
   const handleDuplicateSlide = (index: number) => {
@@ -399,8 +458,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     if (slides.length <= 1) return
     commit((prev) => prev.filter((_, i) => i !== index))
     setCurrentIndex(Math.max(0, Math.min(index, slides.length - 2)))
-    setActiveElement(null)
-    setSelectedShapeId(null)
+    clearSelection()
     notify('Слайд удалён — Ctrl+Z вернёт его', 'info')
   }
 
@@ -411,8 +469,8 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
       old && 'variant' in result ? { ...old, variant: result.variant } : old,
     )
     if ('report' in result && result.report) queryClient.setQueryData(queryKeys.audit(variant.id), result.report)
-    queryClient.invalidateQueries({ queryKey: queryKeys.variants(detail.presentation.id) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.presentation(detail.presentation.id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.variants(presentationId) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.presentation(presentationId) })
   }
 
   const saveMutation = useMutation({
@@ -427,12 +485,12 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     },
   })
 
-  const save = async (): Promise<boolean> => {
+  const save = async (quiet = false): Promise<boolean> => {
     if (!canEdit || saveMutation.isPending) return false
     if (!hasChangesRef.current) return true
     try {
       await saveMutation.mutateAsync(slides)
-      notify('Изменения сохранены. Превью слайдов пересобирается в фоне')
+      if (!quiet) notify('Изменения сохранены. Превью слайдов пересобирается в фоне')
       return true
     } catch (error) {
       notify(`Не удалось сохранить: ${(error as Error).message}`, 'error')
@@ -440,8 +498,20 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     }
   }
 
+  // Автосохранение: после паузы в правках колода уходит на сервер сама.
+  const saveRef = useRef(save)
+  saveRef.current = save
+  useEffect(() => {
+    if (!canEdit || !hasChanges) return
+    const timer = window.setTimeout(() => void saveRef.current(true), AUTOSAVE_MS)
+    return () => window.clearTimeout(timer)
+  }, [slides, hasChanges, canEdit])
+
   const leaveToAudit = () => navigate(`/presentations/${presentationId}/audit`)
-  const handleBack = () => (hasChanges ? setShowLeaveDialog(true) : leaveToAudit())
+  const handleBack = async () => {
+    if (!hasChangesRef.current || (await save(true))) leaveToAudit()
+    else setShowLeaveDialog(true)
+  }
   const handleDone = async () => {
     if (await save()) leaveToAudit()
   }
@@ -457,41 +527,7 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [])
 
-  // Горячие клавиши: сохранение, отмена и повтор (внутри текстовых полей — их собственная отмена).
-  const shortcuts = useRef({ save, undo, redo })
-  shortcuts.current = { save, undo, redo }
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return
-      const target = e.target as HTMLElement | null
-      const inField = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || Boolean(target?.isContentEditable)
-      const key = e.code === 'KeyS' ? 's' : e.code === 'KeyZ' ? 'z' : e.code === 'KeyY' ? 'y' : e.key.toLowerCase()
-      if (key === 's') {
-        e.preventDefault()
-        void shortcuts.current.save()
-      } else if (!inField && key === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) shortcuts.current.redo()
-        else shortcuts.current.undo()
-      } else if (!inField && key === 'y') {
-        e.preventDefault()
-        shortcuts.current.redo()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
-
-  // Закрытие выпадающих меню при клике снаружи
-  useEffect(() => {
-    const handleDocClick = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.gslides-menu-item')) setOpenMenu(null)
-    }
-    document.addEventListener('click', handleDocClick)
-    return () => document.removeEventListener('click', handleDocClick)
-  }, [])
-
-  // --- Картинки и правка моделью -------------------------------------------------------------
+  // --- Картинки --------------------------------------------------------------------------------
 
   // Файл загружается как ассет варианта; на слайд он попадает обычной правкой (её можно отменить).
   const uploadImageMutation = useMutation({
@@ -502,32 +538,24 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     },
   })
 
-  const openImagePicker = (mode: 'slide' | 'floating' | 'shape') => {
+  const openImagePicker = (mode: ImageTarget['mode']) => {
     if (!currentSlide || !canEdit) return
     setImagePicker({ mode, slideId: currentSlide.id, shapeId: mode === 'shape' ? selectedShapeId ?? undefined : undefined })
   }
 
-  /** Фигуры слайда: свои или, пока их не трогали, фигуры его слайда-примера. */
-  const shapesOf = (s: Slide): SlideShape[] =>
-    s.shapes?.length ? s.shapes : (s.pattern_id && theme.patterns?.find((p) => p.id === s.pattern_id)?.shapes) || []
-
   // Картинка из окна выбора (контент-пакет или загрузка) — на тот слайд, где окно открыли.
-  const insertImage = async (url: string, filename: string, target: NonNullable<typeof imagePicker>) => {
+  const insertImage = async (url: string, filename: string, target: ImageTarget) => {
     const { mode, slideId, shapeId } = target
-    const patchTarget = (patch: (s: Slide) => SlidePatch) =>
-      commit((prev) => prev.map((s) => (s.id === slideId ? { ...s, ...patch(s) } : s)))
+    const patchTarget = (patch: (s: Slide) => SlidePatch) => commit((prev) => prev.map((s) => (s.id === slideId ? { ...s, ...patch(s) } : s)))
     if (mode === 'floating') {
       // Плавающее фото — с родными пропорциями картинки, по центру слайда.
       const [x, y, width, height] = boxForImage(await loadImageSize(url), theme.aspect || 16 / 9)
       const shape: SlideShape = { id: newId(), kind: 'image', image_url: url, x, y, width, height, color: 'transparent', opacity: 1, border: false }
-      patchTarget((s) => ({ shapes: [...shapesOf(s), shape] }))
-      if (slideId === currentSlide?.id) {
-        setSelectedShapeId(shape.id)
-        setActiveElement(null)
-      }
-      notify('Плавающее фото добавлено')
+      patchTarget((s) => ({ shapes: [...shapesOf(s, theme), shape] }))
+      if (slideId === currentSlide?.id) selectTarget(`shape:${shape.id}`)
+      notify('Фото добавлено')
     } else if (mode === 'shape' && shapeId) {
-      patchTarget((s) => ({ shapes: shapesOf(s).map((sh) => (sh.id === shapeId ? { ...sh, image_url: url, crop: null } : sh)) }))
+      patchTarget((s) => ({ shapes: shapesOf(s, theme).map((sh) => (sh.id === shapeId ? { ...sh, image_url: url, crop: null } : sh)) }))
       notify('Изображение заменено')
     } else {
       patchTarget((s) => setSlideImage(s, url, `Изображение: ${filename}`, theme))
@@ -535,40 +563,110 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     }
   }
 
+  // --- Модель: правка слайда и слайд по описанию -----------------------------------------------
+
+  const { data: presets } = useSkillPresets()
+  const { data: library } = useCustomSkills()
+  const skills: StudioSkill[] = useMemo(
+    () => [
+      ...(library ?? []).map((skill) => ({ id: skill.id, title: skill.title, version: skill.version, byDefault: skill.enabled })),
+      ...(presets ?? []).map((skill) => ({ id: skill.id, title: skill.title, version: skill.version, byDefault: skill.enabled })),
+    ],
+    [presets, library],
+  )
+  const enabledSkills = useMemo(() => {
+    const defaults = new Set([...(presets ?? []), ...(library ?? [])].filter((skill) => skill.enabled).map((skill) => skill.id))
+    return new Set(skills.map((skill) => skill.id).filter((id) => skillOverrides[id] ?? defaults.has(id)))
+  }, [presets, library, skills, skillOverrides])
+
+  const pushHistory = (entry: string) => setAiHistory((items) => [entry, ...items].slice(0, 6))
+
   // Модель правит сохранённую колоду, поэтому несохранённые правки сначала сохраняются.
-  // deck — колода, которую нужно сохранить перед запросом (например, со свежепримененным шаблоном);
-  // keepPattern — шаблон выбран пользователем, сервер не подбирает другой.
-  const regenerateMutation = useMutation({
-    mutationFn: async ({ slideId, instruction, deck, keepPattern = false }: { slideId: string; instruction: string; deck?: Slide[]; keepPattern?: boolean }) => {
-      if (deck || hasChangesRef.current) await saveMutation.mutateAsync(deck ?? slides)
-      return api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${slideId}/regenerate`, {
-        instruction,
-        keep_pattern: keepPattern,
-      })
-    },
-    onSuccess: (result) => {
+  const regenerate = async (instruction: string, keepPattern = true) => {
+    if (hasChangesRef.current) await saveMutation.mutateAsync(slides)
+    const body: RegenerateSlideRequest = { instruction, keep_pattern: keepPattern, skills: [...enabledSkills] }
+    const result = await api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/${currentSlide.id}/regenerate`, body)
+    applyServerResult(result)
+    setSaved(result.variant.slides)
+    commit(() => result.variant.slides)
+    return result
+  }
+
+  const generate = async (replace: boolean) => {
+    if (!aiPrompt.trim() || aiBusy) return
+    setAiBusy(replace ? 'replace' : 'generate')
+    try {
+      if (hasChangesRef.current) await saveMutation.mutateAsync(slides)
+      const body: GenerateSlideRequest = {
+        prompt: aiPrompt.trim(),
+        pattern: aiHint,
+        skills: [...enabledSkills],
+        ...(replace ? { replace_slide_id: currentSlide.id } : { after_slide_id: currentSlide.id }),
+      }
+      const result = await api.post<RegenerateSlideResponse>(`/variants/${variant.id}/slides/generate`, body)
       applyServerResult(result)
       setSaved(result.variant.slides)
       commit(() => result.variant.slides)
-      notify('Слайд обновлён моделью — Ctrl+Z вернёт прежний текст')
-    },
-    onError: (err) => notify(err.message, 'error'),
-  })
+      const index = result.variant.slides.findIndex((slide) => slide.id === result.slide_id)
+      if (index >= 0) goToSlide(index)
+      setTransitionKey((key) => key + 1)
+      const number = index >= 0 ? index + 1 : currentIndex + 1
+      pushHistory(`${replace ? `Слайд ${number} пересобран` : `Слайд ${number} создан`} · ${result.reply}`)
+      notify(replace ? 'Слайд пересобран — Ctrl+Z вернёт прежний' : 'Слайд сгенерирован — Ctrl+Z уберёт его')
+    } catch (error) {
+      notify((error as Error).message, 'error')
+    } finally {
+      setAiBusy(null)
+    }
+  }
 
-  // --- Оформление текста: поле, блок (все его тексты) или весь слайд ---------------------------
+  const autoAnimate = () => {
+    const order = [...elements].reverse().filter((element) => element.target !== 'title' && !element.template && element.kind !== 'line')
+    const animations: SlideAnimation[] = order.map((element) => ({ ...defaultAnimation(element.target, 'up'), duration_ms: 500, trigger: 'after' }))
+    updateCurrentSlide({ animations })
+    setPlay((p) => ({ key: p.key + 1, items: playAll({ ...currentSlide, animations }) }))
+  }
 
-  const typo = currentSlide ? typographyTarget(currentSlide, theme, activeElement, selectedShape) : null
+  const quickEdit = async (kind: QuickEdit) => {
+    const number = currentIndex + 1
+    if (kind === 'pattern') {
+      const options = suitablePatterns(currentSlide, theme).filter((item) => item.id !== currentSlide.pattern_id)
+      if (!options.length) {
+        notify('Других подходящих паттернов в шаблоне нет', 'info')
+        return
+      }
+      const position = options.findIndex((item) => (theme.patterns ?? []).indexOf(item) > (theme.patterns ?? []).findIndex((p) => p.id === currentSlide.pattern_id))
+      handleSelectPattern(options[position >= 0 ? position : 0])
+      pushHistory(`Паттерн сменён · слайд ${number}`)
+      return
+    }
+    if (kind === 'anim') {
+      autoAnimate()
+      pushHistory(`Анимации расставлены · слайд ${number}`)
+      notify('Анимации расставлены по порядку появления')
+      return
+    }
+    setAiBusy(kind)
+    try {
+      const instruction =
+        kind === 'short'
+          ? 'Сократи тексты слайда: заголовок — вывод до 8 слов, пункты — до 10 слов, без потери фактов и цифр'
+          : 'Напиши заметки докладчика к этому слайду: 3–4 предложения, что сказать и как перейти к следующему. Текст на слайде не меняй'
+      const result = await regenerate(instruction)
+      pushHistory(`${kind === 'short' ? 'Тексты сокращены' : 'Заметки написаны'} · слайд ${number}`)
+      notify(result.reply || 'Слайд обновлён моделью — Ctrl+Z вернёт прежний текст')
+    } catch (error) {
+      notify((error as Error).message, 'error')
+    } finally {
+      setAiBusy(null)
+    }
+  }
+
+  // --- Оформление текста: поле, блок (все его тексты) или фигура --------------------------------
+
+  const typo = currentSlide && (activeElement || selectedShape) ? typographyTarget(currentSlide, theme, activeElement, selectedShape) : null
   const typoFields = typo?.elements ?? []
-
-  const availableFonts = useMemo(
-    () =>
-      Array.from(new Set([theme.heading_font, theme.body_font, 'VK Sans Display', 'Inter', 'Arial', 'Georgia', 'Montserrat'].filter(Boolean))),
-    [theme],
-  )
-  const fontOptions: SelectOption<string>[] = [
-    { value: '', label: `Шрифт: ${typoFields.length && currentSlide?.font_family ? currentSlide.font_family : theme.heading_font}` },
-    ...availableFonts.map((f) => ({ value: f, label: f })),
-  ]
+  const fieldsKey = typoFields.join(',')
 
   /** Значение для всех выбранных полей: value — задать, null — вернуть к шаблону. */
   function setForFields<T>(map: Record<string, T> | null | undefined, value: T | null): Record<string, T> {
@@ -579,545 +677,432 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
     }
     return next
   }
-  const fieldsKey = typoFields.join(',')
 
-  const handleFontChange = (font: string) => {
+  const handleFont = (font: string) => {
     if (!typo?.canFont) return
     if (selectedShape) handleUpdateShape(selectedShape.id, { font_family: font || null })
     else if (typoFields.length) updateCurrentSlide({ element_fonts: setForFields(currentSlide.element_fonts, font || null) })
-    else updateCurrentSlide({ font_family: font || null })
   }
-
-  const handleScaleChange = (scale: number) => {
+  const handleScale = (scale: number) => {
     if (!typo?.canScale || !typoFields.length) return
     const value = Math.round(scale * 100) / 100
     updateCurrentSlide({ element_scales: setForFields(currentSlide.element_scales, value === 1 ? null : value) }, `scale:${fieldsKey}`)
   }
-
-  const handleToggleBold = () => {
+  const handleBold = (bold: boolean) => {
     if (!typo?.canBold || !typoFields.length) return
-    updateCurrentSlide({ element_bolds: setForFields(currentSlide.element_bolds, !typo.bold) })
+    updateCurrentSlide({ element_bolds: setForFields(currentSlide.element_bolds, bold) })
   }
-
   const handleAlign = (align: TextAlign) => {
     if (!typo?.canAlign || !typoFields.length) return
-    // Повторный клик по выбранному выравниванию возвращает выравнивание шаблона.
-    updateCurrentSlide({ element_aligns: setForFields(currentSlide.element_aligns, typo.align === align ? null : align) })
+    updateCurrentSlide({ element_aligns: setForFields(currentSlide.element_aligns, align) })
   }
-
-  const currentColor = (target: ColorTarget): string => {
-    if (target === 'fill') return selectedShape?.color || theme.accent
-    return typo?.color || theme.text
-  }
-
-  const handleColorChange = (color: string | null) => {
-    if (colorTarget === 'fill') {
-      if (selectedShape) handleUpdateShape(selectedShape.id, { color: color || theme.accent })
+  const textBox = selectedShape?.color === 'transparent'
+  const selectionColor = selectedShape ? (textBox ? null : selectedShape.color || theme.accent) : typo?.color || null
+  const handleColor = (color: string | null) => {
+    if (selectedShape) {
+      if (!textBox) handleUpdateShape(selectedShape.id, { color: color || theme.accent }, `color:${selectedShape.id}`)
       return
     }
-    if (typoFields.length) {
-      updateCurrentSlide({ element_colors: setForFields(currentSlide.element_colors, color) }, `color:${fieldsKey}`)
-    } else {
-      updateCurrentSlide({ text_color: color }, 'color:slide')
-    }
+    if (typoFields.length) updateCurrentSlide({ element_colors: setForFields(currentSlide.element_colors, color) }, `color:${fieldsKey}`)
   }
 
-  const themeSwatches = useMemo(() => {
-    const list = [theme.text, theme.background, theme.accent, theme.surface, theme.muted, ...(theme.accents || [])].filter(Boolean)
-    return Array.from(new Set(list.map((c) => c.toLowerCase())))
-  }, [theme])
+  // --- Анимации и переходы --------------------------------------------------------------------
 
-  const elementLabel = selectedShape ? 'Фигура' : activeElement ? getElementLabel(activeElement) : 'Весь слайд'
+  const animations = currentSlide?.animations ?? []
+  const replay = (items: PlayItem[]) => setPlay((p) => ({ key: p.key + 1, items }))
+
+  const setEffect = (type: AnimationType | null) => {
+    if (!selTarget) return
+    const existing = animations.find((item) => item.target === selTarget)
+    let next: SlideAnimation[]
+    let played: SlideAnimation | undefined
+    if (!type) next = animations.filter((item) => item.target !== selTarget)
+    else if (existing) {
+      played = { ...existing, type }
+      next = animations.map((item) => (item.target === selTarget ? played! : item))
+    } else {
+      played = defaultAnimation(selTarget, type)
+      next = [...animations, played]
+    }
+    updateCurrentSlide({ animations: next })
+    if (played) replay(playOne(played))
+  }
+  const updateAnimation = (patch: Partial<SlideAnimation>) => {
+    if (!selTarget) return
+    updateCurrentSlide({ animations: animations.map((item) => (item.target === selTarget ? { ...item, ...patch } : item)) }, `anim:${currentSlide.id}:${selTarget}`)
+  }
+  const moveAnimation = (index: number, direction: -1 | 1) => {
+    const to = index + direction
+    if (to < 0 || to >= animations.length) return
+    const next = [...animations]
+    const [moved] = next.splice(index, 1)
+    next.splice(to, 0, moved)
+    updateCurrentSlide({ animations: next })
+  }
+  const setTransition = (type: TransitionType) => {
+    updateCurrentSlide({ transition: type === 'none' ? null : { type, duration_ms: currentSlide.transition?.duration_ms ?? 600 } })
+    setTransitionKey((key) => key + 1)
+  }
+  const transitionAll = () => {
+    const transition = currentSlide.transition ?? null
+    commit((prev) => prev.map((slide) => ({ ...slide, transition })))
+    notify('Переход применён ко всем слайдам')
+  }
+
+  // --- Комментарии ------------------------------------------------------------------------------
+
+  const comments = useComments(presentationId)
+  const threads = comments.data ?? []
+  const commentsBySlide = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const thread of threads) if (!thread.resolved) counts[thread.slide_id] = (counts[thread.slide_id] ?? 0) + 1
+    return counts
+  }, [threads])
+  const refreshComments = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.comments(presentationId) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
+  }
+  const commentMutation = useMutation({
+    mutationFn: (action: () => Promise<CommentThread | void>) => action(),
+    onSuccess: refreshComments,
+    onError: (error) => notify(error.message, 'error'),
+  })
+  const createThread = (text: string) => {
+    if (!draft) return
+    const body = { slide_id: draft.slideId, x: draft.x, y: draft.y, target: draft.target, text }
+    commentMutation.mutate(async () => {
+      const thread = await api.post<CommentThread>(`/presentations/${presentationId}/comments`, body)
+      setActiveThreadId(thread.id)
+      setDraft(null)
+      return thread
+    })
+  }
+  const replyThread = (threadId: string, text: string) =>
+    commentMutation.mutate(() => api.post<CommentThread>(`/presentations/${presentationId}/comments/${threadId}/replies`, { text }))
+  const resolveThread = (threadId: string, resolved: boolean) =>
+    commentMutation.mutate(async () => {
+      const thread = await api.patch<CommentThread>(`/presentations/${presentationId}/comments/${threadId}`, { resolved })
+      if (resolved) setActiveThreadId(null)
+      return thread
+    })
+  const deleteThread = (threadId: string) =>
+    commentMutation.mutate(async () => {
+      await api.delete(`/presentations/${presentationId}/comments/${threadId}`)
+      setActiveThreadId(null)
+    })
+  const startCommentMode = () => {
+    setCommentMode(true)
+    setRailPanel('comments')
+    clearSelection()
+  }
+  const placeDraft = (x: number, y: number, target: string | null = null) => {
+    setDraft({ slideId: currentSlide.id, x: Math.max(0, Math.min(960, x)), y: Math.max(0, Math.min(540, y)), target })
+    setCommentMode(false)
+    setActiveThreadId(null)
+    setRailPanel('comments')
+  }
+  const jumpToThreadSlide = (slideId: string) => {
+    const index = slides.findIndex((slide) => slide.id === slideId)
+    if (index >= 0 && index !== currentIndex) goToSlide(index)
+  }
+  // Ссылка из уведомления: открыть обсуждение на его слайде.
+  const openedThread = useRef(false)
+  useEffect(() => {
+    if (openedThread.current || !initialThread || !comments.data) return
+    const thread = comments.data.find((item) => item.id === initialThread)
+    openedThread.current = true
+    if (thread) {
+      setActiveThreadId(thread.id)
+      jumpToThreadSlide(thread.slide_id)
+    }
+  }, [comments.data, initialThread])
+
+  // --- Присутствие -------------------------------------------------------------------------------
+
+  const { others, moveCursor } = usePresence(presentationId, { slideId: currentSlide?.id ?? null, target: selTarget }, user?.id)
+  const othersHere = others.filter((entry) => entry.slide_id === currentSlide?.id)
+  const presenceBySlide = useMemo(() => {
+    const map: Record<string, Collaborator[]> = {}
+    for (const entry of others) if (entry.slide_id) (map[entry.slide_id] ??= []).push(entry.user)
+    return map
+  }, [others])
+
+  // --- Сцена: размер слайда и положение выделенного ----------------------------------------------
+
+  const stageBoxRef = useRef<HTMLDivElement>(null)
+  const slideWrapRef = useRef<HTMLDivElement>(null)
+  const [boxSize, setBoxSize] = useState({ w: 0, h: 0 })
+  useLayoutEffect(() => {
+    const node = stageBoxRef.current
+    if (!node) return
+    const observer = new ResizeObserver(([entry]) => setBoxSize({ w: entry.contentRect.width, h: entry.contentRect.height }))
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  const aspect = theme.aspect || 16 / 9
+  const slideWidth = Math.round(Math.max(160, Math.min(boxSize.w - 48, (boxSize.h - 110) * aspect)))
+  const slideHeight = slideWidth / aspect
+
+  const measureKey = frame?.target ?? selTarget
+  const [selBox, setSelBox] = useState<Box | null>(null)
+  useLayoutEffect(() => {
+    if (!selTarget) {
+      setSelBox(null)
+      return
+    }
+    if (selectedShape) {
+      setSelBox([selectedShape.x, selectedShape.y, selectedShape.width, Math.max(selectedShape.height, 0.004)])
+      return
+    }
+    const saved = frame ? (currentSlide.element_boxes?.[frame.target] as Box | undefined) : undefined
+    setSelBox(saved ?? (measureKey ? measureTarget(slideWrapRef.current, measureKey) : null))
+  }, [selTarget, measureKey, selectedShape, slidesJson[currentIndex], slideWidth, play.key])
+
+  // Ширина плавающей панели — чтобы она не выходила за край слайда.
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const [toolbarWidth, setToolbarWidth] = useState(0)
+  useLayoutEffect(() => {
+    const width = toolbarRef.current?.offsetWidth ?? 0
+    if (Math.abs(width - toolbarWidth) > 1) setToolbarWidth(width)
+  })
+
+  // --- Горячие клавиши ----------------------------------------------------------------------------
+
+  const keys = useRef({ save, undo, redo, deleteSelected, clearSelection, commentMode, selTarget })
+  keys.current = { save, undo, redo, deleteSelected, clearSelection, commentMode, selTarget }
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const inField = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || Boolean(target?.isContentEditable)
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.code === 'KeyS' ? 's' : e.code === 'KeyZ' ? 'z' : e.code === 'KeyY' ? 'y' : e.key.toLowerCase()
+        if (key === 's') {
+          e.preventDefault()
+          void keys.current.save()
+        } else if (!inField && key === 'z') {
+          e.preventDefault()
+          if (e.shiftKey) keys.current.redo()
+          else keys.current.undo()
+        } else if (!inField && key === 'y') {
+          e.preventDefault()
+          keys.current.redo()
+        }
+        return
+      }
+      if (inField) return
+      if (e.key === 'Escape') {
+        if (keys.current.commentMode) setCommentMode(false)
+        else keys.current.clearSelection()
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && keys.current.selTarget && !e.defaultPrevented) {
+        e.preventDefault()
+        keys.current.deleteSelected()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   if (!currentSlide) return <FullPageSpinner />
 
-  const menu = (id: string, label: string, items: ReactNode) => (
-    <div className="gslides-menu-item">
-      <button
-        type="button"
-        className={clsx('gslides-menu-btn', openMenu === id && 'is-open')}
-        onClick={() => setOpenMenu(openMenu === id ? null : id)}
-      >
-        {label}
-      </button>
-      {openMenu === id && <div className="gslides-dropdown-menu">{items}</div>}
-    </div>
-  )
-  const item = (label: string, action: () => void, opts: { icon?: ReactNode; shortcut?: string; checked?: boolean; disabled?: boolean } = {}) => (
+  // --- Вспомогательное для разметки -----------------------------------------------------------------
+
+  const locked = Boolean(selTarget && currentSlide.locked_elements?.includes(selTarget))
+  const selectionAnimated = Boolean(selTarget && animations.some((item) => item.target === selTarget))
+  const isImageSel = selectedShape?.kind === 'image' || selTarget === 'image'
+  const selectionText = selectedShape
+    ? selectedShape.kind === 'line' || selectedShape.kind === 'image'
+      ? null
+      : selectedShape.text ?? ''
+    : activeElement && isTextField(activeElement)
+      ? readField(currentSlide, activeElement) ?? ''
+      : null
+  const designSelection: DesignSelection | null = selTarget
+    ? {
+        target: selTarget,
+        label: labelOf(selTarget),
+        typeLabel: selectedShape ? (isImageSel ? 'фото' : textBox ? 'текст' : 'фигура') : isImageSel ? 'изображение' : selTarget === 'chart' ? 'диаграмма' : selTarget === 'table' ? 'таблица' : 'текст',
+        box: selBox,
+        boxMode: selectedShape ? (locked ? null : 'resize') : locked ? null : (frame?.mode ?? null),
+        text: selectionText,
+        isShape: Boolean(selectedShape) && !textBox,
+        isImage: isImageSel,
+        radius: selectedShape ? selectedShape.radius ?? 0 : currentSlide.element_radii?.image ?? 0,
+        color: selectionColor,
+        canDuplicate: canDuplicate(selTarget),
+      }
+    : null
+
+  const setSelectionBox = (box: Box) => {
+    if (selectedShape) handleUpdateShape(selectedShape.id, { x: box[0], y: box[1], width: box[2], height: box[3] })
+    else if (frame) handleUpdateElementBox(frame.target, frame.mode === 'move' && selBox ? [box[0], box[1], selBox[2], selBox[3]] : box)
+  }
+  const setSelectionText = (text: string) => {
+    if (selectedShape) handleUpdateShape(selectedShape.id, { text: text || null }, `text:${selectedShape.id}`)
+    else if (activeElement) handleFieldChange(activeElement, text)
+  }
+  const setRadius = (radius: number) => {
+    if (selectedShape) handleUpdateShape(selectedShape.id, { radius: radius || null }, `radius:${selectedShape.id}`)
+    else {
+      const radii = { ...(currentSlide.element_radii || {}) }
+      if (radius) radii.image = radius
+      else delete radii.image
+      updateCurrentSlide({ element_radii: radii }, `radius:image:${currentSlide.id}`)
+    }
+  }
+  const duplicateSelected = () => {
+    if (!selTarget) return
+    const result = duplicateElement(currentSlide, theme, selTarget)
+    if (!result) return
+    updateCurrentSlide(result.patch)
+    selectTarget(result.select)
+  }
+  const editText = () => {
+    const node = slideWrapRef.current?.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(activeElement ?? '')}"]`)
+    const editable = node?.isContentEditable ? node : node?.querySelector<HTMLElement>('[contenteditable="true"]')
+    editable?.focus()
+  }
+  const commentOnSelection = () => {
+    const box = selBox
+    if (box) placeDraft(Math.round((box[0] + box[2]) * 960), Math.round(box[1] * 540), selTarget)
+    else placeDraft(480, 270, selTarget)
+  }
+
+  const toolbarStyle: CSSProperties | null = selBox
+    ? (() => {
+        const top = selBox[1] * slideHeight
+        const left = Math.max(0, Math.min(selBox[0] * slideWidth, slideWidth - toolbarWidth))
+        return top < 64 ? { left, top: (selBox[1] + selBox[3]) * slideHeight + 32 } : { left, top: top - 54 }
+      })()
+    : null
+
+  const statusText = !canEdit
+    ? 'Только просмотр'
+    : saveMutation.isPending
+      ? 'Сохранение…'
+      : hasChanges
+        ? 'Изменения сохраняются автоматически'
+        : 'Все изменения сохранены'
+  const participants = Array.from(new Map(others.map((entry) => [entry.user.id, entry.user])).values())
+  const stageStyle = {
+    paddingLeft: railPanel ? 404 : 84,
+    paddingRight: inspectorOpen ? 332 : 60,
+  } as CSSProperties
+  const slideTransition = transitionClass(currentSlide)
+
+  const tool = (title: string, icon: ReactNode, action: () => void, opts: { disabled?: boolean; active?: boolean } = {}) => (
     <button
       type="button"
-      className="gslides-dropdown-item"
+      className={clsx('studio-tool', opts.active && 'is-active')}
+      title={title}
+      aria-label={title}
       disabled={opts.disabled}
-      onClick={() => {
-        setOpenMenu(null)
-        action()
-      }}
+      onClick={action}
     >
-      {opts.icon}
-      <span>{label}</span>
-      {opts.shortcut && <span className="gslides-dropdown-item-shortcut">{opts.shortcut}</span>}
-      {opts.checked && <Check size={12} />}
+      {icon}
     </button>
   )
-  // Данные диаграммы правятся во вкладке «Содержимое».
-  const openChart = () => {
-    updateCurrentSlide(addChart(currentSlide))
-    setActiveSidebarTab('content')
-    setSidebarCollapsed(false)
-  }
-
-  // Окно «Шаблон слайда»: переписать текст моделью под выбранный (или тот же) слайд-пример.
-  const regenerateWithTemplate = async (pattern: SlidePattern | null, wish: string) => {
-    const instruction = regenerateInstruction(pattern, wish)
-    if (!pattern) {
-      await regenerateMutation.mutateAsync({ slideId: currentSlide.id, instruction, keepPattern: true })
-      return
-    }
-    const deck = slides.map((s) => (s.id === currentSlide.id ? { ...s, ...selectPattern(s, pattern, theme) } : s))
-    commit(() => deck)
-    await regenerateMutation.mutateAsync({ slideId: currentSlide.id, instruction, deck, keepPattern: true })
-  }
-
-  const handleListItem = (field: string, action: 'insert' | 'remove', text: string) => {
-    const result = canvasListAction(currentSlide, field, action, text)
-    if (!result) return undefined
-    updateCurrentSlide(result.patch)
-    return result.focus
-  }
 
   return (
-    <div className="gslides-app">
-      {/* 1. Верхняя панель */}
-      <header className="gslides-header">
-        <div className="gslides-header__left">
-          <button type="button" className="gslides-back-btn" onClick={handleBack} title="Вернуться к аудиту">
-            <ArrowLeft size={16} />
-            <span>Назад к аудиту</span>
-          </button>
-
-          <div className="gslides-title-box">
-            <span className="gslides-title-input" title="Название презентации">
-              {detail.presentation.title}
-            </span>
-            <div className={clsx('gslides-save-status', hasChanges ? 'is-dirty' : 'is-saved')}>
-              {!canEdit ? (
-                <>Только просмотр</>
-              ) : saveMutation.isPending ? (
-                <>Сохранение…</>
-              ) : hasChanges ? (
-                <>● Есть несохранённые изменения</>
-              ) : (
-                <>
-                  <Check size={12} /> Все изменения сохранены
-                </>
-              )}
-            </div>
-          </div>
+    <div className="studio">
+      {/* 1. Шапка */}
+      <header className="studio-header">
+        <img src={vkLogo} alt="VK" className="studio-header__logo" />
+        <button type="button" className="studio-icon-btn" onClick={() => void handleBack()} title="Вернуться к аудиту">
+          <ChevronLeft size={18} />
+        </button>
+        <div className="studio-header__title">
+          <strong>{detail.presentation.title}</strong>
+          <small className={clsx(hasChanges && 'is-dirty')}>
+            {templateName ? `${templateName} · ` : ''}
+            {statusText}
+          </small>
         </div>
 
-        <div className="gslides-header__right">
-          <button type="button" className="gslides-header-btn" onClick={() => setSlideshowOpen(true)} title="Показ слайдов во весь экран">
-            <Play size={14} fill="currentColor" />
-            <span>Смотреть</span>
-          </button>
+        {canEdit && (
+          <div className="studio-tools">
+            {tool('Отменить (Ctrl+Z)', <Undo2 size={16} />, undo, { disabled: !canUndo })}
+            {tool('Повторить (Ctrl+Shift+Z)', <Redo2 size={16} />, redo, { disabled: !canRedo })}
+            <span className="studio-tools__divider" />
+            {tool('Текст', <Type size={16} />, () => handleAddShape('text'))}
+            {tool('Прямоугольник', <Square size={16} />, () => handleAddShape('rect'))}
+            {tool('Круг', <Circle size={16} />, () => handleAddShape('circle'))}
+            {tool('Линия', <Minus size={16} />, () => handleAddShape('line'))}
+            {tool('Фото с компьютера или из контент-пакета', <ImageIcon size={16} />, () => openImagePicker('floating'))}
+            {tool('Диаграмма', <BarChart3 size={16} />, () => {
+              updateCurrentSlide(addChart(currentSlide))
+              selectTarget('chart')
+              openInspector('design')
+            })}
+            <span className="studio-tools__divider" />
+            {tool('Комментарий на слайде', <MessageSquarePlus size={16} />, () => (commentMode ? setCommentMode(false) : startCommentMode()), {
+              active: commentMode,
+            })}
+          </div>
+        )}
 
+        <div className="studio-header__right">
+          {participants.length > 0 && (
+            <div className="studio-people">
+              {participants.slice(0, 4).map((person) => (
+                <Avatar key={person.id} person={person} size={30} />
+              ))}
+            </div>
+          )}
+          <button type="button" className="studio-btn-ghost" onClick={() => setShareOpen(true)}>
+            <UserPlus size={15} />
+            Доступ
+          </button>
+          <button type="button" className="studio-btn-ghost" onClick={() => setSlideshowOpen(true)}>
+            <Play size={15} />
+            Смотреть
+          </button>
           <button
             type="button"
-            className="gslides-header-btn gslides-header-btn--icon"
+            className="studio-icon-btn"
             onClick={toggleUiTheme}
             title={uiTheme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-            aria-label={uiTheme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
           >
             {uiTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
-
           {canEdit && (
-            <>
-              <button
-                type="button"
-                className={clsx('gslides-header-btn', hasChanges ? 'gslides-header-btn--primary' : 'gslides-header-btn--success')}
-                onClick={() => void save()}
-                disabled={saveMutation.isPending || !hasChanges}
-                title="Сохранить изменения (Ctrl+S)"
-              >
-                <Save size={15} />
-                <span>{saveMutation.isPending ? 'Сохранение…' : hasChanges ? 'Сохранить' : 'Сохранено'}</span>
-              </button>
-              <button
-                type="button"
-                className="gslides-header-btn gslides-header-btn--primary"
-                onClick={() => void handleDone()}
-                disabled={saveMutation.isPending}
-                title="Сохранить и вернуться к аудиту"
-              >
-                <span>Готово</span>
-              </button>
-            </>
+            <button type="button" className="studio-btn-primary" disabled={saveMutation.isPending} onClick={() => void handleDone()}>
+              {saveMutation.isPending && <LoaderCircle size={14} className="spin" />}
+              Готово
+            </button>
           )}
         </div>
       </header>
 
-      {/* 2. Меню */}
-      <div className="gslides-menubar">
-        {menu(
-          'file',
-          'Файл',
-          <>
-            {canEdit && item('Сохранить', () => void save(), { shortcut: 'Ctrl+S', disabled: !hasChanges })}
-            {item('Экспорт (PPTX, PDF, HTML)', () => navigate(`/presentations/${presentationId}/export`), {
-              icon: <Download size={13} />,
-            })}
-            <div className="gslides-dropdown-divider" />
-            {item('Вернуться к аудиту', handleBack, { icon: <ArrowLeft size={13} /> })}
-          </>,
-        )}
-        {canEdit &&
-          menu(
-            'edit',
-            'Правка',
-            <>
-              {item('Отменить', undo, { shortcut: 'Ctrl+Z', disabled: !canUndo })}
-              {item('Повторить', redo, { shortcut: 'Ctrl+Y', disabled: !canRedo })}
-            </>,
-          )}
-        {menu(
-          'view',
-          'Вид',
-          <>
-            {ZOOM_OPTIONS.map((option) =>
-              item(option.label, () => setZoomMode(option.value), { checked: zoomMode === option.value }),
-            )}
-            <div className="gslides-dropdown-divider" />
-            {item('Заметки докладчика', () => setNotesOpen(!notesOpen), { icon: <FileText size={13} />, checked: notesOpen })}
-            {item('Показ слайдов', () => setSlideshowOpen(true), { icon: <Maximize2 size={13} /> })}
-          </>,
-        )}
-        {canEdit &&
-          menu(
-            'insert',
-            'Вставка',
-            <>
-              {item('Изображение…', () => openImagePicker('slide'), { icon: <ImageIcon size={13} /> })}
-              {item('Плавающее фото…', () => openImagePicker('floating'), { icon: <ImagePlus size={13} /> })}
-              {SHAPE_KINDS.map((shape) => item(shape.label, () => handleAddShape(shape.kind), { icon: <Shapes size={13} /> }))}
-              <div className="gslides-dropdown-divider" />
-              {item('Диаграмма', openChart, { icon: <BarChart3 size={13} /> })}
-            </>,
-          )}
-        {canEdit &&
-          menu(
-            'slide',
-            'Слайд',
-            <>
-              {item('Новый слайд', handleAddSlide, { icon: <Plus size={13} /> })}
-              {item('Дублировать слайд', () => handleDuplicateSlide(currentIndex), { icon: <Copy size={13} /> })}
-              {item('Удалить слайд', () => handleDeleteSlide(currentIndex), { icon: <Trash2 size={13} />, disabled: slides.length <= 1 })}
-              <div className="gslides-dropdown-divider" />
-              {item('Сменить макет оформления', () => setShowDesignModal(true), { icon: <LayoutTemplate size={13} /> })}
-            </>,
-          )}
-      </div>
-
-      {/* 3. Панель инструментов */}
-      {canEdit && typo && (
-        <div className="gslides-toolbar">
-          <div className="gslides-tool-group">
-            <button type="button" className="gslides-tool-btn" disabled={!canUndo} onClick={undo} title="Отменить (Ctrl+Z)">
-              <Undo2 size={15} />
-            </button>
-            <button type="button" className="gslides-tool-btn" disabled={!canRedo} onClick={redo} title="Повторить (Ctrl+Y)">
-              <Redo2 size={15} />
-            </button>
-          </div>
-
-          <div className="gslides-tool-divider" />
-
-          <div className="gslides-tool-group">
-            <ZoomIn size={14} style={{ color: 'var(--color-text-muted)', marginLeft: 4 }} />
-            <Select size="sm" value={zoomMode} options={ZOOM_OPTIONS} onChange={setZoomMode} className="gslides-custom-select" />
-          </div>
-
-          <div className="gslides-tool-divider" />
-
-          <div className="gslides-tool-group">
-            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontWeight: 600 }}>Тип:</span>
-            <Select
-              size="sm"
-              value={currentSlide.kind}
-              options={KIND_OPTIONS}
-              onChange={(kind) => updateCurrentSlide(changeKind(currentSlide, kind))}
-              className="gslides-custom-select"
-            />
-          </div>
-
-          <div className="gslides-tool-divider" />
-
-          {/* Типографика — только то, что сборка переносит в .pptx для выделенного */}
-          <div className="gslides-tool-group" title={typo.hint}>
-            {typo.canFont && (
-              <Select
-                size="sm"
-                value={typo.font}
-                options={fontOptions}
-                onChange={handleFontChange}
-                className="gslides-custom-select gslides-custom-select--font"
-              />
-            )}
-            {typo.canScale && (
-              <>
-                <button
-                  type="button"
-                  className="gslides-tool-btn"
-                  onClick={() => handleScaleChange(Math.max(0.6, typo.scale - 0.1))}
-                  title="Уменьшить шрифт"
-                >
-                  <Minus size={13} />
-                </button>
-                <span style={{ fontSize: 12, fontWeight: 700, minWidth: 32, textAlign: 'center' }}>{Math.round(typo.scale * 100)}%</span>
-                <button
-                  type="button"
-                  className="gslides-tool-btn"
-                  onClick={() => handleScaleChange(Math.min(1.5, typo.scale + 0.1))}
-                  title="Увеличить шрифт"
-                >
-                  <Plus size={13} />
-                </button>
-              </>
-            )}
-            {typo.canBold && (
-              <button type="button" className={clsx('gslides-tool-btn', typo.bold && 'is-active')} onClick={handleToggleBold} title="Жирный">
-                <Bold size={14} />
-              </button>
-            )}
-            {activeElement === 'image' && currentSlide.image?.url && !selectedShape && (
-              <RadiusControl
-                value={currentSlide.element_radii?.image ?? 0}
-                onChange={(radius) => {
-                  const radii = { ...(currentSlide.element_radii || {}) }
-                  if (radius) radii.image = radius
-                  else delete radii.image
-                  updateCurrentSlide({ element_radii: radii }, `radius:image:${currentSlide.id}`)
-                }}
-              />
-            )}
-            {typo.canAlign &&
-              ALIGN_OPTIONS.map(({ value, label, icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={clsx('gslides-tool-btn', typo.align === value && 'is-active')}
-                  onClick={() => handleAlign(value)}
-                  title={label}
-                  aria-pressed={typo.align === value}
-                >
-                  {icon}
-                </button>
-              ))}
-            {typo.canColor && (
-              <button
-                type="button"
-                className={clsx('gslides-tool-btn', colorTarget === 'text' && 'is-active')}
-                onClick={() => setColorTarget(colorTarget === 'text' ? null : 'text')}
-                title="Цвет текста"
-              >
-                <Type size={14} />
-                <div className="gslides-color-swatch-bar" style={{ backgroundColor: currentColor('text') }} />
-              </button>
-            )}
-            {selectedShape && (
-              <button
-                type="button"
-                className={clsx('gslides-tool-btn', colorTarget === 'fill' && 'is-active')}
-                onClick={() => setColorTarget(colorTarget === 'fill' ? null : 'fill')}
-                title="Цвет заливки фигуры"
-              >
-                <Palette size={14} />
-                <div className="gslides-color-swatch-bar" style={{ backgroundColor: currentColor('fill') }} />
-              </button>
-            )}
-            {selectedShape && (
-              <ShapeBar
-                shape={selectedShape}
-                onChange={(patch, coalesceKey) => handleUpdateShape(selectedShape.id, patch, coalesceKey)}
-                onDuplicate={() => {
-                  const copy: SlideShape = {
-                    ...selectedShape,
-                    id: newId(),
-                    template_shape_id: null,
-                    x: Math.min(0.9, selectedShape.x + 0.04),
-                    y: Math.min(0.9, selectedShape.y + 0.04),
-                  }
-                  updateCurrentSlide({ shapes: [...effectiveShapes, copy] })
-                  setSelectedShapeId(copy.id)
-                }}
-                onReplaceImage={() => openImagePicker('shape')}
-                onDelete={selectedShape.template_shape_id == null ? () => handleDeleteShape(selectedShape.id) : undefined}
-              />
-            )}
-            {!typo.canFont && !typo.canScale && !typo.canBold && !typo.canColor && !selectedShape && activeElement !== 'image' && (
-              <span className="gslides-tool-hint">
-                <Info size={13} /> {typo.hint ?? 'Оформление как в шаблоне'}
-              </span>
-            )}
-          </div>
-
-          <div className="gslides-tool-divider" />
-
-          <div className="gslides-tool-group">
-            {SHAPE_KINDS.map((shape) => (
-              <button
-                key={shape.kind}
-                type="button"
-                className="gslides-tool-btn"
-                onClick={() => handleAddShape(shape.kind)}
-                title={`Добавить: ${shape.label.toLowerCase()}`}
-              >
-                {shape.icon}
-              </button>
-            ))}
-          </div>
-
-          <div className="gslides-tool-divider" />
-
-          <div className="gslides-tool-group">
-            <button
-              type="button"
-              className="gslides-tool-btn"
-              onClick={() => openImagePicker('slide')}
-              title="Картинка на слайд: из контент-пакета или с компьютера"
-            >
-              <ImageIcon size={14} />
-              <span>Фото</span>
-            </button>
-            <button
-              type="button"
-              className="gslides-tool-btn"
-              onClick={() => openImagePicker('floating')}
-              title="Плавающее фото поверх слайда"
-            >
-              <ImagePlus size={14} />
-            </button>
-            <button type="button" className="gslides-tool-btn" onClick={openChart} title="Диаграмма">
-              <BarChart3 size={14} />
-              <span>График</span>
-            </button>
-            <button type="button" className="gslides-tool-btn" onClick={() => setShowDesignModal(true)} title="Макет или слайд-пример шаблона">
-              <LayoutTemplate size={14} />
-              <span>Шаблон</span>
-            </button>
-          </div>
-
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              type="button"
-              className={clsx('gslides-tool-btn', notesOpen && 'is-active')}
-              onClick={() => setNotesOpen(!notesOpen)}
-              title="Заметки докладчика"
-            >
-              <FileText size={14} />
-              <span>Заметки</span>
-            </button>
-            <button
-              type="button"
-              className={clsx('gslides-tool-btn', !sidebarCollapsed && 'is-active')}
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              title="Показать или скрыть боковую панель"
-            >
-              <Sparkles size={14} />
-              <span>Панель</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 4. Рабочее пространство */}
-      <div className="gslides-workspace">
-        <aside className={clsx('gslides-filmstrip', filmstripCollapsed && 'is-collapsed')}>
-          <div className="gslides-filmstrip__header">
-            {!filmstripCollapsed && <span>СЛАЙДЫ ({slides.length})</span>}
-            <button
-              type="button"
-              className="icon-btn-tiny"
-              onClick={() => setFilmstripCollapsed(!filmstripCollapsed)}
-              title={filmstripCollapsed ? 'Развернуть список слайдов' : 'Скрыть список слайдов'}
-            >
-              {filmstripCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-            </button>
-          </div>
-
-          {!filmstripCollapsed && (
-            <div className="gslides-filmstrip__list">
-              {slides.map((s, idx) => {
-                const render = renderFor(s, idx)
-                return (
-                  <div
-                    key={s.id}
-                    className={clsx('gslides-thumb-item', idx === currentIndex && 'is-selected')}
-                    onClick={() => goToSlide(idx)}
-                  >
-                    <span className="gslides-thumb-num">{idx + 1}</span>
-                    <div className="gslides-thumb-card">
-                      <SlideView slide={s} theme={theme} render={render} hasEdits={!render} />
-                    </div>
-                    {canEdit && (
-                      <div className="gslides-thumb-actions">
-                        {[
-                          { icon: <ArrowUp size={11} />, title: 'Переместить вверх', disabled: idx === 0, run: () => handleMoveSlide(idx, -1) },
-                          { icon: <ArrowDown size={11} />, title: 'Переместить вниз', disabled: idx === slides.length - 1, run: () => handleMoveSlide(idx, 1) },
-                          { icon: <Copy size={11} />, title: 'Дублировать', disabled: false, run: () => handleDuplicateSlide(idx) },
-                          { icon: <Trash2 size={11} />, title: 'Удалить', disabled: slides.length <= 1, run: () => handleDeleteSlide(idx) },
-                        ].map((action) => (
-                          <button
-                            key={action.title}
-                            type="button"
-                            className="gslides-thumb-action-btn"
-                            disabled={action.disabled}
-                            title={action.title}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              action.run()
-                            }}
-                          >
-                            {action.icon}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-              {canEdit && (
-                <button type="button" className="gslides-thumb-add" onClick={handleAddSlide}>
-                  <Plus size={14} /> Новый слайд
-                </button>
-              )}
+      {/* 2. Рабочая область */}
+      <div className="studio-workspace">
+        <div className="studio-stage" style={stageStyle}>
+          <div className="studio-stage__box" ref={stageBoxRef}>
+            <div className="studio-stage__label">
+              Слайд {currentIndex + 1} из {slides.length}
+              {pattern ? ` · ${patternName(pattern)}` : ''}
             </div>
-          )}
-        </aside>
-
-        <main className="gslides-canvas-area">
-          <div className="gslides-canvas-viewport">
             <div
-              className="gslides-canvas-frame"
-              style={
-                zoomMode === 'fit'
-                  ? {
-                      width: '100%',
-                      maxHeight: 'calc(100vh - 210px)',
-                      maxWidth: `calc((100vh - 210px) * ${theme.aspect || 16 / 9})`,
-                      aspectRatio: String(theme.aspect || 16 / 9),
-                    }
-                  : { width: `${ZOOM_WIDTH[zoomMode]}px`, aspectRatio: String(theme.aspect || 16 / 9) }
-              }
+              ref={slideWrapRef}
+              key={`${currentSlide.id}:${transitionKey}`}
+              className={clsx('studio-slide', slideTransition)}
+              style={{ width: slideWidth, animationDuration: `${EDITOR_TRANSITION_MS}ms` }}
+              onPointerMove={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect()
+                moveCursor([Math.round(((event.clientX - rect.left) / rect.width) * 960), Math.round(((event.clientY - rect.top) / rect.height) * 540)])
+              }}
+              onPointerLeave={() => moveCursor(null)}
             >
               <SlideView
-                key={currentSlide.id}
+                key={`${currentSlide.id}:${play.key}`}
                 slide={currentSlide}
                 theme={theme}
-                number={currentIndex + 1}
                 render={renderFor(currentSlide, currentIndex)}
-                editable={canEdit}
+                editable={canEdit && !commentMode}
                 preferInteractive
+                studio
+                play={play.items}
+                cropTarget={cropTarget}
+                onCropTargetChange={setCropTarget}
                 selectedShapeId={selectedShapeId}
                 selectedElementId={activeElement}
                 onSelectShape={(id) => {
@@ -1125,10 +1110,9 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
                   if (id) setActiveElement(null)
                 }}
                 onUpdateShape={handleUpdateShape}
-                onDeleteShape={handleDeleteShape}
-                onElementSelect={(el) => {
-                  setActiveElement(el)
-                  if (el) setSelectedShapeId(null)
+                onElementSelect={(element) => {
+                  setActiveElement(element)
+                  if (element) setSelectedShapeId(null)
                 }}
                 onUpdateElementBox={handleUpdateElementBox}
                 onResetElementBox={handleResetElementBox}
@@ -1136,138 +1120,264 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
                 onFieldChange={handleFieldChange}
                 onListItem={handleListItem}
                 onDeleteChart={() => {
-                  updateCurrentSlide(removeChart(currentSlide))
+                  updateCurrentSlide({ ...deleteElement(currentSlide, theme, 'chart').patch })
                   notify('Диаграмма удалена со слайда')
                 }}
-                onImageClick={() => {
-                  setActiveElement('image')
-                  openImagePicker('slide')
+                onImageClick={() => selectTarget('image')}
+              />
+              <StageOverlay
+                rootRef={slideWrapRef}
+                threads={threads.filter((thread) => thread.slide_id === currentSlide.id && (!thread.resolved || thread.id === activeThreadId))}
+                draft={draft?.slideId === currentSlide.id ? draft : null}
+                activeThreadId={activeThreadId}
+                others={othersHere}
+                commentMode={commentMode}
+                revision={slidesJson[currentIndex]}
+                onPlace={(x, y) => placeDraft(x, y)}
+                onPinClick={(id) => {
+                  setActiveThreadId(id)
+                  setDraft(null)
+                  setRailPanel('comments')
                 }}
               />
-            </div>
-          </div>
-
-          {notesOpen && (
-            <div className="gslides-notes-bar">
-              <div className="gslides-notes-bar__toggle" onClick={() => setNotesOpen(false)}>
-                <span>Заметки докладчика к слайду {currentIndex + 1}</span>
-                <X size={14} />
-              </div>
-              <div className="gslides-notes-bar__content">
-                <textarea
-                  className="gslides-notes-bar-textarea"
-                  placeholder="Заметки докладчика к этому слайду…"
-                  value={currentSlide.notes || ''}
-                  readOnly={!canEdit}
-                  onChange={(e) => handleFieldChange('notes', e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-        </main>
-
-        {canEdit && (
-          <aside className={clsx('gslides-sidebar', sidebarCollapsed && 'is-collapsed')}>
-            <div className="gslides-sidebar__tabs">
-              <button
-                type="button"
-                className={clsx('gslides-sidebar__tab', activeSidebarTab === 'content' && 'is-active')}
-                onClick={() => setActiveSidebarTab('content')}
-              >
-                Содержимое
-              </button>
-              <button
-                type="button"
-                className={clsx('gslides-sidebar__tab', activeSidebarTab === 'design' && 'is-active')}
-                onClick={() => setActiveSidebarTab('design')}
-              >
-                Шаблон
-              </button>
-              <button
-                type="button"
-                className={clsx('gslides-sidebar__tab', activeSidebarTab === 'ai' && 'is-active')}
-                onClick={() => setActiveSidebarTab('ai')}
-              >
-                AI-ассистент
-              </button>
-            </div>
-
-            <div className="gslides-sidebar__body">
-              {activeSidebarTab === 'content' && (
-                <SlideContentPanel
-                  slide={currentSlide}
-                  theme={theme}
-                  onChange={updateCurrentSlide}
-                  onOpenTemplates={() => setShowDesignModal(true)}
-                  selectedElement={activeElement}
-                  onSelectElement={(field) => {
-                    setActiveElement(field)
-                    setSelectedShapeId(null)
-                  }}
-                />
-              )}
-
-              {activeSidebarTab === 'design' && (
-                <div className="gslides-sidebar-section">
-                  <span className="gslides-sidebar-section__title">Макет и шаблон</span>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-muted)' }}>
-                    {pattern ? 'Слайд-пример шаблона' : 'Макет'}:{' '}
-                    <strong>{currentSlide.layout_name || currentSlide.layout_key || 'по умолчанию'}</strong>
-                  </p>
-                  {typo?.hint && !selectedShape && !activeElement && (
-                    <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>{typo.hint}</p>
-                  )}
-                  <Button
-                    variant="primary"
-                    icon={<LayoutTemplate size={14} />}
-                    onClick={() => setShowDesignModal(true)}
-                    style={{ marginTop: 8 }}
-                  >
-                    Шаблон слайда
-                  </Button>
-                  <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>
-                    Выделено: <strong>{elementLabel}</strong>
-                  </p>
+              {toolbarStyle && selTarget && !commentMode && !cropTarget && (
+                <div ref={toolbarRef} className="studio-floatbar-anchor" style={toolbarStyle}>
+                  <FloatingToolbar
+                    style={{}}
+                    typo={typo}
+                    fonts={fonts}
+                    palette={palette}
+                    color={selectionColor}
+                    showColor={Boolean(typo?.canColor && typoFields.length) || (Boolean(selectedShape) && !textBox && selectedShape?.kind !== 'image')}
+                    animated={selectionAnimated}
+                    locked={locked}
+                    canEdit={canEdit}
+                    canDuplicate={canDuplicate(selTarget)}
+                    canFront={Boolean(bringToFront(currentSlide, theme, selTarget))}
+                    canCrop={isImageSel && (selTarget !== 'image' || Boolean(currentSlide.image?.url))}
+                    canResetBox={Boolean(frame && currentSlide.element_boxes?.[frame.target])}
+                    canEditText={Boolean(activeElement && isTextField(activeElement))}
+                    onFont={handleFont}
+                    onScale={handleScale}
+                    onBold={handleBold}
+                    onAlign={handleAlign}
+                    onEditText={editText}
+                    onColor={handleColor}
+                    onAnimation={() => {
+                      openInspector('anim')
+                      if (!selectionAnimated) setEffect('fade')
+                    }}
+                    onComment={commentOnSelection}
+                    onDuplicate={duplicateSelected}
+                    onFront={() => {
+                      const patch = bringToFront(currentSlide, theme, selTarget)
+                      if (patch) updateCurrentSlide(patch)
+                    }}
+                    onLock={() => updateCurrentSlide(toggleLocked(currentSlide, selTarget))}
+                    onDelete={deleteSelected}
+                    onCrop={() => setCropTarget(selectedShape ? `shape:${selectedShape.id}` : 'image')}
+                    onResetBox={() => frame && handleResetElementBox(frame.target)}
+                  />
                 </div>
               )}
+            </div>
+            {commentMode && <div className="studio-comment-hint">Кликните по слайду, чтобы оставить комментарий · Esc — отмена</div>}
+          </div>
+        </div>
 
-              {activeSidebarTab === 'ai' && (
-                <SlideAssistantPanel
-                  key={currentSlide.id}
+        {/* Левая рейка и её панель */}
+        <nav className="studio-rail">
+          {(
+            [
+              ['layers', 'Слои', <Layers key="l" size={18} />],
+              ['comments', 'Обсуждение', <MessageSquare key="c" size={18} />],
+            ] as const
+          ).map(([panel, label, icon]) => (
+            <button
+              key={panel}
+              type="button"
+              className={clsx('studio-rail__btn', railPanel === panel && 'is-active')}
+              onClick={() => setRailPanel(railPanel === panel ? null : panel)}
+            >
+              {icon}
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        {railPanel && (
+          <aside className="studio-panel studio-panel--left">
+            <div className="studio-panel__head">
+              <strong>{railPanel === 'layers' ? 'Слои' : railPanel === 'comments' ? 'Обсуждение' : 'Паттерны'}</strong>
+              <button type="button" className="studio-icon-btn studio-icon-btn--sm" onClick={() => setRailPanel(null)} aria-label="Закрыть панель">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="studio-panel__body">
+              {railPanel === 'layers' && (
+                <LayersPanel
                   slide={currentSlide}
-                  theme={theme}
-                  slideIndex={currentIndex}
-                  onRegenerate={async (instruction) =>
-                    (await regenerateMutation.mutateAsync({ slideId: currentSlide.id, instruction })).reply
-                  }
-                  onChangeKind={(kind) => updateCurrentSlide(changeKind(currentSlide, kind))}
-                  onSelectPattern={(p) => updateCurrentSlide(selectPattern(currentSlide, p, theme))}
-                  onOpenDesignModal={() => setShowDesignModal(true)}
-                  isRegenerating={regenerateMutation.isPending}
+                  slideNumber={currentIndex + 1}
+                  elements={elements}
+                  selected={selTarget}
+                  canEdit={canEdit}
+                  onSelect={selectTarget}
+                  onToggleHidden={(target) => updateCurrentSlide(toggleHidden(currentSlide, target))}
+                  onToggleLocked={(target) => updateCurrentSlide(toggleLocked(currentSlide, target))}
                 />
+              )}
+              {railPanel === 'comments' && (
+                <CommentsPanel
+                  threads={threads}
+                  slides={slides}
+                  currentSlideId={currentSlide.id}
+                  activeId={activeThreadId}
+                  draft={draft}
+                  myId={user?.id}
+                  canResolve={canEdit}
+                  busy={commentMutation.isPending}
+                  onActivate={setActiveThreadId}
+                  onJump={jumpToThreadSlide}
+                  onStartComment={startCommentMode}
+                  onCreate={createThread}
+                  onCancelDraft={() => setDraft(null)}
+                  onReply={replyThread}
+                  onResolve={resolveThread}
+                  onDelete={deleteThread}
+                />
+              )}
+              {railPanel === 'patterns' && (
+                <PatternsPanel slide={currentSlide} theme={theme} templateName={templateName} canEdit={canEdit} onSelect={handleSelectPattern} />
               )}
             </div>
           </aside>
         )}
+
+        {/* Правый инспектор */}
+        {inspectorOpen ? (
+          <aside className="studio-panel studio-panel--right">
+            <div className="studio-panel__head">
+              <div className="studio-seg studio-seg--tabs">
+                {(
+                  [
+                    ['design', 'Дизайн'],
+                    ['anim', 'Анимация'],
+                    ['ai', 'AI'],
+                  ] as const
+                ).map(([tab, label]) => (
+                  <button key={tab} type="button" className={clsx(inspectorTab === tab && 'is-active')} onClick={() => setInspectorTab(tab)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="studio-icon-btn studio-icon-btn--sm" title="Свернуть панель" onClick={() => setInspectorOpen(false)}>
+                <PanelRightClose size={16} />
+              </button>
+            </div>
+            <div className="studio-panel__body">
+              {inspectorTab === 'design' && (
+                <InspectorDesign
+                  slide={currentSlide}
+                  theme={theme}
+                  slideNumber={currentIndex + 1}
+                  canEdit={canEdit}
+                  selection={designSelection}
+                  typo={typo}
+                  fonts={fonts}
+                  palette={palette}
+                  onBox={setSelectionBox}
+                  onText={setSelectionText}
+                  onFont={handleFont}
+                  onScale={handleScale}
+                  onBold={handleBold}
+                  onAlign={handleAlign}
+                  onColor={handleColor}
+                  onRadius={setRadius}
+                  onDuplicate={duplicateSelected}
+                  onDelete={deleteSelected}
+                  onOpenPatterns={() => setRailPanel('patterns')}
+                  onSelectLayout={(key, name) => {
+                    updateCurrentSlide(selectLayout(currentSlide, key, name, theme))
+                    clearSelection()
+                  }}
+                  onSlidePatch={updateCurrentSlide}
+                  onSelectElement={(field) => selectTarget(field)}
+                  onReplaceImage={() => openImagePicker(selectedShape ? 'shape' : 'slide')}
+                />
+              )}
+              {inspectorTab === 'anim' && (
+                <InspectorAnimation
+                  slide={currentSlide}
+                  slideNumber={currentIndex + 1}
+                  canEdit={canEdit}
+                  target={selTarget}
+                  targetLabel={selTarget ? labelOf(selTarget) : ''}
+                  labelOf={labelOf}
+                  onSetEffect={setEffect}
+                  onUpdate={updateAnimation}
+                  onPreview={() => {
+                    const current = animations.find((item) => item.target === selTarget)
+                    if (current) replay(playOne(current))
+                  }}
+                  onPlayAll={() => replay(playAll(currentSlide))}
+                  onMove={moveAnimation}
+                  onRemove={(target) => updateCurrentSlide({ animations: animations.filter((item) => item.target !== target) })}
+                  onSelectTarget={selectTarget}
+                  onTransition={setTransition}
+                  onTransitionAll={transitionAll}
+                />
+              )}
+              {inspectorTab === 'ai' && (
+                <InspectorAI
+                  slideNumber={currentIndex + 1}
+                  templateName={templateName}
+                  canEdit={canEdit}
+                  prompt={aiPrompt}
+                  hint={aiHint}
+                  skills={skills}
+                  enabledSkills={enabledSkills}
+                  busy={aiBusy}
+                  history={aiHistory}
+                  onPrompt={setAiPrompt}
+                  onHint={setAiHint}
+                  onToggleSkill={(id) => setSkillOverrides((current) => ({ ...current, [id]: !enabledSkills.has(id) }))}
+                  onGenerate={() => void generate(false)}
+                  onReplace={() => void generate(true)}
+                  onQuick={(kind) => void quickEdit(kind)}
+                />
+              )}
+            </div>
+          </aside>
+        ) : (
+          <div className="studio-minirail">
+            <button type="button" className="studio-icon-btn" title="Открыть панель" onClick={() => setInspectorOpen(true)}>
+              <PanelRightOpen size={18} />
+            </button>
+            <button type="button" className="studio-icon-btn studio-icon-btn--ai" title="AI" onClick={() => openInspector('ai')}>
+              <Sparkles size={18} />
+            </button>
+          </div>
+        )}
       </div>
 
-      {showDesignModal && (
-        <SlideDesignModal
-          isOpen={showDesignModal}
-          slide={currentSlide}
-          theme={theme}
-          onSelectPattern={(p) => {
-            updateCurrentSlide(selectPattern(currentSlide, p, theme))
-            setShowDesignModal(false)
-          }}
-          onSelectLayout={(key, name) => {
-            updateCurrentSlide(selectLayout(currentSlide, key, name, theme))
-            setShowDesignModal(false)
-          }}
-          onRegenerate={regenerateWithTemplate}
-          onClose={() => setShowDesignModal(false)}
-        />
-      )}
+      {/* 3. Лента слайдов */}
+      <Filmstrip
+        slides={slides}
+        theme={theme}
+        currentIndex={currentIndex}
+        renderFor={renderFor}
+        presence={presenceBySlide}
+        comments={commentsBySlide}
+        canEdit={canEdit}
+        onSelect={goToSlide}
+        onTransition={(index) => {
+          goToSlide(index)
+          openInspector('anim')
+        }}
+        onAdd={handleAddSlide}
+        onMove={handleMoveSlide}
+        onDuplicate={handleDuplicateSlide}
+        onDelete={handleDeleteSlide}
+      />
 
       {slideshowOpen && (
         <Slideshow
@@ -1279,14 +1389,18 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
         />
       )}
 
+      {shareOpen && (
+        <ShareDialog presentationId={presentationId} title={presentation.title} myRole={presentation.access_role} onClose={() => setShareOpen(false)} />
+      )}
+
       {imagePicker && (
         <ImagePickerModal
           isOpen
-          presentationId={detail.presentation.id}
+          presentationId={presentationId}
           contentFiles={contentFiles}
           currentImageUrl={
             imagePicker.mode === 'shape'
-              ? shapesOf(slides.find((s) => s.id === imagePicker.slideId) ?? currentSlide).find((sh) => sh.id === imagePicker.shapeId)?.image_url
+              ? shapesOf(slides.find((s) => s.id === imagePicker.slideId) ?? currentSlide, theme).find((sh) => sh.id === imagePicker.shapeId)?.image_url
               : imagePicker.mode === 'slide'
                 ? slides.find((s) => s.id === imagePicker.slideId)?.image?.url
                 : undefined
@@ -1310,204 +1424,12 @@ function SlidesEditor({ presentationId, detail, initialIndex, canEdit, contentFi
       {showLeaveDialog && (
         <ConfirmDialog
           title="Выйти без сохранения?"
-          text="В презентации есть несохранённые изменения. Сохраните их или выйдите — изменения будут потеряны."
+          text="Изменения не удалось сохранить. Выйдите — они будут потеряны, или останьтесь и попробуйте ещё раз."
           confirmLabel="Выйти без сохранения"
           onConfirm={leaveToAudit}
           onClose={() => setShowLeaveDialog(false)}
         />
       )}
-
-      {colorTarget && (
-        <div className="gslides-color-modal-backdrop" onClick={() => setColorTarget(null)}>
-          <div className="gslides-color-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="gslides-color-modal__header">
-              <div className="gslides-color-modal__title">
-                {colorTarget === 'text' ? 'Цвет текста' : 'Цвет заливки'}
-                <span className="gslides-color-modal__subtitle"> ({elementLabel})</span>
-              </div>
-              <button type="button" className="gslides-color-modal__close" onClick={() => setColorTarget(null)} title="Закрыть">
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="gslides-color-modal__body">
-              {[
-                { title: 'Цвета темы оформления', colors: themeSwatches },
-                { title: 'Стандартная палитра', colors: PRESET_COLORS },
-              ].map((group) => (
-                <div key={group.title} className="gslides-color-modal__section">
-                  <div className="gslides-color-modal__section-title">{group.title}</div>
-                  <div className="gslides-color-modal__swatches">
-                    {group.colors.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        className={clsx('gslides-color-swatch-item', currentColor(colorTarget).toLowerCase() === c.toLowerCase() && 'is-selected')}
-                        style={{ backgroundColor: c }}
-                        title={c}
-                        onClick={() => handleColorChange(c)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              <div className="gslides-color-modal__section">
-                <div className="gslides-color-modal__section-title">Произвольный цвет</div>
-                <div className="gslides-color-modal__custom-row">
-                  <input
-                    type="color"
-                    className="gslides-color-modal__picker-input"
-                    value={/^#[0-9a-f]{6}$/i.test(currentColor(colorTarget)) ? currentColor(colorTarget) : '#0077ff'}
-                    onChange={(e) => handleColorChange(e.target.value)}
-                  />
-                  <HexInput value={currentColor(colorTarget)} onCommit={handleColorChange} />
-                </div>
-              </div>
-            </div>
-
-            <div className="gslides-color-modal__footer">
-              <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleColorChange(null)}>
-                Сбросить к шаблону
-              </button>
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => setColorTarget(null)}>
-                Готово
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
-  )
-}
-
-const RADIUS_PRESETS: { value: number; label: string }[] = [
-  { value: 0, label: 'Нет' },
-  { value: 0.15, label: 'Малое' },
-  { value: 0.4, label: 'Сильное' },
-  { value: 1, label: 'Круг' },
-]
-
-/** Скругление углов картинки: пресеты и ползунок 0–100% (доля половины короткой стороны, как в .pptx). */
-function RadiusControl({ value, onChange }: { value: number; onChange: (radius: number) => void }) {
-  return (
-    <div className="gslides-radius" title="Скругление углов">
-      <span className="gslides-radius__label">Углы</span>
-      {RADIUS_PRESETS.map((preset) => (
-        <button
-          key={preset.label}
-          type="button"
-          className={clsx('gslides-radius__preset', Math.abs(value - preset.value) < 0.005 && 'is-active')}
-          onClick={() => onChange(preset.value)}
-        >
-          {preset.label}
-        </button>
-      ))}
-      <input
-        type="range"
-        min={0}
-        max={100}
-        step={1}
-        value={Math.round(value * 100)}
-        aria-label="Скругление углов, %"
-        onChange={(e) => onChange(Number(e.target.value) / 100)}
-      />
-      <span className="gslides-radius__value">{Math.round(value * 100)}%</span>
-    </div>
-  )
-}
-
-const SHAPE_KIND_OPTIONS: { value: SlideShape['kind']; label: string }[] = [
-  { value: 'rect', label: 'Прямоугольник' },
-  { value: 'circle', label: 'Круг' },
-  { value: 'badge', label: 'Бейдж' },
-  { value: 'pill', label: 'Капсула' },
-  { value: 'line', label: 'Линия' },
-]
-
-/** Свойства выбранной фигуры: тип, текст, контур, дублирование, замена фото, удаление (цвет — отдельной кнопкой). */
-function ShapeBar({
-  shape,
-  onChange,
-  onDuplicate,
-  onReplaceImage,
-  onDelete,
-}: {
-  shape: SlideShape
-  onChange: (patch: Partial<SlideShape>, coalesceKey?: string) => void
-  onDuplicate: () => void
-  onReplaceImage: () => void
-  onDelete?: () => void
-}) {
-  const isImage = shape.kind === 'image'
-  const template = shape.template_shape_id != null
-  return (
-    <div className="gslides-shape-bar">
-      {isImage ? (
-        <>
-          <button type="button" className="gslides-tool-btn" onClick={onReplaceImage} title="Заменить фото">
-            <ImageIcon size={14} />
-            <span>Заменить</span>
-          </button>
-          <RadiusControl value={shape.radius ?? 0} onChange={(radius) => onChange({ radius: radius || null }, `radius:${shape.id}`)} />
-        </>
-      ) : (
-        !template && (
-          <select
-            className="gslides-shape-bar__select"
-            value={shape.kind}
-            title="Тип фигуры"
-            onChange={(e) => onChange({ kind: e.target.value as SlideShape['kind'] })}
-          >
-            {SHAPE_KIND_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        )
-      )}
-      {!isImage && shape.kind !== 'line' && (
-        <input
-          className="gslides-shape-bar__text"
-          value={shape.text || ''}
-          placeholder="Текст фигуры"
-          title="Текст фигуры (или двойной клик по фигуре)"
-          onChange={(e) => onChange({ text: e.target.value || null })}
-        />
-      )}
-      {!isImage && !template && (
-        <label className="gslides-shape-bar__check" title="Контур фигуры">
-          <input type="checkbox" checked={!!shape.border} onChange={(e) => onChange({ border: e.target.checked })} />
-          Контур
-        </label>
-      )}
-      <button type="button" className="gslides-tool-btn" onClick={onDuplicate} title="Дублировать">
-        <Copy size={14} />
-      </button>
-      {onDelete && (
-        <button type="button" className="gslides-tool-btn" onClick={onDelete} title="Удалить фигуру">
-          <Trash2 size={14} />
-        </button>
-      )}
-    </div>
-  )
-}
-
-/** Поле HEX-цвета: цвет применяется, когда введён полностью, а не на каждый символ. */
-function HexInput({ value, onCommit }: { value: string; onCommit: (color: string) => void }) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => setDraft(value), [value])
-  return (
-    <input
-      type="text"
-      className="input input-sm gslides-color-modal__hex-input"
-      value={draft}
-      placeholder="#000000"
-      onChange={(e) => {
-        setDraft(e.target.value)
-        if (/^#[0-9a-f]{6}$/i.test(e.target.value)) onCommit(e.target.value)
-      }}
-    />
   )
 }

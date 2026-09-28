@@ -4,6 +4,8 @@ import { useEffect, useRef } from 'react'
 import { api } from './client'
 import type {
   AuditReport,
+  CommentThread,
+  PresenceEntry,
   CustomSkillRecord,
   Generation,
   MetaOptions,
@@ -37,6 +39,8 @@ export const queryKeys = {
   projects: ['projects'] as const,
   projectMembers: (id: string) => ['projects', id, 'members'] as const,
   projectShareLinks: (id: string) => ['projects', id, 'share-links'] as const,
+  comments: (id: string) => ['presentations', id, 'comments'] as const,
+  presence: (id: string) => ['presentations', id, 'presence'] as const,
 }
 
 export function useOptions() {
@@ -94,18 +98,35 @@ export function usePresentation(id: string | undefined) {
 }
 
 /**
- * Подписка на сохранения в общей презентации. Само событие не содержит данных:
- * после него перезапрашиваем только уже открытые части колоды через обычный API.
+ * Подписка на события общей презентации (SSE). Сами события не содержат данных: после сохранения
+ * перезапрашиваем только уже открытые части колоды через обычный API, после комментариев — только их.
+ * Присутствие участников Студии приходит событием presence и отдаётся в onPresence.
  */
-export function usePresentationRealtime(presentationId: string | undefined) {
+export function usePresentationRealtime(
+  presentationId: string | undefined,
+  options: { onPresence?: (entry: PresenceEntry | { user: { id: string }; left: true }) => void } = {},
+) {
   const queryClient = useQueryClient()
   const lastRefresh = useRef(0)
+  const onPresence = useRef(options.onPresence)
+  onPresence.current = options.onPresence
 
   useEffect(() => {
     if (!presentationId) return
     const source = new EventSource(`/api/presentations/${presentationId}/events`, { withCredentials: true })
 
-    const refresh = () => {
+    const refresh = (event: MessageEvent) => {
+      let kind = ''
+      try {
+        kind = JSON.parse(event.data)?.kind ?? ''
+      } catch {
+        kind = ''
+      }
+      if (kind === 'comments') {
+        queryClient.invalidateQueries({ queryKey: queryKeys.comments(presentationId) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
+        return
+      }
       // Несколько операций (например, сохранение + очередь рендера) могут прийти подряд.
       // Сводим их к одному обновлению, чтобы не создавать сетевой всплеск.
       const now = Date.now()
@@ -127,10 +148,26 @@ export function usePresentationRealtime(presentationId: string | undefined) {
         queryClient.invalidateQueries({ queryKey: queryKeys.audit(variantId) })
       }
     }
+    const presence = (event: MessageEvent) => {
+      try {
+        onPresence.current?.(JSON.parse(event.data))
+      } catch {
+        // повреждённое событие присутствия просто пропускаем
+      }
+    }
 
     source.addEventListener('update', refresh)
+    source.addEventListener('presence', presence)
     return () => source.close()
   }, [presentationId, queryClient])
+}
+
+export function useComments(presentationId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.comments(presentationId ?? ''),
+    queryFn: () => api.get<CommentThread[]>(`/presentations/${presentationId}/comments`),
+    enabled: Boolean(presentationId),
+  })
 }
 
 export function useGeneration(presentationId: string | undefined) {
