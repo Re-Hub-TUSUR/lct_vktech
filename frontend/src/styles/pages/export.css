@@ -163,7 +163,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: modal-pop 0.18s ease-out;
+  animation: modal-pop var(--dur-base) ease-out;
 }
 @keyframes modal-pop {
   from { opacity: 0; transform: scale(0.96); }
@@ -265,7 +265,7 @@
 .slide__chart-box.is-editable-chart {
   cursor: pointer;
   border-radius: 8px;
-  transition: outline 0.15s;
+  transition: outline var(--dur-base);
 }
 .slide__chart-box.is-editable-chart:hover {
   outline: 2px dashed var(--color-primary, #0077ff);
@@ -281,7 +281,7 @@
   background: transparent;
   pointer-events: auto;
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-base);
   z-index: 10;
 }
 .slide__chart-box.is-editable-chart:hover .slide__chart-hint {
@@ -299,7 +299,7 @@
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-base);
 }
 .slide__chart-delete-btn:hover {
   background: rgb(220, 38, 38);
@@ -372,7 +372,7 @@
     align-items: center;
     justify-content: center;
     position: relative;
-    transition: max-width 0.2s ease, max-height 0.2s ease;
+    transition: max-width var(--dur-base) ease, max-height var(--dur-base) ease;
   }
   .audit-panel {
     grid-column: 3;

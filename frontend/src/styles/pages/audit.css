@@ -192,7 +192,7 @@
   padding: 4px 12px;
   height: 32px;
   border-radius: 8px;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background var(--dur-base), color var(--dur-base), border-color var(--dur-base);
 }
 
 .audit-refresh-btn:hover {
@@ -209,10 +209,6 @@
 .audit-refresh-btn .spin {
   animation: spin 1s linear infinite;
 }
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
 
 .audit-layout {
   display: grid;
@@ -220,7 +216,7 @@
   grid-template-rows: auto 1fr;
   gap: 14px;
   align-items: start;
-  transition: grid-template-columns 0.2s ease;
+  transition: grid-template-columns var(--dur-base) ease;
 }
 
 /* Интерактивный тур по замечаниям аудита (Next Issue): стоит в потоке под слайдом и ничего не перекрывает */
@@ -237,7 +233,7 @@
   border: 1px solid var(--color-border-strong);
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(12px);
-  animation: tourSlideUpFade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: tourSlideUpFade var(--dur-slow) var(--ease-out);
   max-width: min(760px, 94%);
 }
 .audit-tour-bar__title {
@@ -383,7 +379,7 @@
   background: var(--color-surface);
   cursor: pointer;
   overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
 }
 
 .audit-slide:hover {
@@ -406,7 +402,7 @@
   font-weight: 700;
   background: rgba(15, 23, 42, 0.65);
   color: #fff;
-  transition: background 0.15s;
+  transition: background var(--dur-base);
 }
 
 .audit-slide__number.is-active {
@@ -478,7 +474,7 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: max-width 0.2s ease, max-height 0.2s ease;
+  transition: max-width var(--dur-base) ease, max-height var(--dur-base) ease;
 }
 
 .audit-stage-card .slide,
@@ -571,7 +567,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--dur-base);
 }
 
 .audit-editor-toggle-btn--icon {
@@ -598,7 +594,7 @@
   border: 1px solid transparent;
   border-radius: 12px;
   overflow: hidden;
-  transition: border-color 0.15s, background-color 0.15s;
+  transition: border-color var(--dur-base), background-color var(--dur-base);
 }
 .audit-notes.is-open {
   border-color: var(--color-border);
@@ -654,7 +650,7 @@
 .audit-notes__chevron {
   flex: none;
   margin-left: auto;
-  transition: transform 0.2s ease;
+  transition: transform var(--dur-base) ease;
 }
 .audit-notes.is-open .audit-notes__chevron {
   transform: rotate(180deg);
@@ -665,12 +661,12 @@
   display: grid;
   grid-template-rows: 0fr;
   visibility: hidden; /* свёрнутый блок не попадает в Tab-порядок и в чтение скринридером */
-  transition: grid-template-rows 0.22s ease, visibility 0s linear 0.22s;
+  transition: grid-template-rows var(--dur-slow) ease, visibility 0s linear var(--dur-slow);
 }
 .audit-notes.is-open .audit-notes__body {
   grid-template-rows: 1fr;
   visibility: visible;
-  transition: grid-template-rows 0.22s ease, visibility 0s;
+  transition: grid-template-rows var(--dur-slow) ease, visibility 0s;
 }
 .audit-notes__inner {
   min-height: 0;
@@ -808,7 +804,7 @@
   color: var(--color-text-muted);
   cursor: pointer;
   position: relative;
-  transition: color 0.15s;
+  transition: color var(--dur-base);
 }
 
 .audit-panel-tab:hover {
@@ -877,7 +873,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--dur-base);
 }
 
 .audit-filter-pill:hover {
@@ -921,7 +917,7 @@
   color: var(--color-text);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s;
+  transition: background var(--dur-fast);
 }
 
 .audit-slide-dropdown-item:hover {
@@ -958,7 +954,7 @@
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--dur-base);
 }
 
 .audit-kind-pill:hover {
@@ -1094,7 +1090,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
 }
 
 .audit-issue-action:hover:not(:disabled) {
@@ -1184,7 +1180,7 @@
   flex-direction: column;
   gap: 8px;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
   position: relative;
 }
 
@@ -1244,7 +1240,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all var(--dur-base) var(--ease-standard);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -1401,7 +1397,7 @@
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--dur-base);
 }
 
 .audit-btn-hide:hover:not(:disabled) {
@@ -1428,7 +1424,7 @@
   justify-content: center;
   gap: 6px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--dur-base);
 }
 
 .audit-btn-fix:hover:not(:disabled) {

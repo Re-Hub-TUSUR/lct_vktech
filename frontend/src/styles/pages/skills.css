@@ -41,8 +41,8 @@
   border-radius: var(--radius-md);
   background: var(--color-surface);
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color var(--dur-base),
+    background var(--dur-base);
 }
 .skill-row:not(.is-off) {
   border-color: var(--color-primary);
@@ -88,7 +88,7 @@
   gap: 2px;
 }
 .skill-row__chevron {
-  transition: transform 0.15s;
+  transition: transform var(--dur-base);
 }
 .skill-row__chevron.is-open {
   transform: rotate(180deg);

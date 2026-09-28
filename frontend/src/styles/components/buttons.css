@@ -9,7 +9,7 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base);
 }
 .btn:hover {
   text-decoration: none;

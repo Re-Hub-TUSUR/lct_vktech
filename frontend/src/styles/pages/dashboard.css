@@ -91,7 +91,7 @@
   box-shadow: var(--shadow-sm);
   color: inherit;
   text-align: left;
-  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+  transition: box-shadow var(--dur-base), border-color var(--dur-base), transform var(--dur-base);
 }
 .presentation-card:hover,
 a:hover > .template-card,

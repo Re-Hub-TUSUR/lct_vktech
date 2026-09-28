@@ -158,7 +158,7 @@
   flex-direction: column;
   gap: 1px;
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-fast);
 }
 .content-item:hover > .content-item__actions,
 .content-item:focus-within > .content-item__actions,

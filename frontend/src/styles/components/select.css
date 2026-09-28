@@ -15,7 +15,7 @@
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
 }
 .select__trigger:hover {
   border-color: #b4bfcc;
@@ -29,7 +29,7 @@
 .select__chevron {
   flex-shrink: 0;
   color: var(--color-text-muted);
-  transition: transform 0.2s ease, color 0.15s;
+  transition: transform var(--dur-base) ease, color var(--dur-base);
   margin-left: 8px;
 }
 .select.is-open .select__chevron {
@@ -51,7 +51,7 @@
   border: 1px solid var(--color-border);
   border-radius: 14px;
   box-shadow: 0 12px 32px rgba(16, 24, 40, 0.16);
-  animation: select-in 0.14s ease;
+  animation: select-in var(--dur-fast) ease;
 }
 .select__option {
   display: flex;
@@ -97,16 +97,18 @@
 .select__menu--up {
   top: auto;
   bottom: calc(100% + 6px);
-  animation: select-in-up 0.14s ease;
+  animation: select-in-up var(--dur-fast) ease;
+}
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
 }
 @keyframes select-in-up {
   from {
     opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: translateY(4px) scale(0.98);
   }
 }
 

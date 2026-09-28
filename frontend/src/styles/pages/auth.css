@@ -157,7 +157,7 @@
   border-radius: 20px;
   background: var(--color-surface);
   box-shadow: var(--shadow-lg);
-  animation: auth-form-enter 260ms ease-out both;
+  animation: auth-form-enter var(--dur-slow) ease-out both;
 }
 .password-input {
   position: relative;

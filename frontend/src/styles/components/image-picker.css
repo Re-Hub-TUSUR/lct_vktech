@@ -18,7 +18,7 @@
   cursor: pointer;
   padding: 0;
   text-align: left;
-  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+  transition: border-color var(--dur-base), transform var(--dur-base), box-shadow var(--dur-base);
 }
 
 .image-picker-card:hover {

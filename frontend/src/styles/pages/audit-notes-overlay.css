@@ -8,7 +8,7 @@
   right: 16px;
   z-index: 50;
   pointer-events: auto;
-  animation: slideNotesFadeUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideNotesFadeUp var(--dur-base) var(--ease-out);
 }
 
 .audit-slide-notes-card {
