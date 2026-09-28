@@ -1,0 +1,420 @@
+/* ===== Карточки и формы ===== */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  min-width: 0;
+}
+.card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.field__hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.field__error {
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  width: fit-content;
+}
+.segmented__item {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-base);
+}
+.segmented__item:hover:not(.is-active) {
+  color: var(--color-text);
+}
+.segmented__item.is-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+/* Когда «пилюля» измерена, фон рисует она, а не сам пункт */
+.segmented {
+  position: relative;
+}
+.segmented.has-pill .segmented__item {
+  position: relative;
+  z-index: 1;
+}
+.segmented.has-pill .segmented__item.is-active {
+  background: transparent;
+  box-shadow: none;
+}
+.segmented__pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--pill-w);
+  height: var(--pill-h);
+  transform: translate(var(--pill-x), var(--pill-y));
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-slow) var(--ease-out), width var(--dur-slow) var(--ease-out);
+}
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.toggle__track {
+  flex-shrink: 0;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+  transition: background var(--dur-base);
+}
+.toggle__track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-slow) var(--ease-spring), width var(--dur-base) var(--ease-out);
+}
+/* Бегунок чуть «растягивается» при нажатии */
+.toggle:active:not(.is-disabled) .toggle__track::after {
+  width: 20px;
+}
+.toggle:active:not(.is-disabled) input:checked + .toggle__track::after {
+  transform: translateX(12px);
+}
+.toggle input:checked + .toggle__track {
+  background: var(--color-primary);
+}
+.toggle input:checked + .toggle__track::after {
+  transform: translateX(16px);
+}
+.toggle input:focus-visible + .toggle__track {
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+.toggle__text {
+  display: flex;
+  flex-direction: column;
+  font-weight: 500;
+}
+.toggle__text small {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.progress {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+.progress__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-primary-gradient);
+  transition: width 0.6s var(--ease-out);
+}
+/* Пока идёт работа — по полосе пробегает мягкий блик */
+.progress--active .progress__bar {
+  position: relative;
+  overflow: hidden;
+}
+.progress--active .progress__bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: progress-shimmer 1.6s var(--ease-standard) infinite;
+}
+@keyframes progress-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+  background: radial-gradient(circle at 50% 0%, var(--color-primary-soft), transparent 60%), var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.empty-state p {
+  color: var(--color-text-muted);
+}
+.empty-state__icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 6px var(--color-primary-soft), var(--shadow-md);
+  margin-bottom: var(--space-2);
+  animation: float 4s ease-in-out infinite;
+}
+@keyframes float {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.error-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: 14px;
+}
+
+.callout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+}
+.callout > span {
+  flex: 1;
+}
+.callout-success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+.callout-warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+.callout-danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.file-drop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  border: 1.5px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: border-color var(--dur-base), background var(--dur-base);
+  min-height: 120px;
+}
+.file-drop > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.file-drop strong {
+  color: var(--color-text);
+}
+.file-drop small {
+  font-size: 12px;
+}
+.file-drop:hover,
+.file-drop.is-over {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+.file-drop.is-compact {
+  min-height: 0;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+.file-drop.is-busy {
+  justify-content: center;
+  cursor: default;
+}
+
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.file-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.file-list li span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-list small {
+  color: var(--color-text-muted);
+}
+
+.file-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+}
+
+.file-thumbnail {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+  background: var(--color-surface);
+}
+
+.file-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+
+/* ===== Скелетоны загрузки ===== */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--color-surface) 70%, transparent) 50%,
+      transparent 100%
+    )
+    var(--color-surface-strong);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.skeleton--line {
+  height: 12px;
+}
+.skeleton--short {
+  width: 35%;
+}
+.skeleton--mid {
+  width: 60%;
+}
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+.skeleton-card__cover {
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.skeleton-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-4);
+}

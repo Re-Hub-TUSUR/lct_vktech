@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { LogOut, Menu, Moon, Plus, Sun, X } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { useAuth } from '../auth/AuthProvider'
 import vkLogo from '../assets/vk-logo.png'
@@ -27,13 +27,23 @@ export function AppLayout() {
   const location = useLocation()
   const { theme, toggleTheme } = useTheme()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+
+  // Тень у топбара появляется, только когда под ним прокручен контент.
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+
   const isAudit = location.pathname.includes('/audit')
 
   const closeMenu = () => setMenuOpen(false)
 
   return (
     <div className="app">
-      <header className={menuOpen ? 'topbar is-menu-open' : 'topbar'}>
+      <header className={clsx('topbar', menuOpen && 'is-menu-open', scrolled && 'is-scrolled')}>
         <Logo />
         <button
           type="button"
@@ -69,7 +79,9 @@ export function AppLayout() {
             title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
             aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
           >
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            <span key={theme} className="icon-swap">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </span>
           </button>
           <div className="user-chip" title={user?.email}>
             <span className="user-chip__avatar">{user?.full_name.slice(0, 1).toUpperCase()}</span>

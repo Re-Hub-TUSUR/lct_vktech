@@ -31,8 +31,9 @@
   --color-warning-soft: #fff4e0;
   --color-danger: #e0343d;
   --color-danger-soft: #fdecec;
-  --color-info: #0077ff;
-  --color-info-soft: #e8f1ff;
+  /* Голубее primary, чтобы info-бейджи не сливались со ссылками и кнопками */
+  --color-info: #0873b0;
+  --color-info-soft: #e5f4fc;
   --color-purple: #7a4de8;
   --color-purple-soft: #f1ebff;
   --color-pink: #e0399e;
@@ -48,6 +49,21 @@
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.08);
   --shadow-lg: 0 16px 48px rgba(16, 24, 40, 0.18);
+  /* Приподнятая карточка при наведении */
+  --shadow-hover: 0 10px 28px rgba(16, 24, 40, 0.12);
+  /* Мягкое свечение основной кнопки */
+  --shadow-primary: 0 4px 14px rgba(0, 119, 255, 0.28);
+
+  --color-primary-gradient: linear-gradient(90deg, #0077ff, #5a4bff);
+  --color-on-primary: #ffffff;
+
+  /* Движение. Сдержанно: короткие длительности, мягкое торможение. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
 
   --space-1: 4px;
   --space-2: 8px;
@@ -98,4 +114,6 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.65);
+  --shadow-hover: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-primary: 0 4px 16px rgba(0, 119, 255, 0.35);
 }

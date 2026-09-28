@@ -1,0 +1,154 @@
+/* ===== Выпадающий список ===== */
+.select {
+  position: relative;
+}
+.select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 16px 10px 14px;
+  text-align: left;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--dur-base), box-shadow var(--dur-base);
+}
+.select__trigger:hover {
+  border-color: #b4bfcc;
+}
+.select__trigger:focus-visible,
+.select.is-open .select__trigger {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+.select__chevron {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  transition: transform var(--dur-base) ease, color var(--dur-base);
+  margin-left: 8px;
+}
+.select.is-open .select__chevron {
+  transform: rotate(180deg);
+  color: var(--color-primary);
+}
+.select__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.16);
+  animation: select-in var(--dur-fast) ease;
+}
+.select__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 14px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.select__option.is-active {
+  background: var(--color-surface-hover);
+}
+.select__option.is-selected {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.select__option.is-selected.is-active {
+  background: var(--color-primary-soft);
+}
+.select__trigger-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select__option-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.select__option-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.select__menu--up {
+  top: auto;
+  bottom: calc(100% + 6px);
+  animation: select-in-up var(--dur-fast) ease;
+}
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+@keyframes select-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+/* Компактный вариант выпадающего списка (size="sm") */
+.select--sm .select__trigger {
+  padding: 4px 12px 4px 10px;
+  font-size: 12px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  gap: 6px;
+  width: auto;
+  max-width: 170px;
+}
+.select--sm .select__chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+}
+
+/* Безопасный отступ для нативных выпадающих списков */
+select {
+  padding-right: 36px !important;
+}
+.select--sm .select__menu {
+  left: 0;
+  right: auto;
+  min-width: 185px;
+  max-width: 250px;
+  max-height: 220px;
+  font-size: 12px;
+  border-radius: 12px;
+  padding: 5px;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.18);
+  z-index: 100;
+}
+.select--sm .select__option {
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+

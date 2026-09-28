@@ -150,13 +150,13 @@ export function GenerationPage() {
               </Button>
             )}
           </div>
-          <ProgressBar value={data.progress} />
+          <ProgressBar value={data.progress} active={status === 'queued' || status === 'running'} />
           {data.error && <ErrorState error={new Error(data.error)} />}
 
           <ol className="stages">
             {data.stages.map((stage) => (
               <li key={stage.key} className={clsx('stage', `stage-${stage.status}`)}>
-                <span className="stage__icon">{STAGE_ICONS[stage.status]}</span>
+                <span key={stage.status} className="stage__icon">{STAGE_ICONS[stage.status]}</span>
                 <div className="stage__body">
                   <div className="stage__title">
                     <strong>{stage.title}</strong>

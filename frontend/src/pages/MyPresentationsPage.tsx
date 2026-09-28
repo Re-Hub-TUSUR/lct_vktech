@@ -25,7 +25,7 @@ import { ProjectShareDialog } from '../components/ProjectShareDialog'
 import { ShareDialog } from '../components/ShareDialog'
 import { SlideView } from '../components/slides/SlideView'
 import { useToast } from '../components/Toast'
-import { Badge, Button, EmptyState, ErrorState, Select, Spinner } from '../components/ui'
+import { Badge, Button, CardGridSkeleton, EmptyState, ErrorState, Select, Spinner } from '../components/ui'
 import { countLabel, formatDate } from '../lib/format'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
 import { PROJECT_COLOR_CONFIGS } from '../lib/projects'
@@ -575,7 +575,7 @@ export function MyPresentationsPage() {
 
         {/* Список презентаций */}
         {presentations.isPending ? (
-          <Spinner />
+          <CardGridSkeleton count={8} />
         ) : presentations.error ? (
           <ErrorState error={presentations.error} />
         ) : filteredPresentations.length === 0 ? (

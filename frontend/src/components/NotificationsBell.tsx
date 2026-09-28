@@ -24,7 +24,7 @@ export function NotificationsBell() {
     <div className="notifications">
       <button type="button" className="icon-btn notifications__trigger" aria-label="Уведомления" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         <Bell size={19} />
-        {unread > 0 && <span className="notifications__count">{unread > 9 ? '9+' : unread}</span>}
+        {unread > 0 && <span key={unread} className="notifications__count">{unread > 9 ? '9+' : unread}</span>}
       </button>
       {open && <div className="notifications__panel">
         <header><strong>Уведомления</strong>{unread > 0 && <button type="button" className="icon-btn" title="Прочитать все" aria-label="Прочитать все" onClick={() => markAll.mutate()}><CheckCheck size={17} /></button>}</header>
