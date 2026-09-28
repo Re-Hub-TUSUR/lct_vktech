@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { X } from 'lucide-react'
-import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 const FOCUSABLE_SELECTOR = [
@@ -18,6 +18,8 @@ const FOCUSABLE_SELECTOR = [
 // another dialog (for example, an image picker from an editor modal).
 const modalStack: HTMLDivElement[] = []
 let bodyOverflowBeforeModals: string | null = null
+// Длительность анимации закрытия (.modal-backdrop.is-closing в toast-modal.css).
+const CLOSE_ANIMATION_MS = 140
 
 function isVisible(element: HTMLElement) {
   return element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden'
@@ -44,6 +46,22 @@ export function Modal({
     onCloseRef.current = onClose
   }, [onClose])
 
+  // Закрытие изнутри (крестик, фон, Escape) сначала проигрывает анимацию. Если родитель убирает окно сам, оно исчезает сразу.
+  const [closing, setClosing] = useState(false)
+  const closingRef = useRef(false)
+  const closeTimerRef = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(closeTimerRef.current), [])
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      onCloseRef.current()
+      return
+    }
+    closingRef.current = true
+    setClosing(true)
+    closeTimerRef.current = window.setTimeout(() => onCloseRef.current(), CLOSE_ANIMATION_MS)
+  }, [])
+
   useEffect(() => {
     const modal = modalRef.current
     if (!modal) return
@@ -68,7 +86,7 @@ export function Modal({
       if (event.key === 'Escape') {
         event.preventDefault()
         event.stopPropagation()
-        onCloseRef.current()
+        requestClose()
         return
       }
 
@@ -102,10 +120,13 @@ export function Modal({
       }
       if (wasTopmost && previousActiveElement?.isConnected) previousActiveElement.focus()
     }
-  }, [])
+  }, [requestClose])
 
   return createPortal(
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div
+      className={clsx('modal-backdrop', closing && 'is-closing')}
+      onMouseDown={(event) => event.target === event.currentTarget && requestClose()}
+    >
       <div
         ref={modalRef}
         className={clsx('modal', wide && 'modal-wide', className)}
@@ -116,7 +137,7 @@ export function Modal({
       >
         <header className="modal__header">
           <h2 id={titleId}>{title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрыть">
+          <button type="button" className="icon-btn" onClick={requestClose} aria-label="Закрыть">
             <X size={20} />
           </button>
         </header>

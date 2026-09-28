@@ -1,6 +1,16 @@
 import clsx from 'clsx'
 import { Check, ChevronDown, CircleAlert, LoaderCircle } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 
@@ -85,9 +95,15 @@ export function Card({ className, children }: { className?: string; children: Re
   return <section className={clsx('card', className)}>{children}</section>
 }
 
-export function ProgressBar({ value }: { value: number }) {
+export function ProgressBar({ value, active = false }: { value: number; active?: boolean }) {
   return (
-    <div className="progress" role="progressbar" aria-valuenow={value} aria-valuemin={0} aria-valuemax={100}>
+    <div
+      className={clsx('progress', active && 'progress--active')}
+      role="progressbar"
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div className="progress__bar" style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
     </div>
   )
@@ -102,8 +118,35 @@ export function Segmented<T extends string>({
   options: { value: T; label: string }[]
   onChange: (value: T) => void
 }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [pill, setPill] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  // «Пилюля» активного пункта плавно переезжает под новый пункт; при переносе строк едет и по вертикали.
+  useLayoutEffect(() => {
+    const root = rootRef.current
+    if (!root) return
+    const measure = () => {
+      const active = root.querySelector<HTMLElement>('.segmented__item.is-active')
+      setPill(active ? { x: active.offsetLeft, y: active.offsetTop, w: active.offsetWidth, h: active.offsetHeight } : null)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [value, options])
+
   return (
-    <div className="segmented" role="radiogroup">
+    <div
+      className={clsx('segmented', pill && 'has-pill')}
+      role="radiogroup"
+      ref={rootRef}
+      style={
+        pill
+          ? ({ '--pill-x': `${pill.x}px`, '--pill-y': `${pill.y}px`, '--pill-w': `${pill.w}px`, '--pill-h': `${pill.h}px` } as CSSProperties)
+          : undefined
+      }
+    >
+      {pill && <span className="segmented__pill" aria-hidden />}
       {options.map((option) => (
         <button
           key={option.value}

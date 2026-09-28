@@ -9,7 +9,12 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base);
+  transition: background var(--dur-base), border-color var(--dur-base), color var(--dur-base),
+    box-shadow var(--dur-base), transform var(--dur-fast) var(--ease-standard);
+}
+/* Лёгкое «нажатие» */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .btn:hover {
   text-decoration: none;
@@ -42,6 +47,7 @@
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  box-shadow: var(--shadow-primary);
 }
 .btn-secondary {
   background: var(--color-surface);
@@ -62,6 +68,10 @@
   background: var(--color-danger);
   color: #fff;
 }
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-danger) 88%, #000);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--color-danger) 30%, transparent);
+}
 
 .icon-btn {
   display: inline-grid;
@@ -72,6 +82,10 @@
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast), transform var(--dur-fast) var(--ease-standard);
+}
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
 }
 .icon-btn:hover:not(:disabled) {
   background: var(--color-surface-muted);

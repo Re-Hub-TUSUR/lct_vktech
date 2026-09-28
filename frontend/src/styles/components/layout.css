@@ -15,6 +15,13 @@
   background: var(--color-topbar-bg);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--color-border);
+  transition: box-shadow var(--dur-slow) var(--ease-standard);
+}
+.topbar.is-scrolled {
+  box-shadow: 0 4px 20px rgba(16, 24, 40, 0.06);
+}
+[data-theme='dark'] .topbar.is-scrolled {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
 }
 .topbar__nav {
   display: flex;
@@ -25,6 +32,24 @@
   border-radius: var(--radius-md);
   color: var(--color-text-muted);
   font-weight: 500;
+  position: relative;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+/* Индикатор активного раздела — тонкая VK-синяя черта под пунктом */
+.topbar__nav a::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -12px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--color-primary);
+  transform: scaleX(0);
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+.topbar__nav a.active::after {
+  transform: scaleX(1);
 }
 .topbar__nav a:hover {
   background: var(--color-surface-muted);
@@ -73,6 +98,13 @@
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
+  animation: count-pop var(--dur-slow) var(--ease-spring);
+}
+@keyframes count-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
 }
 .notifications__panel {
   position: absolute;
@@ -87,6 +119,26 @@
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-lg);
+  transform-origin: top right;
+  animation: popover-in var(--dur-base) var(--ease-out);
+}
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+/* Смена иконки (тема): лёгкий поворот с появлением */
+.icon-swap {
+  display: inline-grid;
+  place-items: center;
+  animation: icon-swap var(--dur-slow) var(--ease-out);
+}
+@keyframes icon-swap {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
 }
 .notifications__panel header {
   display: flex;
@@ -319,6 +371,34 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
 
+/* Появление: страница мягко проявляется при смене раздела (только opacity — transform сломал бы fixed-панели внутри),
+   карточки в сетках выезжают лесенкой. Срабатывает только на новые DOM-узлы, при рефетче данных не повторяется. */
+.page > * {
+  animation: page-in var(--dur-slow) var(--ease-standard);
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+  }
+}
+.grid-cards > *,
+.grid-templates > *,
+.grid-slides > * {
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+}
+.grid-cards > :nth-child(2), .grid-templates > :nth-child(2), .grid-slides > :nth-child(2) { animation-delay: 30ms; }
+.grid-cards > :nth-child(3), .grid-templates > :nth-child(3), .grid-slides > :nth-child(3) { animation-delay: 60ms; }
+.grid-cards > :nth-child(4), .grid-templates > :nth-child(4), .grid-slides > :nth-child(4) { animation-delay: 90ms; }
+.grid-cards > :nth-child(5), .grid-templates > :nth-child(5), .grid-slides > :nth-child(5) { animation-delay: 120ms; }
+.grid-cards > :nth-child(6), .grid-templates > :nth-child(6), .grid-slides > :nth-child(6) { animation-delay: 150ms; }
+.grid-cards > :nth-child(7), .grid-templates > :nth-child(7), .grid-slides > :nth-child(7) { animation-delay: 180ms; }
+.grid-cards > :nth-child(n + 8), .grid-templates > :nth-child(n + 8), .grid-slides > :nth-child(n + 8) { animation-delay: 210ms; }
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
 .page-header {
   display: flex;
   flex-direction: column;

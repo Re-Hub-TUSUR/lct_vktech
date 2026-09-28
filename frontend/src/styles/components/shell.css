@@ -58,9 +58,15 @@
   }
   .topbar.is-menu-open .topbar__nav {
     display: flex;
+    transform-origin: top center;
+    animation: popover-in var(--dur-base) var(--ease-out);
   }
   .topbar__nav a {
     padding: 11px 12px;
+  }
+  /* В выпадающем меню активный пункт выделен фоном, черта под ним не нужна */
+  .topbar__nav a::after {
+    display: none;
   }
   .topbar__actions {
     gap: 4px;

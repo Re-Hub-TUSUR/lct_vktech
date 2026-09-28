@@ -60,11 +60,39 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  transition: color var(--dur-base);
+}
+.segmented__item:hover:not(.is-active) {
+  color: var(--color-text);
 }
 .segmented__item.is-active {
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: var(--shadow-sm);
+}
+/* Когда «пилюля» измерена, фон рисует она, а не сам пункт */
+.segmented {
+  position: relative;
+}
+.segmented.has-pill .segmented__item {
+  position: relative;
+  z-index: 1;
+}
+.segmented.has-pill .segmented__item.is-active {
+  background: transparent;
+  box-shadow: none;
+}
+.segmented__pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--pill-w);
+  height: var(--pill-h);
+  transform: translate(var(--pill-x), var(--pill-y));
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-slow) var(--ease-out), width var(--dur-slow) var(--ease-out);
 }
 
 .toggle {
@@ -98,7 +126,14 @@
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-sm);
-  transition: transform var(--dur-base);
+  transition: transform var(--dur-slow) var(--ease-spring), width var(--dur-base) var(--ease-out);
+}
+/* Бегунок чуть «растягивается» при нажатии */
+.toggle:active:not(.is-disabled) .toggle__track::after {
+  width: 20px;
+}
+.toggle:active:not(.is-disabled) input:checked + .toggle__track::after {
+  transform: translateX(12px);
 }
 .toggle input:checked + .toggle__track {
   background: var(--color-primary);
