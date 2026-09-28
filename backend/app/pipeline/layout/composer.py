@@ -42,6 +42,8 @@ ROLE_BY_KIND = {
     "image_text": "image",
 }
 NO_INSIGHT_TITLE = {"title", "section", "agenda", "closing"}
+# Разделитель ставится перед блоком хотя бы из стольких слайдов: раздел из одного слайда — пустой слайд.
+SECTION_MIN_SLIDES = 2
 
 
 @dataclass
@@ -91,15 +93,23 @@ def compose_single_variant(
     groups: dict[str, str],
     seed: int | None = None,
     patterns: list[dict[str, Any]] | None = None,
+    images_available: bool = True,
 ) -> VariantDraft:
+    """images_available=False — картинок для слайдов нет (материалы без фото, text-to-image не подключена):
+    вариант «текст и изображение» уступает место своему запасному профилю (without_images в YAML),
+    а слайды «тезисы с иллюстрацией» верстаются без пустой рамки под картинку."""
     axis_key, axis = axis_config(axis_key)
     layout_names = {layout["key"]: layout["name"] for layout in layouts}
     variants_cfg = (axis.get("variants") or [])[:3]
     cfg = variants_cfg[position] if 0 <= position < len(variants_cfg) else {}
     profile = {**DEFAULT_PROFILE, **(cfg.get("profile") or {})}
+    if not images_available and profile["layout_style"] == "image":
+        fallback = cfg.get("without_images") or {}
+        cfg = {**cfg, **{key: value for key, value in fallback.items() if key != "profile"}}
+        profile = {**profile, "layout_style": "columns", **(fallback.get("profile") or {})}
 
     # Разделители в варианте «по разделам» тоже занимают место в колоде.
-    dividers = len({s.get("group") for s in specs if s.get("group")}) if profile["order"] == "sections" else 0
+    dividers = len(_section_groups(specs)) if profile["order"] == "sections" else 0
     fitted = fit_specs(specs, slides_count - dividers)
 
     # При реролле (когда seed задан или при вариативности) можно варьировать представление данных или порядок тезисов
@@ -116,7 +126,7 @@ def compose_single_variant(
             modified_specs.append(sc)
         fitted = modified_specs
 
-    slides = [_to_slide(spec, profile, speaker_notes) for spec in fitted]
+    slides = [_to_slide(spec, profile, speaker_notes, images_available) for spec in fitted]
     _fill_agenda(slides, groups)
     slides = _apply_order(slides, profile["order"], groups)
     assign_layouts(slides, roles, layout_names)
@@ -144,6 +154,7 @@ def compose_variants(
     roles: dict[str, Any],
     groups: dict[str, str],
     patterns: list[dict[str, Any]] | None = None,
+    images_available: bool = True,
 ) -> list[VariantDraft]:
     axis_key, axis = axis_config(axis_key)
     drafts: list[VariantDraft] = []
@@ -160,17 +171,31 @@ def compose_variants(
                 roles=roles,
                 groups=groups,
                 patterns=patterns,
+                images_available=images_available,
             )
         )
     return drafts
+
+
+def _section_groups(items) -> set[str]:
+    """Блоки, которым нужен слайд-разделитель: в блоке не меньше SECTION_MIN_SLIDES слайдов. Если таких
+    нет (все блоки по слайду), разделители у всех блоков — иначе вариант «по разделам» совпал бы с линейным."""
+    groups = [item.get("group") if isinstance(item, dict) else item.group for item in items]
+    return {group for group in groups if group and groups.count(group) >= SECTION_MIN_SLIDES} or {
+        group for group in groups if group
+    }
 
 
 def _strs(items: list[Any] | None) -> list[str]:
     return [str(item) for item in items or []]
 
 
-def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool) -> Slide:
+def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool, images_available: bool = True) -> Slide:
     kind = spec["kind"]
+    flexible = bool(spec.get("flexible"))
+    if kind == "image_text" and not images_available:
+        # Картинки нет — пустая рамка хуже, чем тезисы: слайд верстается как гибкие тезисы.
+        kind, flexible = "bullets", True
     topic = spec.get("topic") or ""
     insight = spec.get("insight")
     use_insight = profile["titles"] == "insight" and insight and kind not in NO_INSIGHT_TITLE
@@ -188,7 +213,9 @@ def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool
     if kind == "data":
         _fill_data(slide, spec.get("data") or {}, profile["data_view"])
     elif kind == "bullets":
-        style = profile["layout_style"] if spec.get("flexible") else "bullets"
+        style = profile["layout_style"] if flexible else "bullets"
+        if style == "image" and not images_available:
+            style = "bullets"
         if style == "cards" and spec.get("cards"):
             slide.kind = "cards"
             slide.columns = _cards(spec["cards"], max_bullets)
@@ -301,8 +328,9 @@ def _apply_order(slides: list[Slide], order: str, groups: dict[str, str]) -> lis
     elif order == "sections":
         result: list[Slide] = []
         seen: list[str] = []
+        sectioned = _section_groups([slide for slide in slides if slide.kind != "agenda"])
         for slide in slides:
-            if slide.group and slide.group not in seen and slide.kind != "agenda":
+            if slide.group in sectioned and slide.group not in seen and slide.kind != "agenda":
                 seen.append(slide.group)
                 result.append(
                     Slide(

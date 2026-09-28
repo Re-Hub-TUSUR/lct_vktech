@@ -15,6 +15,7 @@ from typing import Any
 from app.core.config import settings
 from app.pipeline.ai.llm import Usage, ask, open_client, writer_model
 from app.pipeline.planning.planner import TONES
+from app.pipeline.planning.typography import polish_slide
 from app.pipeline.skills import custom_skill_context, get_skill
 from app.pipeline.visuals.visualizer import refine_chart
 from app.schemas.slide import ChartSeries, Column, Kpi, Quote, Slide, TableData, TimelineItem
@@ -341,4 +342,4 @@ def edit_slide(
     if edited.chart is not None:
         # Новые числа — те же правила, что на стадии визуализаций: тип, порядок, акцент, округление.
         refine_chart(edited.chart, edited.title, get_skill("visualizer").params)
-    return EditResult(slide=edited, reply=_clean(answer.get("reply")) or "Слайд обновлён", usage=usage)
+    return EditResult(slide=polish_slide(edited, language), reply=_clean(answer.get("reply")) or "Слайд обновлён", usage=usage)

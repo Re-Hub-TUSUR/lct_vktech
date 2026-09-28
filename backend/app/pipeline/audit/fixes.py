@@ -382,19 +382,23 @@ def drop_duplicate(slides, index, issue, ctx):
     return slides
 
 
-def editor_issues(issues: list[IssueRef], catalog: dict[str, CheckInfo]) -> list[IssueRef]:
+TITLE_CHECKS = {"content.title_is_insight", "content.matches_title"}
+
+
+def editor_issues(
+    issues: list[IssueRef], catalog: dict[str, CheckInfo], too_long: set[str] | None = None
+) -> list[IssueRef]:
     """Проблемы, которые исправляет модель: у проверки editor: true, а готового ответа (заголовка от
-    судьи) нет. Без модели — ни одной: работают правила."""
+    судьи) нет или он длиннее слота заголовка (too_long — id таких замечаний). Без модели — ни одной."""
     if not llm_enabled():
         return []
-    ready = {"content.title_is_insight", "content.matches_title"}
     return [
         issue
         for issue in issues
         if (check := catalog.get(issue.check_id)) is not None
         and check.editor
         and check.fix_prompt
-        and not (issue.check_id in ready and issue.evidence)
+        and not (issue.check_id in TITLE_CHECKS and issue.evidence and issue.id not in (too_long or set()))
     ]
 
 
@@ -410,6 +414,9 @@ def instruction_for(issues: list[IssueRef], slide: Slide, catalog: dict[str, Che
         }
         for key, value in values.items():
             template = template.replace("{" + key + "}", value)
+        if issue.check_id in TITLE_CHECKS and issue.evidence:
+            # Вариант судьи не влез в слот заголовка — он служит основой, а длину задаёт вёрстка.
+            template += f" Вариант судьи: «{issue.evidence}» — сохрани его смысл, но уложись в ограничение заголовка."
         if template not in lines:
             lines.append(template)
     if len(lines) == 1:

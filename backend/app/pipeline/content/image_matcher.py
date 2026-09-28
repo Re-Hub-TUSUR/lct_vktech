@@ -83,6 +83,12 @@ def extract_image_assets(files: list[ContentFile], presentation_id: UUID | str) 
     return assets
 
 
+def has_slide_images(files: list[ContentFile], presentation_id: UUID | str) -> bool:
+    """Есть ли в материалах фото или иллюстрации для слайдов (логотипы не в счёт). Без них слайды
+    «тезисы с иллюстрацией» остались бы с пустой рамкой: text-to-image не подключена."""
+    return any(asset.category != "logo" and asset.is_visual for asset in extract_image_assets(files, presentation_id))
+
+
 def _tokenize(text: str) -> set[str]:
     """Токенизация текста с удалением стоп-слов и пунктуации."""
     words = re.findall(r"[a-zA-Zа-яА-Я0-9]{2,}", text.lower())

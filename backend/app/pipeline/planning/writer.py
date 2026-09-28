@@ -5,9 +5,13 @@
 Для «гибких» слайдов модель пишет и тезисы, и карточки, и колонки сразу — это позволяет
 трём вариантам вёрстки показать один и тот же смысл по-разному, не обращаясь к модели ещё раз.
 
-Всё, что вернула модель, нормализуется по ограничениям из skills/slide_writer.yaml:
-число тезисов, длина фразы, размер таблицы, согласованность рядов диаграммы с категориями.
-Слайд, для которого модель не ответила, остаётся с фактами из плана — колода не разваливается.
+Автор видит план всей колоды (не повторяет соседей) и ёмкость слотов шаблона (planning/budgets.py).
+Общий контекст — правила, план колоды, материалы — одинаков для всех слайдов и стоит в начале
+промпта, слайд — в конце. Всё, что вернула модель, нормализуется по ограничениям из
+skills/slide_writer.yaml: число тезисов, длина фразы, размер таблицы, согласованность рядов
+диаграммы с категориями — и проходит русскую типографику (planning/typography.py). Модель ответила
+рассуждением или оборвала JSON — повтор без навязанной сервером схемы и с требованием «только JSON».
+Слайд, для которого модель так и не ответила, остаётся с фактами из плана — колода не разваливается.
 """
 
 import logging
@@ -17,7 +21,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.pipeline.ai.llm import Usage, ask, in_parallel, llm_enabled, open_client
+from app.pipeline.planning.budgets import budget_lines, template_budgets
 from app.pipeline.planning.planner import SERVICE_KINDS, TONES
+from app.pipeline.planning.typography import polish_spec
 from app.pipeline.skills import custom_skill_context, get_skill
 
 logger = logging.getLogger(__name__)
@@ -320,6 +326,16 @@ def _apply(spec: dict[str, Any], answer: dict[str, Any], limits: dict[str, int])
     return filled
 
 
+def deck_outline(specs: list[dict[str, Any]]) -> str:
+    """План колоды для автора: номер, тип, тема и вывод каждого слайда."""
+    lines = []
+    for number, spec in enumerate(specs, start=1):
+        insight = spec.get("insight") or spec.get("subtitle") or ""
+        lines.append(f"{number}. [{spec.get('plan_kind') or spec.get('kind')}] {spec.get('topic') or ''}"
+                     + (f" — {insight}" if insight else ""))
+    return "\n".join(lines)
+
+
 def _prompt_values(spec: dict[str, Any], context: dict[str, str], limits: dict[str, int]) -> dict[str, str]:
     plan = [f"Тип: {spec.get('plan_kind')}", f"Тема: {spec.get('topic')}"]
     if spec.get("insight"):
@@ -345,8 +361,10 @@ def write_slides(
     tone: str = "business",
     audience: str = "",
     custom_skills: list[dict[str, Any]] | None = None,
+    patterns: list[dict[str, Any]] | None = None,
 ) -> CopyResult:
-    """Заполняет спецификации текстами. Спецификации меняются на месте."""
+    """Заполняет спецификации текстами. Спецификации меняются на месте.
+    patterns — паттерны шаблона: по ним автор получает ёмкость слотов (planning/budgets.py)."""
     if not llm_enabled():
         return CopyResult()
     if not any(spec.get("plan_kind") for spec in specs):
@@ -371,7 +389,10 @@ def write_slides(
         "tone": TONES.get(tone, tone),
         "language": "русский" if language == "ru" else "английский",
         "sources": sources or "(материалов нет)",
+        "deck": deck_outline(specs),
+        "budgets": budget_lines(template_budgets(patterns)) or "не заданы",
     }
+    numbers = {id(spec): number for number, spec in enumerate(specs, start=1)}
     custom_context = custom_skill_context(custom_skills, {"all", "text"})
     targets = [spec for spec in specs if spec.get("plan_kind") and spec["plan_kind"] not in SERVICE_KINDS]
     usage = Usage()
@@ -379,7 +400,7 @@ def write_slides(
 
     with open_client() as http:
         def work(spec: dict[str, Any]) -> bool:
-            values = _prompt_values(spec, context, limits)
+            values = {**_prompt_values(spec, context, limits), "number": str(numbers.get(id(spec), ""))}
             system = (prompt.get("system") or "")
             user = (prompt.get("user") or "")
             for key, value in values.items():
@@ -391,18 +412,21 @@ def write_slides(
             label = f"слайд «{spec.get('topic')}»"
             answer = ask(http, system=system, user=user, schema=schema, usage=usage, label=label)
             if answer is None:
-                # Чаще всего ответ обрывается лимитом токенов — повторяем с запасом.
+                # Сервер не всегда держит схему: модель начинает рассуждать вслух или зацикливается
+                # на пробелах внутри JSON. Повтор — без навязанной схемы и с требованием «только JSON».
                 answer = ask(
                     http,
-                    system=system,
+                    system=system + "\n\n" + (prompt.get("retry") or ""),
                     user=user,
-                    schema=schema,
+                    schema=None,
                     usage=usage,
                     label=label + " (повтор)",
-                    max_tokens=settings.llm_max_tokens * 2,
+                    max_tokens=int(settings.llm_max_tokens * 1.5),
                 )
             # _apply вызывается и с пустым ответом: он превратит слайд в тезисы из плана.
-            return _apply(spec, answer or {}, limits)
+            written = _apply(spec, answer or {}, limits)
+            polish_spec(spec, language)
+            return written
 
         for written in in_parallel(targets, work):
             result.written += int(written)

@@ -208,7 +208,8 @@ def test_audit_fixes_go_to_editor_in_one_request_per_slide(model):
     assert len(model["calls"]) == 2, "все проблемы слайда — одним запросом"
     assert "Исправь на слайде" in model["calls"][1]["messages"][1]["content"]
     assert set(applied) == {ref.id for ref in by_model}
-    assert fixed[3].bullets == ["Колода готова за пять минут"] and slides[3].bullets == ["Солнечно, до +18"]
+    # Ответ модели проходит русскую типографику: неразрывный пробел после «за».
+    assert fixed[3].bullets == ["Колода готова за пять минут"] and slides[3].bullets == ["Солнечно, до +18"]
 
 
 def test_editor_keeps_pattern_minimum(model):

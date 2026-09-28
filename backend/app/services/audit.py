@@ -182,6 +182,10 @@ def _fixable(check: CheckInfo, finding: Finding) -> bool:
     return check.id in FIXES
 
 
+# Во сколько раз заголовок от судьи может превышать ёмкость слота заголовка без сокращения.
+TITLE_SLACK = 1.1
+
+
 def slides_hash(slides: list) -> str:
     """Отпечаток содержимого слайдов: по нему отчёт понимает, что слайды правили после проверки."""
     return hashlib.sha1(json.dumps(slides or [], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -269,8 +273,19 @@ async def resolve_issues(
     refs = [IssueRef(str(i.id), i.check_id, i.slide_id, i.target, i.evidence, i.message) for i in issues if str(i.id) in fixable]
     slides = load_slides(variant)
     applied: list[str] = []
+    # Заголовок, предложенный судьёй, может не влезть в слот паттерна — такой заголовок сокращает модель.
+    by_id = {slide.id: slide for slide in slides}
+    too_long = {
+        ref.id
+        for ref in refs
+        if ref.evidence
+        and ref.slide_id in by_id
+        and (pattern := ctx.patterns.get(by_id[ref.slide_id].pattern_id or ""))
+        and pattern.get("title")
+        and len(ref.evidence) > pattern["title"]["chars"] * TITLE_SLACK
+    }
     # Сначала текст, который пишет модель, потом правила: разбить слайд, удалить дубликат и т. п.
-    if by_model := editor_issues(refs, catalog):
+    if by_model := editor_issues(refs, catalog, too_long):
         editor = EditorContext(
             title=ctx.title,
             purpose=ctx.purpose,

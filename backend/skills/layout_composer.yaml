@@ -1,6 +1,6 @@
 name: layout_composer
 title: Композитор вариантов вёрстки
-version: 0.3.0
+version: 0.4.0
 kind: skill
 runtime: code
 stage: layout
@@ -19,6 +19,10 @@ params:
   #   data_view    — как показывать данные: chart | kpi | table;
   #   layout_style — как верстать гибкие тезисы: bullets | cards | columns | image;
   #   order        — linear | summary_first (итоги сразу после обложки) | sections (с разделителями).
+  # Заголовки-выводы (insight) у всех вариантов: заголовок-тема — это слабый слайд, а не особенность
+  # варианта (судья аудита помечает его замечанием). Варианты различаются подачей, а не качеством.
+  # without_images — вариант, если картинок для слайдов нет (в материалах нет фото, text-to-image
+  # не подключена): вместо пустых рамок под изображения — его запасной профиль.
   axes:
     density:
       title: Плотность контента
@@ -35,7 +39,7 @@ params:
         - letter: C
           name: Подробный
           description: Развёрнутые тезисы и таблицы — версия для рассылки и чтения без спикера.
-          profile: {max_bullets: 8, titles: topic, data_view: table, layout_style: bullets, order: sections}
+          profile: {max_bullets: 6, titles: insight, data_view: table, layout_style: bullets, order: linear}
 
     visualization:
       title: Способ визуализации данных
@@ -69,7 +73,7 @@ params:
         - letter: C
           name: По разделам
           description: Смысловые блоки отделены слайдами-разделителями.
-          profile: {max_bullets: 5, titles: topic, data_view: chart, layout_style: bullets, order: sections}
+          profile: {max_bullets: 5, titles: insight, data_view: chart, layout_style: bullets, order: sections}
 
     layouts:
       title: Выбор макетов
@@ -87,3 +91,7 @@ params:
           name: Текст и изображение
           description: Тезисы рядом с иллюстрацией, данные — KPI.
           profile: {max_bullets: 4, titles: insight, data_view: kpi, layout_style: image, order: linear}
+          without_images:
+            name: Колонки и показатели
+            description: Тезисы в две колонки, данные — KPI (фото для слайдов в материалах нет).
+            profile: {layout_style: columns}
