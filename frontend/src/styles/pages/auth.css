@@ -13,6 +13,37 @@
   color: #fff;
   background: radial-gradient(circle at 20% 20%, #3d8bff 0%, transparent 55%),
     radial-gradient(circle at 80% 90%, #7a4de8 0%, transparent 50%), #0b3fd1;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+/* Медленно плывущее светлое пятно — промо-панель «дышит» */
+.auth__promo::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 60%;
+  aspect-ratio: 1;
+  top: 35%;
+  left: 30%;
+  border-radius: 50%;
+  background: #5aa2ff;
+  opacity: 0.35;
+  filter: blur(80px);
+  pointer-events: none;
+  animation: promo-drift 26s ease-in-out infinite alternate;
+}
+[data-theme='dark'] .auth__promo::before {
+  background: #2a5fb8;
+  opacity: 0.3;
+}
+@keyframes promo-drift {
+  0% {
+    transform: translate(-30%, -40%) scale(0.9);
+  }
+  100% {
+    transform: translate(25%, 20%) scale(1.15);
+  }
 }
 [data-theme='dark'] .auth__promo {
   background: radial-gradient(circle at 20% 20%, #1a3c75 0%, transparent 55%),

@@ -57,6 +57,28 @@ export function FullPageSpinner() {
   )
 }
 
+export function Skeleton({ className }: { className?: string }) {
+  return <span className={clsx('skeleton', className)} aria-hidden />
+}
+
+/** Заглушка сетки карточек на время загрузки: высота страницы не прыгает, когда приходят данные. */
+export function CardGridSkeleton({ count = 4, className = 'grid grid-cards' }: { count?: number; className?: string }) {
+  return (
+    <div className={className} aria-busy="true" aria-label="Загрузка">
+      {Array.from({ length: count }, (_, index) => (
+        <div key={index} className="skeleton-card">
+          <Skeleton className="skeleton-card__cover" />
+          <div className="skeleton-card__body">
+            <Skeleton className="skeleton--line skeleton--short" />
+            <Skeleton className="skeleton--line" />
+            <Skeleton className="skeleton--line skeleton--mid" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function Badge({
   tone = 'neutral',
   className,

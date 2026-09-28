@@ -8,6 +8,53 @@
   border-radius: 24px;
   background: var(--color-hero-bg);
   border: 1px solid var(--color-border);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+/* Мягкие пятна VK-синего и индиго, медленно дрейфуют. Едва заметно — это фон, а не событие. */
+.hero::before,
+.hero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+}
+.hero::before {
+  width: 420px;
+  height: 420px;
+  top: -180px;
+  right: 8%;
+  background: #0077ff;
+  opacity: 0.14;
+  animation: hero-drift-a 28s ease-in-out infinite alternate;
+}
+.hero::after {
+  width: 360px;
+  height: 360px;
+  bottom: -200px;
+  right: 30%;
+  background: #7a4de8;
+  opacity: 0.1;
+  animation: hero-drift-b 34s ease-in-out infinite alternate;
+}
+[data-theme='dark'] .hero::before {
+  opacity: 0.22;
+}
+[data-theme='dark'] .hero::after {
+  opacity: 0.18;
+}
+@keyframes hero-drift-a {
+  to {
+    transform: translate(-80px, 60px) scale(1.1);
+  }
+}
+@keyframes hero-drift-b {
+  to {
+    transform: translate(90px, -50px) scale(0.92);
+  }
 }
 .hero > div {
   display: flex;
@@ -41,6 +88,19 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+}
+/* Шаги связаны тонкой линией: это один конвейер, а не четыре отдельные карточки */
+.hero__pipeline::before {
+  content: '';
+  position: absolute;
+  top: 32px;
+  bottom: 32px;
+  left: 33px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--color-primary-soft), color-mix(in srgb, var(--color-primary) 35%, transparent), var(--color-primary-soft));
 }
 .hero__pipeline li {
   display: flex;
@@ -51,6 +111,20 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   box-shadow: var(--shadow-sm);
+  position: relative;
+  transition: transform var(--dur-slow) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out), border-color var(--dur-base);
+  animation: rise-in var(--dur-slow) var(--ease-out) backwards;
+}
+.hero__pipeline li:nth-child(2) { animation-delay: 60ms; }
+.hero__pipeline li:nth-child(3) { animation-delay: 120ms; }
+.hero__pipeline li:nth-child(4) { animation-delay: 180ms; }
+.hero__pipeline li:hover {
+  transform: translateX(4px);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  box-shadow: var(--shadow-md);
+}
+.hero__pipeline li:hover .hero__pipeline-icon {
+  transform: scale(1.08) rotate(-4deg);
 }
 .hero__pipeline li div {
   display: flex;
@@ -73,6 +147,7 @@
   background: var(--color-primary-soft);
   color: var(--color-primary);
   flex-shrink: 0;
+  transition: transform var(--dur-slow) var(--ease-spring);
 }
 @media (max-width: 960px) {
   .hero {
@@ -91,14 +166,33 @@
   box-shadow: var(--shadow-sm);
   color: inherit;
   text-align: left;
-  transition: box-shadow var(--dur-base), border-color var(--dur-base), transform var(--dur-base);
+  transition: box-shadow var(--dur-slow) var(--ease-out), border-color var(--dur-base), transform var(--dur-slow) var(--ease-out);
 }
 .presentation-card:hover,
 a:hover > .template-card,
 .template-card.is-selectable:hover:not(.is-disabled) {
   text-decoration: none;
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-3px);
+}
+/* Обложка чуть приближается при наведении; тело карточки лежит поверх, чтобы увеличенный слайд не наезжал на текст */
+.presentation-card__cover {
+  overflow: hidden;
+}
+.presentation-card .slide,
+.template-card > .slide {
+  transition: transform 0.5s var(--ease-out);
+}
+.presentation-card:hover .slide,
+a:hover > .template-card > .slide,
+.template-card.is-selectable:hover:not(.is-disabled) > .slide {
+  transform: scale(1.03);
+}
+.template-card__body {
+  position: relative;
+  z-index: 1;
+  background: var(--color-surface);
 }
 .presentation-card:focus-within,
 .template-card:focus-within {

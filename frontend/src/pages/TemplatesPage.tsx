@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { useTemplates } from '../api/queries'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
-import { EmptyState, ErrorState, Spinner } from '../components/ui'
+import { CardGridSkeleton, EmptyState, ErrorState } from '../components/ui'
 
 export function TemplatesPage() {
   const templates = useTemplates()
@@ -19,7 +19,7 @@ export function TemplatesPage() {
         </p>
       </div>
       {templates.isPending ? (
-        <Spinner />
+        <CardGridSkeleton count={6} className="grid grid-templates" />
       ) : templates.error ? (
         <ErrorState error={templates.error} />
       ) : templates.data.length === 0 ? (

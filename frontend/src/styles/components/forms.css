@@ -164,7 +164,25 @@
   height: 100%;
   border-radius: inherit;
   background: var(--color-primary-gradient);
-  transition: width 0.4s ease;
+  transition: width 0.6s var(--ease-out);
+}
+/* Пока идёт работа — по полосе пробегает мягкий блик */
+.progress--active .progress__bar {
+  position: relative;
+  overflow: hidden;
+}
+.progress--active .progress__bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  transform: translateX(-100%);
+  animation: progress-shimmer 1.6s var(--ease-standard) infinite;
+}
+@keyframes progress-shimmer {
+  to {
+    transform: translateX(100%);
+  }
 }
 
 .empty-state {
@@ -174,8 +192,8 @@
   gap: var(--space-3);
   padding: var(--space-7) var(--space-5);
   text-align: center;
-  background: var(--color-surface);
-  border: 1px dashed var(--color-border-strong);
+  background: radial-gradient(circle at 50% 0%, var(--color-primary-soft), transparent 60%), var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
 }
 .empty-state p {
@@ -186,9 +204,17 @@
   place-items: center;
   width: 56px;
   height: 56px;
-  border-radius: 16px;
-  background: var(--color-primary-soft);
+  border-radius: 50%;
+  background: var(--color-surface);
   color: var(--color-primary);
+  box-shadow: 0 0 0 6px var(--color-primary-soft), var(--shadow-md);
+  margin-bottom: var(--space-2);
+  animation: float 4s ease-in-out infinite;
+}
+@keyframes float {
+  50% {
+    transform: translateY(-4px);
+  }
 }
 
 .error-state {
@@ -340,3 +366,55 @@
   flex-wrap: wrap;
 }
 
+
+/* ===== Скелетоны загрузки ===== */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--color-surface) 70%, transparent) 50%,
+      transparent 100%
+    )
+    var(--color-surface-strong);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.skeleton--line {
+  height: 12px;
+}
+.skeleton--short {
+  width: 35%;
+}
+.skeleton--mid {
+  width: 60%;
+}
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+.skeleton-card__cover {
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.skeleton-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--space-4);
+}

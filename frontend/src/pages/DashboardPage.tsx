@@ -9,7 +9,7 @@ import { FolderIcon } from '../components/FolderIcon'
 import { SlideView } from '../components/slides/SlideView'
 import { TemplateCard } from '../components/TemplateCard'
 import { TemplateUploader } from '../components/TemplateUploader'
-import { Badge, Button, EmptyState, ErrorState, Spinner } from '../components/ui'
+import { Badge, Button, CardGridSkeleton, EmptyState, ErrorState, Spinner } from '../components/ui'
 import { countLabel, formatDate } from '../lib/format'
 import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
 import { ROLE_LABEL, ROLE_TONE } from '../lib/roles'
@@ -115,7 +115,7 @@ export function DashboardPage() {
           <Link to="/presentations">Мои презентации и папки →</Link>
         </div>
         {presentations.isPending ? (
-          <Spinner />
+          <CardGridSkeleton />
         ) : presentations.error ? (
           <ErrorState error={presentations.error} />
         ) : presentations.data.length === 0 ? (
@@ -144,7 +144,7 @@ export function DashboardPage() {
           <Link to="/templates">Все шаблоны</Link>
         </div>
         {templates.isPending ? (
-          <Spinner />
+          <CardGridSkeleton count={3} />
         ) : templates.error ? (
           <ErrorState error={templates.error} />
         ) : (
