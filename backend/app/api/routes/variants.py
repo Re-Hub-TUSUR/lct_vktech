@@ -23,11 +23,11 @@ from app.pipeline.content.image_matcher import assign_content_images_to_drafts
 from app.pipeline.content.ingest import sources_digest
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
-from app.pipeline.layout.composer import assign_layouts, compose_single_variant, relayout_edited_slide
-from app.pipeline.layout.matcher import assign_patterns
+from app.pipeline.layout.composer import compose_single_variant, relayout_edited_slide
 from app.pipeline.planning.editor import EditError, edit_slide
 from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.planning.planner import plan_outline
+from app.pipeline.planning.single import generate_slide
 from app.pipeline.planning.writer import write_slides
 from app.pipeline.visuals.visualizer import refine_variant
 from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
@@ -35,13 +35,10 @@ from app.schemas.generation import PresentationBrief, VariantDetailResponse, Var
 from app.schemas.presentation import GenerationSettings
 from app.schemas.slide import (
     BatchSlidesUpdate,
-    CreateSlideRequest,
-    ImageSpec,
+    GenerateSlideRequest,
     RegenerateSlideRequest,
-    ReorderSlidesRequest,
     Slide,
-    SlideUpdate,
-    new_slide_id,
+    SlideAnimation,
 )
 from app.schemas.template import SlideTheme
 from app.services.audit import (
@@ -55,6 +52,7 @@ from app.services.audit import (
 )
 from app.services.export import ExportUnavailable, export_deck
 from app.services.renders import rendered_images, schedule_render, variant_dir
+from app.services.skills import resolve_skills
 from app.services.templates import template_theme
 
 router = APIRouter(prefix="/variants", tags=["variants"])
@@ -261,47 +259,6 @@ async def _after_manual_edit(db, arq, variant, presentation, template) -> None:
     await schedule_render(db, arq, variant, template)
 
 
-@router.patch("/{variant_id}/slides/{slide_id}", response_model=ResolveResponse)
-async def update_slide(
-    variant_id: uuid.UUID,
-    slide_id: str,
-    payload: SlideUpdate,
-    user: CurrentUser,
-    db: DbSession,
-    arq: Arq,
-) -> ResolveResponse:
-    """Ручное редактирование слайда (заголовок, тезисы, шрифты, размеры, картинка, макет)."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    template = presentation.template
-    slides = load_slides(variant)
-    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
-    if target_idx is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
-
-    slide = slides[target_idx]
-    updates = payload.model_dump(exclude_unset=True)
-    for field, val in updates.items():
-        if val is not None or field in (
-            "kind", "image", "subtitle", "summary", "notes", "font_family", "font_size_scale",
-            "element_fonts", "element_scales", "element_boxes", "element_crops",
-            "block_density", "background_color", "text_color", "accent_color", "element_colors",
-            "element_backgrounds", "element_bolds", "element_aligns", "element_radii", "is_bold", "text_background_color",
-            "quote", "chart", "table", "timeline", "shapes", "pattern_id", "layout_key", "layout_name"
-        ):
-            setattr(slide, field, val)
-
-    variant.slides = [s.model_dump(mode="json") for s in slides]
-    await _after_manual_edit(db, arq, variant, presentation, template)
-    await db.commit()
-    await publish_presentation_update(redis_client, presentation.id, kind="slide")
-
-    return ResolveResponse(
-        applied=len(updates),
-        report=await audit_report(db, variant),
-        variant=await _variant_payload(db, variant, presentation),
-    )
-
-
 @router.post("/{variant_id}/upload-image")
 async def upload_variant_image(
     variant_id: uuid.UUID,
@@ -352,208 +309,6 @@ async def update_all_slides(
     )
 
 
-@router.post("/{variant_id}/slides", response_model=ResolveResponse)
-async def create_slide(
-    variant_id: uuid.UUID,
-    payload: CreateSlideRequest,
-    user: CurrentUser,
-    db: DbSession,
-    arq: Arq,
-) -> ResolveResponse:
-    """Добавление нового слайда в презентацию."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    template = presentation.template
-    slides = load_slides(variant)
-
-    new_slide = Slide(
-        id=new_slide_id(),
-        kind=payload.kind,
-        title=payload.title,
-        subtitle=payload.subtitle,
-        bullets=["Ключевой тезис слайда", "Дополнительная деталь"] if payload.kind in ("bullets", "agenda") else [],
-        columns=[{"title": "Карточка 1", "bullets": ["Описание карточки"]}] if payload.kind == "cards" else [],
-    )
-
-    if payload.position is not None and 0 <= payload.position <= len(slides):
-        slides.insert(payload.position, new_slide)
-    else:
-        slides.append(new_slide)
-
-    variant.slides = [s.model_dump(mode="json") for s in slides]
-    await _after_manual_edit(db, arq, variant, presentation, template)
-    await db.commit()
-    await publish_presentation_update(redis_client, presentation.id, kind="slide")
-
-    return ResolveResponse(
-        applied=1,
-        report=await audit_report(db, variant),
-        variant=await _variant_payload(db, variant, presentation),
-    )
-
-
-@router.post("/{variant_id}/slides/{slide_id}/duplicate", response_model=ResolveResponse)
-async def duplicate_slide(
-    variant_id: uuid.UUID,
-    slide_id: str,
-    user: CurrentUser,
-    db: DbSession,
-    arq: Arq,
-) -> ResolveResponse:
-    """Дублирование существующего слайда."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    template = presentation.template
-    slides = load_slides(variant)
-    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
-    if target_idx is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
-
-    target = slides[target_idx]
-    duplicated_dict = target.model_dump(mode="json")
-    duplicated_dict["id"] = new_slide_id()
-    duplicated_dict["title"] = f"{target.title} (копия)" if target.title else "Копия слайда"
-    # Для фигур создаем новые id
-    if "shapes" in duplicated_dict and duplicated_dict["shapes"]:
-        for sh in duplicated_dict["shapes"]:
-            sh["id"] = new_slide_id()[:8]
-
-    duplicated_slide = Slide.model_validate(duplicated_dict)
-    slides.insert(target_idx + 1, duplicated_slide)
-
-    variant.slides = [s.model_dump(mode="json") for s in slides]
-    await _after_manual_edit(db, arq, variant, presentation, template)
-    await db.commit()
-    await publish_presentation_update(redis_client, presentation.id, kind="slide")
-
-    return ResolveResponse(
-        applied=1,
-        report=await audit_report(db, variant),
-        variant=await _variant_payload(db, variant, presentation),
-    )
-
-
-@router.delete("/{variant_id}/slides/{slide_id}", response_model=ResolveResponse)
-async def delete_slide(
-    variant_id: uuid.UUID,
-    slide_id: str,
-    user: CurrentUser,
-    db: DbSession,
-    arq: Arq,
-) -> ResolveResponse:
-    """Удаление слайда из презентации."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    template = presentation.template
-    slides = load_slides(variant)
-    if len(slides) <= 1:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить единственный слайд презентации")
-
-    target_idx = next((i for i, s in enumerate(slides) if s.id == slide_id), None)
-    if target_idx is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
-
-    slides.pop(target_idx)
-    variant.slides = [s.model_dump(mode="json") for s in slides]
-    await _after_manual_edit(db, arq, variant, presentation, template)
-    await db.commit()
-    await publish_presentation_update(redis_client, presentation.id, kind="slide")
-
-    return ResolveResponse(
-        applied=1,
-        report=await audit_report(db, variant),
-        variant=await _variant_payload(db, variant, presentation),
-    )
-
-
-@router.put("/{variant_id}/slides/reorder", response_model=ResolveResponse)
-async def reorder_slides(
-    variant_id: uuid.UUID,
-    payload: ReorderSlidesRequest,
-    user: CurrentUser,
-    db: DbSession,
-    arq: Arq,
-) -> ResolveResponse:
-    """Изменение порядка слайдов."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    template = presentation.template
-    slides = load_slides(variant)
-    by_id = {s.id: s for s in slides}
-
-    reordered: list[Slide] = []
-    for sid in payload.slide_ids:
-        if sid in by_id:
-            reordered.append(by_id.pop(sid))
-    # Добавляем оставшиеся, если были
-    reordered.extend(by_id.values())
-
-    if len(reordered) != len(slides):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Некорректный список идентификаторов слайдов")
-
-    variant.slides = [s.model_dump(mode="json") for s in reordered]
-    await _after_manual_edit(db, arq, variant, presentation, template)
-    await db.commit()
-    await publish_presentation_update(redis_client, presentation.id, kind="slide")
-
-    return ResolveResponse(
-        applied=len(reordered),
-        report=await audit_report(db, variant),
-        variant=await _variant_payload(db, variant, presentation),
-    )
-
-
-@router.post("/{variant_id}/slides/{slide_id}/upload-image")
-async def upload_slide_image(
-    variant_id: uuid.UUID,
-    slide_id: str,
-    user: CurrentUser,
-    db: DbSession,
-    arq: Arq,
-    file: UploadFile = File(...),
-) -> ResolveResponse:
-    """Загрузка пользовательского изображения для слайда (импорт картинки)."""
-    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
-    template = presentation.template
-    slides = load_slides(variant)
-    target = next((s for s in slides if s.id == slide_id), None)
-    if target is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
-
-    filename = file.filename or "image.png"
-    ext = Path(filename).suffix.lower()
-    if ext not in {".png", ".jpg", ".jpeg", ".webp", ".svg"}:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Поддерживаются изображения PNG, JPG, WEBP, SVG")
-
-    file_id = uuid.uuid4().hex[:12]
-    image_rel_path = f"{variant.id}_{slide_id}_{file_id}{ext}"
-    dest = storage_path("user_images", image_rel_path)
-    await save_upload(file, dest)
-
-    image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
-    target.image = ImageSpec(prompt="Пользовательское изображение", url=image_url, status="generated")
-
-    # При загрузке изображения на слайд переводим его в тип image_text, если он был другим,
-    # и обеспечиваем наличие тезисов (текстовой части)
-    if target.kind != "image_text":
-        if not target.bullets and target.columns:
-            target.bullets = [f"{c.title}: {', '.join(c.bullets)}" if c.bullets else c.title for c in target.columns]
-        elif not target.bullets and target.kpis:
-            target.bullets = [f"{k.label}: {k.value}" for k in target.kpis]
-        elif not target.bullets and target.quote:
-            target.bullets = [target.quote.text]
-        elif not target.bullets:
-            target.bullets = ["Описание к изображению"]
-        target.kind = "image_text"
-
-    variant.slides = [s.model_dump(mode="json") for s in slides]
-    await _after_manual_edit(db, arq, variant, presentation, template)
-    await db.commit()
-    await publish_presentation_update(redis_client, presentation.id, kind="slide")
-
-    return ResolveResponse(
-        applied=1,
-        report=await audit_report(db, variant),
-        variant=await _variant_payload(db, variant, presentation),
-    )
-
-
 @router.get("/{variant_id}/images/{filename}")
 async def get_uploaded_image(
     variant_id: uuid.UUID,
@@ -597,6 +352,7 @@ async def regenerate_slide(
     if payload.style:
         instruction += f". Стиль: {payload.style.strip()}"
     ctx = await build_audit_context(db, presentation, template)
+    skills = await resolve_skills(db, user, payload.skills) if payload.skills else ctx.custom_skills
     slide = slides[target_idx]
     try:
         result = await asyncio.to_thread(
@@ -611,6 +367,7 @@ async def regenerate_slide(
             language=ctx.language,
             tone=ctx.tone,
             audience=ctx.audience,
+            custom_skills=skills,
             pattern=ctx.patterns.get(slide.pattern_id or ""),
         )
     except EditError as exc:
@@ -635,3 +392,81 @@ async def regenerate_slide(
 
 
 DEFAULT_INSTRUCTION = "Улучши слайд: заголовок — вывод, тезисы короче и конкретнее, без воды"
+
+
+def _kept_animations(animations: list[SlideAnimation], slide: Slide) -> list[SlideAnimation]:
+    """Анимации заменённого слайда, чьи элементы есть и в новом (заголовок, пункты в пределах списка)."""
+    counts = {"bullets": len(slide.bullets), "columns": len(slide.columns), "kpis": len(slide.kpis), "timeline": len(slide.timeline)}
+    kept = []
+    for animation in animations:
+        root, _, rest = animation.target.partition(".")
+        if animation.target.startswith("shape:"):
+            continue
+        if root in counts and rest and rest.split(".")[0].isdigit() and int(rest.split(".")[0]) >= counts[root]:
+            continue
+        if root in {"title", "subtitle"} or (root in counts and counts[root]):
+            kept.append(animation)
+    return kept
+
+
+@router.post("/{variant_id}/slides/generate", response_model=RegenerateSlideResponse)
+async def generate_slide_from_prompt(
+    variant_id: uuid.UUID,
+    payload: GenerateSlideRequest,
+    user: CurrentUser,
+    db: DbSession,
+    arq: Arq,
+) -> RegenerateSlideResponse:
+    """Студия › AI: новый слайд по описанию (после after_slide_id) или пересборка replace_slide_id.
+
+    Подсказка вёрстки и включённые скиллы — параметры запроса; числа на слайде — только из описания,
+    брифа и контент-пакета (planning/single.py). Паттерн шаблона подбирается как после правки моделью.
+    """
+    variant, presentation = await get_variant_for_user(db, variant_id, user, editable=True)
+    template = presentation.template
+    slides = load_slides(variant)
+    base_index = None
+    if payload.replace_slide_id:
+        base_index = next((i for i, s in enumerate(slides) if s.id == payload.replace_slide_id), None)
+        if base_index is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Слайд не найден")
+    ctx = await build_audit_context(db, presentation, template)
+    skills = await resolve_skills(db, user, payload.skills) if payload.skills else ctx.custom_skills
+    base = slides[base_index] if base_index is not None else None
+    result = await asyncio.to_thread(
+        generate_slide,
+        payload.prompt,
+        hint=payload.pattern,
+        deck=slides,
+        title=presentation.title,
+        purpose=ctx.purpose,
+        brief=presentation.brief or "",
+        sources=ctx.materials,
+        language=ctx.language,
+        tone=ctx.tone,
+        audience=ctx.audience,
+        custom_skills=skills,
+        base=base,
+    )
+    slide = result.slide
+    if template is not None:
+        slide.pattern_id = None
+        slide.shapes = []
+        relayout_edited_slide(slide, template.patterns, template.layout_roles or {}, template.layouts or [], position=variant.position)
+    if base is not None and base_index is not None:
+        slide.animations = _kept_animations(base.animations, slide)
+        slides[base_index] = slide
+    else:
+        after = next((i for i, s in enumerate(slides) if s.id == payload.after_slide_id), len(slides) - 1)
+        slides.insert(after + 1, slide)
+    variant.slides = [s.model_dump(mode="json") for s in slides]
+    await _after_manual_edit(db, arq, variant, presentation, template)
+    await db.commit()
+    await publish_presentation_update(redis_client, presentation.id, kind="slide")
+    return RegenerateSlideResponse(
+        reply=result.reply,
+        slide_id=slide.id,
+        applied=1,
+        report=await audit_report(db, variant),
+        variant=await _variant_payload(db, variant, presentation),
+    )

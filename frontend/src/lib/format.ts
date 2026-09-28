@@ -120,7 +120,7 @@ export function getImageKindLabel(category?: string | null): string {
 export const SKILL_KIND_OPTIONS: { value: SkillKind; label: string }[] = [
   { value: 'all', label: 'Вся генерация' },
   { value: 'text', label: 'Тексты и структура' },
-  { value: 'design', label: 'Дизайн' },
+  { value: 'design', label: 'Вёрстка' },
   { value: 'audit', label: 'Аудит' },
 ]
 

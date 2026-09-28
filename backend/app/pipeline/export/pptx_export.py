@@ -35,6 +35,7 @@ from pptx.util import Emu, Pt
 from app.core.storage import storage_path
 from app.pipeline.export.chart_style import chart_caption, highlight_points, number_format
 from app.pipeline.export.facts import digest, slide_facts
+from app.pipeline.export.motion import apply_motion
 from app.pipeline.export.text_style import style_for, style_paragraph
 from app.pipeline.export.pattern_fill import clone_slide, fill_pattern, remove, set_body
 from app.pipeline.geometry import content_frame
@@ -185,17 +186,28 @@ def build_deck(
             font_family=spec.font_family,
         )
         pattern = by_id.get(spec.pattern_id or "")
+        built = None
         if pattern is not None:
             count_before = len(prs.slides)
             try:
-                targets.append(_pattern_slide(prs, pattern, spec, sources, layouts, slide_ctx, chart_colors, chrome))
-                continue
+                built = _pattern_slide(prs, pattern, spec, sources, layouts, slide_ctx, chart_colors, chrome)
             except Exception:  # noqa: BLE001 — сборка по паттерну не удалась: слайд собирается на макете
                 logger.exception("Паттерн %s не собрался для слайда %s", pattern.get("id"), spec.id)
                 _drop_slides_after(prs, count_before)
-        slide = prs.slides.add_slide(layout)
-        targets.append(_render(slide, spec, slide_ctx))
-        _add_chrome(slide, layout, chrome)
+        if built is None:
+            slide = prs.slides.add_slide(layout)
+            built = _render(slide, spec, slide_ctx)
+            _add_chrome(slide, layout, chrome)
+        # Скрытые элементы, анимации и переход — поверх собранного слайда (export/motion.py).
+        targets.append(
+            apply_motion(
+                prs.slides[len(prs.slides) - 1],
+                spec,
+                built,
+                width=ctx.width,
+                height=ctx.height,
+            )
+        )
     clear_slides(prs, len(sources))
 
     theme_fonts = extract_theme(prs).get("fonts") or {}
@@ -604,13 +616,19 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
                         if sub_bold is not None:
                             r.font.bold = sub_bold
                 _styled_frame(bodies[0].text_frame, spec, "subtitle")
+                body = bodies[0]
+                if None not in (body.left, body.top, body.width, body.height):
+                    targets["subtitle"] = _fraction((body.left, body.top, body.width, body.height), ctx)
             else:
                 x, y, w, _ = area
-                box = slide.shapes.add_textbox(x, y, w, int(ctx.height * 0.12))
+                rect = (x, y, w, int(ctx.height * 0.12))
+                box = slide.shapes.add_textbox(*rect)
                 _write(
                     box.text_frame, [spec.subtitle], ctx, size=ctx.role_size("subtitle", 20) * sub_scale, bold=bool(sub_bold), color=sub_color, font_name=sub_font
                 )
                 _styled_frame(box.text_frame, spec, "subtitle", scale=False)
+                # Рамка подзаголовка — для подсветки аудита и адресации в Студии (скрыть, анимировать).
+                targets["subtitle"] = _fraction(rect, ctx)
         if kind == "title" and spec.image:
             path = _slide_image(spec)
             if path is not None:
@@ -1149,7 +1167,9 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
         width = int(w * ctx.width)
         height = int(h * ctx.height)
 
-        fill_color = color or ctx.theme.get("accent", "#0077FF")
+        # Текстовый блок Студии — фигура без заливки: только текст цветом слайда.
+        text_box = str(color or "").lower() == "transparent"
+        fill_color = ctx.theme.get("accent", "#0077FF") if text_box or not color else color
 
         # Фигура шаблона, которой нет среди фигур слайда верхнего уровня, лежит внутри группы
         # или удалена сборкой вместе с лишней карточкой — пересоздавать её нельзя: будут дубли и «сироты».
@@ -1203,8 +1223,11 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
         else:
             sp = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
 
-        sp.fill.solid()
-        sp.fill.fore_color.rgb = ctx.rgb(fill_color)
+        if text_box:
+            sp.fill.background()
+        else:
+            sp.fill.solid()
+            sp.fill.fore_color.rgb = ctx.rgb(fill_color)
         if border:
             sp.line.color.rgb = ctx.rgb(ctx.fg)
             sp.line.width = Pt(1.5)
@@ -1215,15 +1238,15 @@ def _shapes(slide, shapes: list, ctx: _Ctx, pattern_shapes: list | None = None) 
             tf = sp.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
-            p.alignment = PP_ALIGN.CENTER
+            p.alignment = PP_ALIGN.LEFT if text_box else PP_ALIGN.CENTER
             shape_font = getattr(s, "font_family", None) if not isinstance(s, dict) else s.get("font_family")
             _run(
                 p,
                 text,
                 ctx,
-                size=14,
-                bold=True,
-                color="#FFFFFF" if text_on(fill_color, "#FFFFFF") == "#FFFFFF" else "#000000",
+                size=20 if text_box else 14,
+                bold=not text_box,
+                color=ctx.fg if text_box else ("#FFFFFF" if text_on(fill_color, "#FFFFFF") == "#FFFFFF" else "#000000"),
                 font_name=shape_font,
             )
 

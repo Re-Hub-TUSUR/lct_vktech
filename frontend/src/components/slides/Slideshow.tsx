@@ -1,9 +1,10 @@
 import clsx from 'clsx'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 
 import type { Slide, SlideRender, SlideTheme } from '../../api/types'
+import { playAll, SHOW_TRANSITION_MS, transitionClass } from '../../lib/motion'
 import { SlideView } from './SlideView'
 
 const HIDE_CONTROLS_MS = 2500
@@ -115,6 +116,8 @@ export function Slideshow({
   }, [index, last, renderFor])
 
   const slide = slides[index]
+  // Анимации элементов проигрываются при каждом показе слайда (массив — новый на каждую смену слайда).
+  const play = useMemo(() => (slide ? playAll(slide) : undefined), [slide, index])
   if (!slide) return null
 
   return createPortal(
@@ -143,7 +146,23 @@ export function Slideshow({
         style={{ '--slideshow-aspect': String(theme.aspect) } as CSSProperties}
         onClick={next}
       >
-        <SlideView slide={slide} theme={theme} number={index + 1} render={renderFor?.(index)} className="slideshow__slide" />
+        {/* Переход к слайду (Slide.transition) и анимации его элементов по порядку. Слайд с анимациями
+            рисуется живой вёрсткой: у картинки рендера нет отдельных элементов. */}
+        <div
+          key={slide.id}
+          className={clsx('slideshow__frame', transitionClass(slide))}
+          style={{ animationDuration: `${slide.transition?.duration_ms ?? SHOW_TRANSITION_MS}ms` }}
+        >
+          <SlideView
+            slide={slide}
+            theme={theme}
+            number={index + 1}
+            render={renderFor?.(index)}
+            preferInteractive={Boolean(slide.animations?.length)}
+            play={play}
+            className="slideshow__slide"
+          />
+        </div>
       </div>
 
       <button

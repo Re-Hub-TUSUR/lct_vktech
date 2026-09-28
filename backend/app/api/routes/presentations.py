@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import (
@@ -29,7 +29,7 @@ from app.core.redis import (
     redis_client,
 )
 from app.core.storage import remove_dir, remove_file, save_upload, storage_path
-from app.models import ContentFile, Generation, Presentation, PresentationMember, Project, ProjectMember, Variant
+from app.models import ContentFile, Generation, Presentation, PresentationMember, Project, ProjectMember, SlideComment, User, Variant
 from app.models.base import utcnow
 from app.pipeline.layout.composer import axis_config
 from app.pipeline.skills import get_skill
@@ -41,12 +41,14 @@ from app.schemas.presentation import (
     PresentationCreate,
     PresentationListItem,
     PresentationOut,
+    PresentationPersonOut,
     PresentationUpdate,
     SelectVariantRequest,
 )
 from app.schemas.slide import Slide
 from app.schemas.template import SlideTheme
 from app.services.audit import issue_counts
+from app.services.collab import PRESENCE_PREFIX, initials, user_color
 from app.services.renders import render_state, schedule_render
 from app.services.templates import template_theme
 
@@ -129,6 +131,51 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
         for variant in variants:
             variants_by_presentation[variant.presentation_id].append(variant)
 
+    ids = [p.id for p in presentations]
+    people: dict[uuid.UUID, list[PresentationPersonOut]] = defaultdict(list)
+    comments_open: dict[uuid.UUID, int] = {}
+    shown_ids: list[uuid.UUID] = []
+    if presentations:
+        for presentation in presentations:
+            if presentation.owner_id != user.id:
+                owner = presentation.owner
+                people[presentation.id].append(
+                    PresentationPersonOut(
+                        id=owner.id, full_name=owner.full_name, initials=initials(owner.full_name), color=user_color(owner.id), role="owner"
+                    )
+                )
+        members = await db.execute(
+            select(PresentationMember.presentation_id, PresentationMember.role, User)
+            .join(User, User.id == PresentationMember.user_id)
+            .where(PresentationMember.presentation_id.in_(ids), PresentationMember.user_id != user.id)
+            .order_by(PresentationMember.created_at)
+        )
+        for presentation_id, role, member in members:
+            people[presentation_id].append(
+                PresentationPersonOut(
+                    id=member.id, full_name=member.full_name, initials=initials(member.full_name), color=user_color(member.id), role=role
+                )
+            )
+        comments_open = dict(
+            (
+                await db.execute(
+                    select(SlideComment.presentation_id, func.count())
+                    .where(
+                        SlideComment.presentation_id.in_(ids),
+                        SlideComment.parent_id.is_(None),
+                        SlideComment.resolved_at.is_(None),
+                    )
+                    .group_by(SlideComment.presentation_id)
+                )
+            ).all()
+        )
+    for presentation in presentations:
+        variants = variants_by_presentation.get(presentation.id, [])
+        shown = next((v for v in variants if v.id == presentation.selected_variant_id), variants[0] if variants else None)
+        if shown is not None:
+            shown_ids.append(shown.id)
+    issues = await issue_counts(db, shown_ids) if shown_ids else {}
+
     items = []
     for presentation in presentations:
         variants = variants_by_presentation.get(presentation.id, [])
@@ -151,6 +198,9 @@ async def list_presentations(user: CurrentUser, db: DbSession) -> list[Presentat
                 access_role=presentation.access_role or "owner",
                 owner={"id": presentation.owner.id, "full_name": presentation.owner.full_name, "email": presentation.owner.email},
                 updated_at=presentation.updated_at,
+                people=people.get(presentation.id, []),
+                comments_open=comments_open.get(presentation.id, 0),
+                issues_open=sum(issues.get(shown.id, {}).values()) if shown is not None else 0,
             )
         )
     return items
@@ -340,7 +390,8 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
 
 @router.get("/{presentation_id}/events")
 async def presentation_events(presentation_id: uuid.UUID, user: CurrentUser, db: DbSession) -> StreamingResponse:
-    """SSE: уведомляет участников о сохранениях в общей презентации."""
+    """SSE: уведомляет участников о сохранениях в общей презентации (update), о комментариях
+    (update с kind=comments) и о присутствии в Студии (presence)."""
     await get_presentation_for_user(db, presentation_id, user)
     channel = presentation_channel(presentation_id)
 
@@ -356,7 +407,12 @@ async def presentation_events(presentation_id: uuid.UUID, user: CurrentUser, db:
                     yield ": ping\n\n"
                     continue
                 if message and message.get("type") == "message":
-                    yield f"event: update\ndata: {json.dumps({'kind': message['data']})}\n\n"
+                    data = message["data"]
+                    if data.startswith(PRESENCE_PREFIX):
+                        # Где сейчас участники Студии: слайд, выделенный элемент, курсор.
+                        yield f"event: presence\ndata: {data[len(PRESENCE_PREFIX):]}\n\n"
+                    else:
+                        yield f"event: update\ndata: {json.dumps({'kind': data})}\n\n"
         finally:
             await pubsub.unsubscribe(channel)
             await pubsub.aclose()

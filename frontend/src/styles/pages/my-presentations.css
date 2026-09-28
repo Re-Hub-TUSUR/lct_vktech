@@ -1,288 +1,629 @@
-/* ===== Раздел «Мои презентации» и папки проектов macOS ===== */
-.my-presentations-page {
-  padding-bottom: var(--space-6);
+/* ==========================================================================
+   Мои презентации: папки слева, фильтры, плитка или список
+   ========================================================================== */
+
+.pres-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 1360px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.my-presentations-header {
+.pres-header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
   flex-wrap: wrap;
-}
-.my-presentations-page > .section:first-of-type {
-  margin-top: 0;
+  gap: 24px;
 }
 
-.my-presentations-header__actions {
+.pres-header__text {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: 8px;
+  max-width: 760px;
 }
 
-.my-presentations-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
+.pres-header__text h1 {
+  margin: 0;
+  font: var(--font-display-weight) 32px/1.15 var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.pres-header__text p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
   color: var(--color-text-muted);
-  margin-bottom: var(--space-1);
+  text-wrap: pretty;
 }
 
-.breadcrumb-link {
+.pres-header__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pres-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 300px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.pres-search:focus-within {
+  border-color: var(--color-primary);
+}
+
+.pres-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: 14px var(--font-sans);
+  outline: none;
+}
+
+.pres-search button {
+  display: grid;
+  padding: 2px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-muted);
   cursor: pointer;
-  transition: color var(--dur-base);
 }
 
-.breadcrumb-link:hover {
-  color: var(--color-primary);
+.pres-sort .select__trigger {
+  height: 40px;
 }
 
-.breadcrumb-link.is-clickable {
-  color: var(--color-primary);
+.pres-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
 }
 
-.breadcrumb-separator {
+/* --- Боковая панель: папки и совместная работа --- */
+
+.pres-sidebar {
+  position: sticky;
+  top: 88px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.pres-caption {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--color-text-subtle);
 }
 
-.breadcrumb-current {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.my-presentations-subtitle {
-  color: var(--color-text-muted);
-  font-size: 14px;
-  margin-top: 4px;
-  max-width: 680px;
-}
-
-/* Баннер выбранного проекта / папки */
-.mac-folder-hero-banner {
+.pres-folders {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  margin-bottom: var(--space-5);
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.mac-folder-hero-banner__left {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
+.pres-folders > .pres-caption {
+  padding: 0 10px 8px;
 }
 
-.mac-folder-hero-banner__details h2 {
-  font-size: 20px;
-  margin-bottom: 2px;
-}
-
-.mac-folder-hero-banner__details p {
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.mac-folder-hero-banner__right {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-/* Сетка macOS папок */
-.mac-folders-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: var(--space-3);
-}
-
-.mac-folder-card {
+.pres-folder {
   position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-  transition: all var(--dur-base) var(--ease-out);
-  overflow: hidden;
-}
-
-.mac-folder-card:hover {
-  border-color: var(--color-border-strong);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
-}
-
-.mac-folder-card.is-active {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary), var(--shadow-md);
-  background: linear-gradient(180deg, var(--color-surface-muted) 0%, var(--color-surface) 100%);
-}
-
-.mac-folder-card__main {
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
-  padding: var(--space-4) var(--space-3) var(--space-2);
+  border-radius: 10px;
+}
+
+.pres-folder:hover,
+.pres-folder.is-active {
+  background: var(--color-surface-muted);
+}
+
+.pres-folder__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 0;
   background: transparent;
-  border: none;
-  cursor: pointer;
-  width: 100%;
-}
-
-.mac-folder-card__info {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  margin-top: var(--space-3);
-  width: 100%;
-}
-
-.mac-folder-card__name {
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 600;
   color: var(--color-text);
+  font: 400 14px var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pres-folder.is-active .pres-folder__main {
+  font-weight: 600;
+}
+
+.pres-folder__tile {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  color: #ffffff;
+}
+
+.pres-folder__name {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
 }
 
-.mac-folder-card__count {
+.pres-folder__count {
   font-size: 12px;
   color: var(--color-text-muted);
 }
 
-.mac-folder-card__role {
-  margin-top: 4px;
-  font-size: 11px;
+.pres-folder__tools {
+  position: absolute;
+  right: 6px;
+  display: none;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 
-.mac-folder-card__actions {
+.pres-folder:hover .pres-folder__tools {
+  display: flex;
+}
+
+.pres-folder__tools button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.pres-folder__tools button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.pres-folder-add {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px var(--space-2) var(--space-2);
-  border-top: 1px solid var(--color-surface-muted);
-  opacity: 0.7;
-  transition: opacity var(--dur-base);
-}
-
-.mac-folder-card:hover .mac-folder-card__actions {
-  opacity: 1;
-}
-
-.mac-folder-card--meta {
+  gap: 10px;
+  margin-top: 6px;
+  padding: 9px 10px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font: 500 13.5px var(--font-sans);
   cursor: pointer;
-  justify-content: center;
-}
-.mac-folder-card:focus-within,
-.mac-folder-card:focus-visible {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-soft), var(--shadow-md);
 }
 
-.mac-folder-card--meta .mac-folder-card__main {
-  flex: 1 1 auto;
+.pres-folder-add:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.pres-team {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+}
+
+.pres-team__row {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: var(--space-4) var(--space-3);
-  height: 100%;
+  gap: 10px;
 }
 
-.mac-folder-card--meta .mac-folder-card__info {
-  margin-top: 10px;
-  gap: 4px;
+.pres-team__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
 }
 
-.mac-folder-card--meta .mac-folder-card__name {
-  font-size: 16px;
-  font-weight: 600;
+.pres-team__text small {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.mac-folder-card--meta .mac-folder-card__count {
+.pres-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #ffffff;
+  font: 700 10.5px var(--font-sans);
+}
+
+.pres-avatar--lg {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.pres-people {
+  display: flex;
+  padding-left: 6px;
+}
+
+.pres-people .pres-avatar {
+  margin-left: -6px;
+  border: 2px solid rgba(0, 0, 0, 0.55);
+}
+
+/* --- Основная колонка --- */
+
+.pres-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.pres-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pres-filter {
+  padding: 7px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: 500 13px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pres-filter.is-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.pres-count {
+  margin-left: 6px;
   font-size: 13px;
   color: var(--color-text-muted);
 }
 
-/* Кнопка создания папки */
-.mac-folder-add-card {
+.pres-view {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
+  gap: 2px;
+  margin-left: auto;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--color-surface-muted);
+}
+
+.pres-view button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
-  border: 2px dashed var(--color-border-strong);
-  border-radius: var(--radius-lg);
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: all var(--dur-base) ease;
-  min-height: 140px;
 }
 
-.mac-folder-add-card:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-primary-soft);
-  transform: translateY(-2px);
-}
-
-.mac-folder-add-card__icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--color-surface-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: var(--space-2);
-  transition: background var(--dur-base);
-}
-
-.mac-folder-add-card:hover .mac-folder-add-card__icon {
+.pres-view button.is-active {
   background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
 }
 
-.mac-folder-add-card strong {
-  font-size: 14px;
-  font-weight: 600;
+.pres-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
 }
 
-.mac-folder-add-card small {
-  font-size: 12px;
-  opacity: 0.8;
-  margin-top: 2px;
+.pres-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base), border-color var(--dur-base);
 }
 
-/* Контролы и поиск */
-.section__header--controls {
+.pres-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.pres-cover {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+
+.pres-cover .slide,
+.pres-row__cover .slide {
+  width: 100%;
+  pointer-events: none;
+}
+
+.pres-cover__placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-subtle);
+}
+
+.pres-cover__people {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.pres-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 16px;
+}
+
+.pres-card__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
+.pres-card__row small {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.pres-card__title {
+  font: var(--font-display-weight) 17px/1.25 var(--font-display);
+}
+
+.pres-card__meta {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+
+.pres-card__footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+  cursor: default;
+}
+
+.pres-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: 600 12px var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pres-pill:hover {
+  background: var(--color-surface-hover);
+}
+
+.pres-pill--primary {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.pres-pill--primary:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.pres-spacer {
+  flex: 1;
+}
+
+.pres-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.pres-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pres-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.pres-icon-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.pres-icon-btn--danger:hover {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.pres-menu {
+  position: relative;
+}
+
+.pres-menu__list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.pres-menu__list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  font: 13px var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pres-menu__list button:hover,
+.pres-menu__list button.is-active {
+  background: var(--color-surface-muted);
+}
+
+.pres-menu__list .pres-folder__tile {
+  width: 22px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+/* Список */
+.pres-list {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.pres-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) 110px 130px auto;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.pres-row:last-child {
+  border-bottom: 0;
+}
+
+.pres-row:hover {
+  background: var(--color-surface-muted);
+}
+
+.pres-row__cover {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+}
+
+.pres-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pres-row__text strong {
+  font: var(--font-display-weight) 15px var(--font-display);
+}
+
+.pres-row__text span {
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pres-row__date {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.pres-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  cursor: default;
+}
+
+.pres-row__actions .pres-people .pres-avatar {
+  border-color: var(--color-surface);
+}
+
+/* Счётчик в заголовках секций (главная) */
 .section__count-badge {
   display: inline-flex;
   align-items: center;
@@ -296,132 +637,28 @@
   border-radius: var(--radius-pill);
 }
 
-.search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 260px;
-}
-.library-controls {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  min-width: min(100%, 430px);
-}
-.library-controls .select {
-  flex: 0 0 auto;
-}
-/* Сортировка слева от строки поиска — той же высоты, что и строка поиска рядом (36px) */
-.status-filter-select .select__trigger {
-  height: 36px;
-}
-.search-box:focus-within {
-  border-radius: var(--radius-md);
-}
-.search-box:focus-within .search-box__input {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-soft);
+@media (max-width: 1024px) {
+  .pres-layout {
+    grid-template-columns: 1fr;
+  }
+  .pres-sidebar {
+    position: static;
+  }
+  .pres-row {
+    grid-template-columns: 96px minmax(0, 1fr) auto;
+  }
+  .pres-row__status,
+  .pres-row__date {
+    display: none;
+  }
 }
 
-.search-box__icon {
-  position: absolute;
-  left: 10px;
-  color: var(--color-text-subtle);
-  pointer-events: none;
+@media (max-width: 640px) {
+  .pres-header__controls,
+  .pres-search {
+    width: 100%;
+  }
+  .pres-grid {
+    grid-template-columns: 1fr;
+  }
 }
-
-.search-box__input {
-  padding-left: 32px;
-  padding-right: 30px;
-  height: 36px;
-  font-size: 13px;
-  border-radius: var(--radius-md);
-}
-
-.search-box__clear {
-  position: absolute;
-  right: 6px;
-}
-
-/* Карточка презентации в библиотеке с подвалом для быстрой смены папки */
-.presentation-card--library {
-  display: flex;
-  flex-direction: column;
-  overflow: visible !important;
-  position: relative;
-}
-
-.presentation-card--library:has(.select.is-open),
-.presentation-card--library.has-open-select {
-  z-index: 50;
-}
-
-.presentation-card--library .presentation-card__link {
-  flex: 1 1 auto;
-  color: inherit;
-  border-top-left-radius: var(--radius-lg);
-  border-top-right-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.presentation-card--library .presentation-card__cover {
-  border-top-left-radius: var(--radius-lg);
-  border-top-right-radius: var(--radius-lg);
-  overflow: hidden;
-}
-
-.presentation-card__link:hover {
-  text-decoration: none;
-}
-
-.presentation-card__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--color-surface-muted);
-  border-top: 1px solid var(--color-border);
-  border-bottom-left-radius: inherit;
-  border-bottom-right-radius: inherit;
-  overflow: visible;
-}
-
-.presentation-card__folder-assign {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  position: relative;
-}
-
-.presentation-card__folder-readonly {
-  flex: 1;
-  min-width: 0;
-}
-
-.presentation-card__folder-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  font-size: 11px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.presentation-card__folder-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-

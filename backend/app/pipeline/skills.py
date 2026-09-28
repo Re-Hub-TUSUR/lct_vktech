@@ -75,6 +75,9 @@ class SkillPreset:
     kind: str
     version: str
     instruction: str
+    # Пример «до / после» для страницы «Скиллы».
+    example_before: str = ""
+    example_after: str = ""
 
 
 PRESET_PREFIX = "preset:"
@@ -93,6 +96,8 @@ def load_skill_presets() -> list[SkillPreset]:
                 kind=data.get("kind", "all"),
                 version=str(data.get("version", "1.0.0")),
                 instruction=(data.get("instruction") or "").strip(),
+                example_before=str((data.get("example") or {}).get("before") or "").strip(),
+                example_after=str((data.get("example") or {}).get("after") or "").strip(),
             )
         )
     return presets

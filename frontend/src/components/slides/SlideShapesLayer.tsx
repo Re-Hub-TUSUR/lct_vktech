@@ -14,6 +14,13 @@ interface SlideShapesLayerProps {
   onSelectShape?: (shapeId: string | null) => void
   onUpdateShape?: (shapeId: string, patch: Partial<SlideShape>) => void
   onDeleteShape?: (shapeId: string) => void
+  /** Режим Студии: рамка без своей панели действий. */
+  studio?: boolean
+  /** Закреплённые фигуры (адреса shape:<id> из Slide.locked_elements). */
+  lockedIds?: Set<string>
+  /** Кадрирование управляется снаружи (Студия). */
+  croppingShapeId?: string | null
+  onCroppingChange?: (shapeId: string | null) => void
 }
 
 /** Фигура слайда-примера шаблона (подложка карточки, маркер, плашка), а не добавленная пользователем. */
@@ -118,8 +125,18 @@ export function SlideShapesLayer({
   onSelectShape,
   onUpdateShape,
   onDeleteShape,
+  studio = false,
+  lockedIds,
+  croppingShapeId: controlledCrop,
+  onCroppingChange,
 }: SlideShapesLayerProps) {
-  const [croppingShapeId, setCroppingShapeId] = useState<string | null>(null)
+  const [ownCrop, setOwnCrop] = useState<string | null>(null)
+  const croppingShapeId = onCroppingChange ? (controlledCrop ?? null) : ownCrop
+  const setCroppingShapeId = (value: string | null | ((prev: string | null) => string | null)) => {
+    const next = typeof value === 'function' ? value(croppingShapeId) : value
+    if (onCroppingChange) onCroppingChange(next)
+    else setOwnCrop(next)
+  }
   const [editingTextId, setEditingTextId] = useState<string | null>(null)
 
   const visible = (shapes || []).filter((shape) => shape.color || shape.kind === 'image' || !isTemplateShape(shape))
@@ -140,6 +157,8 @@ export function SlideShapesLayer({
     const isLine = shape.kind === 'line'
     const isImage = shape.kind === 'image'
     const template = isTemplateShape(shape)
+    // Текстовый блок Студии — фигура без заливки (сборка пишет текст цветом слайда, слева, 20 pt).
+    const textBox = shape.color === 'transparent'
     const fill = shape.color || theme.accent
     return (
       <div
@@ -148,6 +167,7 @@ export function SlideShapesLayer({
           'slide-shape-item',
           `slide-shape-item--${shape.kind}`,
           template && 'slide-shape-item--template',
+          textBox && 'slide-shape-item--text',
           editable && selectedShapeId === shape.id && 'is-selected',
         )}
         data-shape-id={shape.id}
@@ -174,7 +194,7 @@ export function SlideShapesLayer({
                 template
                   ? {}
                   : {
-                      color: textOn(fill),
+                      color: textBox ? 'var(--slide-text)' : textOn(fill),
                       fontFamily: shape.font_family ? `"${shape.font_family}", var(--slide-heading-font)` : undefined,
                     }
               }
@@ -214,6 +234,8 @@ export function SlideShapesLayer({
           canCrop={selectedShape.kind === 'image'}
           crop={selectedShape.crop}
           isCropping={croppingShapeId === selectedShape.id}
+          hideToolbar={studio}
+          locked={lockedIds?.has(`shape:${selectedShape.id}`)}
           label={
             selectedShape.kind === 'image' ? 'Изображение' : isTemplateShape(selectedShape) ? 'Фигура шаблона' : 'Фигура'
           }

@@ -106,39 +106,16 @@
   .hero__pipeline li {
     align-items: flex-start;
   }
-  .section__header,
-  .section__header--controls {
+  .section__header {
     align-items: flex-start;
   }
   .section__header a {
     margin-top: 2px;
   }
-  .search-box {
-    width: 100%;
-    min-width: 0;
-  }
-  .library-controls {
-    width: 100%;
-    min-width: 0;
-    align-items: stretch;
-  }
-  .library-controls .search-box {
-    flex: 1;
-  }
-  .library-controls .select--sm .select__trigger {
-    height: 36px;
-  }
-  .mac-folders-grid,
   .grid-cards,
   .grid-templates {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-3);
-  }
-  .mac-folder-card__main {
-    padding: var(--space-3) var(--space-2) var(--space-2);
-  }
-  .mac-folder-card--meta .mac-folder-card__name {
-    font-size: 14px;
   }
   .presentation-card__body,
   .template-card__body {
@@ -150,7 +127,6 @@
   .topbar__theme-toggle {
     display: none;
   }
-  .mac-folders-grid,
   .grid-cards,
   .grid-templates {
     grid-template-columns: 1fr;

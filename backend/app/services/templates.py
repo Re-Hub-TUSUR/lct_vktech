@@ -154,6 +154,7 @@ def template_theme(template: Template | None) -> dict[str, Any]:
     tokens = template.tokens or {}
     theme["icons"] = tokens.get("icons") or []
     theme["design"] = {key: tokens.get(key) for key in DESIGN_TOKENS}
+    theme["palette"] = [color["hex"] for color in (tokens.get("palette") or [])[:8] if color.get("hex")]
     return theme
 
 

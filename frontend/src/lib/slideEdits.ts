@@ -1,4 +1,4 @@
-import type { ChartData, Slide, SlideKind, SlidePattern, SlideTheme, SlideUpdate } from '../api/types'
+import type { ChartData, Slide, SlideKind, SlidePattern, SlideTheme } from '../api/types'
 import { SLIDE_KIND_LABELS } from './labels'
 
 // Правки слайда, общие для полноэкранного редактора и редактора на странице аудита.
@@ -99,19 +99,6 @@ export function fieldPatch(slide: Slide, path: string, value: string): SlidePatc
   return { [root]: updated[root] } as SlidePatch
 }
 
-/** Черновик правок поверх слайда: всё, что задано в черновике, перекрывает сохранённое. */
-export function mergeDraft(slide: Slide, draft: SlideUpdate | undefined): Slide {
-  if (!draft) return slide
-  const merged: Record<string, unknown> = { ...slide }
-  for (const [key, value] of Object.entries(draft)) {
-    if (value === undefined) continue
-    // kind, title и списки не бывают null: null в черновике означает «не менялось».
-    if (value === null && ['kind', 'title', 'bullets', 'columns', 'kpis', 'timeline', 'shapes'].includes(key)) continue
-    merged[key] = value
-  }
-  return merged as unknown as Slide
-}
-
 function slideTexts(slide: Slide): string[] {
   if (slide.bullets?.length) {
     const list = slide.bullets.filter(Boolean)
@@ -147,9 +134,9 @@ function contentFor(slide: Slide, kind: SlideKind, count?: number): SlidePatch {
   } else if ((kind === 'bullets' || kind === 'agenda' || kind === 'image_text') && !slide.bullets?.length) {
     patch.bullets = texts.length ? texts : ['Ключевой тезис слайда', 'Дополнительный пункт']
   } else if (kind === 'kpi' && (!slide.kpis?.length || count)) {
-    const values = ['+45%', '2.4x', '98%', '24/7', '100+', '3x']
+    // Числа не придумываем: берём из текста пункта, иначе место под число остаётся пустым («—»).
     patch.kpis = Array.from({ length: Math.min(n, 6) }, (_, i) =>
-      slide.kpis?.[i] ?? { value: values[i % values.length], label: texts[i] || `Показатель ${i + 1}` },
+      slide.kpis?.[i] ?? { value: texts[i]?.match(/[+−-]?\d[\d\s.,]*\s?(%|x|×)?/)?.[0]?.trim() || '—', label: texts[i] || `Показатель ${i + 1}` },
     )
   } else if (kind === 'timeline' && (!slide.timeline?.length || count)) {
     patch.timeline = Array.from({ length: Math.min(n, 6) }, (_, i) =>
@@ -171,7 +158,7 @@ const RESET_BOXES: SlidePatch = { element_boxes: {}, element_crops: {} }
 /** Фигуры, добавленные пользователем (у фигур слайда-примера есть template_shape_id). */
 const ownShapes = (slide: Slide) => (slide.shapes || []).filter((shape) => shape.template_shape_id == null)
 
-export function changeKind(slide: Slide, kind: SlideKind): SlidePatch {
+function changeKind(slide: Slide, kind: SlideKind): SlidePatch {
   if (kind === slide.kind) return {}
   // Паттерн собран под свой тип содержимого — со сменой типа слайд верстается на макете. Декор
   // слайда-примера уходит вместе с ним, а свои фигуры и плавающие фото пользователь сохраняет.
@@ -313,6 +300,27 @@ function reindex(slide: Slide, path: ListPath, to: (index: number) => number | n
     }
     if (changed) patch[name] = next
   }
+  // Анимации, скрытые и закреплённые элементы Студии адресуют элемент так же — переезжают вместе с ним.
+  const move = (key: string): string | null | undefined => {
+    const match = key.match(pattern)
+    if (!match) return undefined
+    const target = to(Number(match[1]))
+    return target === null ? null : `${path}.${target}${match[2] ?? ''}`
+  }
+  if (slide.animations?.some((item) => pattern.test(item.target))) {
+    patch.animations = slide.animations.flatMap((item) => {
+      const target = move(item.target)
+      return target === undefined ? [item] : target === null ? [] : [{ ...item, target }]
+    })
+  }
+  for (const name of ['hidden_elements', 'locked_elements'] as const) {
+    const list = slide[name]
+    if (!list?.some((key) => pattern.test(key))) continue
+    patch[name] = list.flatMap((key) => {
+      const target = move(key)
+      return target === undefined ? [key] : target === null ? [] : [target]
+    })
+  }
   return patch as SlidePatch
 }
 
@@ -418,7 +426,7 @@ export function patternSuits(slide: Slide, pattern: SlidePattern): boolean {
 }
 
 /** Число элементов слайда, которые раскладываются по местам паттерна; null — у типа нет элементов. */
-export function itemCount(slide: Slide): number | null {
+function itemCount(slide: Slide): number | null {
   if (slide.kind === 'cards' || slide.kind === 'two_columns') return slide.columns.length
   if (slide.kind === 'kpi') return slide.kpis.length
   if (slide.kind === 'timeline') return slide.timeline.length
@@ -426,14 +434,6 @@ export function itemCount(slide: Slide): number | null {
   return null
 }
 
-/** Инструкция модели для «перегенерировать» и «применить и переписать». */
-export function regenerateInstruction(pattern: SlidePattern | null, userText: string): string {
-  const wish = userText.trim()
-  if (!pattern) return wish || 'Перепиши слайд заново: заголовок — вывод, текст короче и конкретнее'
-  const places = pattern.items?.length ? `, ${pattern.items.length} элементов` : ''
-  const base = `Слайд перенесён на другую вёрстку шаблона${places}. Перепиши содержимое так, чтобы оно естественно легло в неё, сохранив смысл и факты`
-  return wish ? `${base}. ${wish}` : base
-}
 
 /**
  * Enter и Backspace в пункте списка на холсте: текст поля и вставка (удаление) — одной правкой,

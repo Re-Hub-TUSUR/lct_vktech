@@ -18,4 +18,8 @@ class CustomSkill(UUIDPk, Timestamps, Base):
     current_version: Mapped[str] = mapped_column(String(30), default="1.0.0", server_default="1.0.0")
     instruction: Mapped[str] = mapped_column(Text)
     history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    # Библиотечный скилл включён по умолчанию: подключается в новые презентации и в Студию.
     enabled: Mapped[bool] = mapped_column(default=True, server_default=text("true"))
+    # Пример «до / после»: как скилл меняет текст слайда (страница «Скиллы»).
+    example_before: Mapped[str] = mapped_column(Text, default="", server_default="")
+    example_after: Mapped[str] = mapped_column(Text, default="", server_default="")

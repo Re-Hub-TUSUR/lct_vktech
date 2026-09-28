@@ -92,6 +92,16 @@ class PresentationOut(BaseModel):
     updated_at: datetime
 
 
+class PresentationPersonOut(BaseModel):
+    """Участник презентации в списке «Мои презентации»: аватар на карточке и блок «Совместная работа»."""
+
+    id: uuid.UUID
+    full_name: str
+    initials: str
+    color: str
+    role: str
+
+
 class PresentationListItem(BaseModel):
     id: uuid.UUID
     title: str
@@ -108,6 +118,10 @@ class PresentationListItem(BaseModel):
     access_role: PresentationAccessRole
     owner: PresentationUserOut
     updated_at: datetime
+    # Другие участники (кроме текущего пользователя), открытые обсуждения и замечания аудита.
+    people: list[PresentationPersonOut] = Field(default_factory=list)
+    comments_open: int = 0
+    issues_open: int = 0
 
 
 class SelectVariantRequest(BaseModel):

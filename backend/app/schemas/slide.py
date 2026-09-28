@@ -110,6 +110,33 @@ class ImageSpec(BaseModel):
     status: Literal["placeholder", "generated"] = "placeholder"
 
 
+AnimationType = Literal["fade", "up", "zoom", "left", "wipe"]
+AnimationTrigger = Literal["click", "with", "after"]
+TransitionType = Literal["none", "fade", "push", "zoom", "wipe"]
+
+
+class SlideAnimation(BaseModel):
+    """Анимация появления элемента. Порядок в Slide.animations — порядок показа.
+
+    target — адрес элемента, как в element_boxes и аудите (title, subtitle, bullets.1, columns.0, image,
+    chart…), или shape:<id> для фигуры слайда. Сборка переносит анимацию в .pptx (export/motion.py).
+    """
+
+    target: str = Field(min_length=1, max_length=120)
+    type: AnimationType = "fade"
+    duration_ms: int = Field(600, ge=100, le=5000)
+    delay_ms: int = Field(0, ge=0, le=10000)
+    # click — по щелчку, with — вместе с предыдущей, after — после предыдущей.
+    trigger: AnimationTrigger = "click"
+
+
+class SlideTransition(BaseModel):
+    """Переход к слайду (при показе и в .pptx)."""
+
+    type: TransitionType = "fade"
+    duration_ms: int = Field(600, ge=100, le=5000)
+
+
 class Slide(BaseModel):
     id: str = Field(default_factory=new_slide_id)
     kind: SlideKind
@@ -155,71 +182,50 @@ class Slide(BaseModel):
     element_aligns: dict[str, str] = Field(default_factory=dict)
     # Скругление углов картинки слайда (ключ image): как SlideShape.radius.
     element_radii: dict[str, float] = Field(default_factory=dict)
-
-
-class SlideUpdate(BaseModel):
-    kind: SlideKind | None = None
-    title: str | None = None
-    subtitle: str | None = None
-    summary: str | None = None
-    bullets: list[str] | None = None
-    columns: list[Column] | None = None
-    kpis: list[Kpi] | None = None
-    timeline: list[TimelineItem] | None = None
-    quote: Quote | None = None
-    table: TableData | None = None
-    chart: ChartData | None = None
-    shapes: list[SlideShape] | None = None
-    notes: str | None = None
-    font_family: str | None = None
-    font_size_scale: float | None = None
-    element_fonts: dict[str, str] | None = None
-    element_scales: dict[str, float] | None = None
-    element_boxes: dict[str, list[float]] | None = None
-    element_crops: dict[str, list[float]] | None = None
-    block_density: Literal["compact", "normal", "spacious"] | None = None
-    background_color: str | None = None
-    text_color: str | None = None
-    text_background_color: str | None = None
-    accent_color: str | None = None
-    element_colors: dict[str, str] | None = None
-    element_backgrounds: dict[str, str] | None = None
-    is_bold: bool | None = None
-    element_bolds: dict[str, bool] | None = None
-    element_aligns: dict[str, str] | None = None
-    element_radii: dict[str, float] | None = None
-    image: ImageSpec | None = None
-    layout_key: str | None = None
-    layout_name: str | None = None
-    pattern_id: str | None = None
+    # Анимации элементов (по порядку показа) и переход к слайду. На рендер не влияют.
+    animations: list[SlideAnimation] = Field(default_factory=list)
+    transition: SlideTransition | None = None
+    # Скрытые элементы (панель «Слои»): не попадают в сборку и экспорт. Адреса — как у animations.target.
+    hidden_elements: list[str] = Field(default_factory=list)
+    # Закреплённые элементы: редактор не даёт их двигать. На сборку не влияет.
+    locked_elements: list[str] = Field(default_factory=list)
 
 
 class BatchSlidesUpdate(BaseModel):
     slides: list[Slide]
 
 
-class CreateSlideRequest(BaseModel):
-    kind: SlideKind = "bullets"
-    title: str = "Новый слайд"
-    subtitle: str | None = None
-    position: int | None = None
-
-
-class ReorderSlidesRequest(BaseModel):
-    slide_ids: list[str]
+# Поля, которые не меняют картинку слайда: правка анимации не повод перерендеривать и перепроверять слайд.
+MOTION_FIELDS = frozenset({"animations", "transition", "locked_elements"})
 
 
 def slide_key(slide: Slide, salt: str = "") -> str:
     """Отпечаток содержимого слайда (без id): по нему кэшируются факты рендера и вердикты модели-судьи,
     чтобы после правки одного слайда не проверять заново остальные."""
-    payload = json.dumps(slide.model_dump(mode="json", exclude={"id"}), sort_keys=True, ensure_ascii=False)
+    payload = json.dumps(slide.model_dump(mode="json", exclude={"id", *MOTION_FIELDS}), sort_keys=True, ensure_ascii=False)
     return hashlib.sha1(f"{salt}|{payload}".encode("utf-8")).hexdigest()[:16]
 
 
 class RegenerateSlideRequest(BaseModel):
     instruction: str | None = None
     style: str | None = None
-    # Паттерн выбран пользователем (окно «Шаблон слайда»): модель пишет текст под него, подбор паттерна не трогает.
+    # Паттерн выбран пользователем: модель пишет текст под него, подбор паттерна не трогает.
     keep_pattern: bool = False
+    # Скиллы, включённые в Студии (id стандартных «preset:…» и скиллов библиотеки).
+    skills: list[str] = Field(default_factory=list, max_length=20)
+
+
+# Подсказка вёрстки из Студии (чипы «Тезисы», «Колонки»…): auto — выбрать по содержимому.
+PatternHint = Literal["auto", "bullets", "columns", "cards", "timeline", "chart", "case"]
+
+
+class GenerateSlideRequest(BaseModel):
+    """Новый слайд по описанию (Студия › AI): вставляется после after_slide_id или заменяет replace_slide_id."""
+
+    prompt: str = Field(min_length=1, max_length=4000)
+    pattern: PatternHint = "auto"
+    skills: list[str] = Field(default_factory=list, max_length=20)
+    after_slide_id: str | None = None
+    replace_slide_id: str | None = None
 
 

@@ -6,6 +6,7 @@ from app.models.project import Project, ProjectMember, ProjectShareLink
 from app.models.template import Template
 from app.models.user import User
 from app.models.custom_skill import CustomSkill
+from app.models.comment import SlideComment
 
 __all__ = [
     "AuditIssue",
@@ -23,4 +24,5 @@ __all__ = [
     "User",
     "Variant",
     "CustomSkill",
+    "SlideComment",
 ]

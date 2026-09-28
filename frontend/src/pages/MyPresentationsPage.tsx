@@ -1,25 +1,29 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
-  ChevronRight,
+  Folder,
   FolderPlus,
+  LayoutGrid,
+  List,
+  MessageSquare,
+  Pencil,
   Plus,
   Presentation as PresentationIcon,
   Search,
   Settings2,
   Share2,
+  ShieldCheck,
   Trash2,
   Users,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useNavigate, useSearchParams } from 'react-router'
 
 import { api } from '../api/client'
 import { queryKeys, usePresentations, useProjects } from '../api/queries'
 import type { Presentation, PresentationListItem, Project } from '../api/types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { MacFolder } from '../components/MacFolder'
 import { ProjectEditorModal } from '../components/ProjectEditorModal'
 import { ProjectShareDialog } from '../components/ProjectShareDialog'
 import { ShareDialog } from '../components/ShareDialog'
@@ -27,275 +31,147 @@ import { SlideView } from '../components/slides/SlideView'
 import { useToast } from '../components/Toast'
 import { Badge, Button, CardGridSkeleton, EmptyState, ErrorState, Select, Spinner } from '../components/ui'
 import { countLabel, formatDate } from '../lib/format'
-import { PURPOSE_LABELS, STATUS_LABELS, STATUS_TONES } from '../lib/labels'
-import { PROJECT_COLOR_CONFIGS } from '../lib/projects'
-import { canManageAccess, ROLE_LABEL, ROLE_TONE } from '../lib/roles'
+import { PURPOSE_LABELS } from '../lib/labels'
+import { PROJECT_COLOR_CONFIGS, PROJECT_ICON_COMPONENTS } from '../lib/projects'
+import { canManageAccess, ROLE_LABEL } from '../lib/roles'
 import { presentationLink } from '../lib/routes'
 
 type SortMode = 'updated' | 'title' | 'status'
+type Stage = 'all' | 'done' | 'audit' | 'draft'
+type ViewMode = 'grid' | 'list'
 
-function FolderCardItem({
-  project,
-  isActive,
-  onSelect,
-  onEdit,
-  onShare,
-  onDelete,
-}: {
-  project: Project
-  isActive: boolean
-  onSelect: () => void
-  onEdit: () => void
-  onShare: () => void
-  onDelete: () => void
-}) {
+const VIEW_KEY = 'presentations.view'
+const FILTERS: { value: Stage; label: string }[] = [
+  { value: 'all', label: 'Все' },
+  { value: 'done', label: 'Готово' },
+  { value: 'audit', label: 'На аудите' },
+  { value: 'draft', label: 'Черновики' },
+]
+
+/** Где презентация в работе: готова (вариант выбран, замечаний нет), на аудите или ещё черновик. */
+function stageOf(item: PresentationListItem): { stage: Exclude<Stage, 'all'> | 'generating' | 'failed'; label: string; tone: string } {
+  if (item.status === 'generating') return { stage: 'generating', label: 'Генерация', tone: 'info' }
+  if (item.status === 'failed') return { stage: 'failed', label: 'Ошибка', tone: 'danger' }
+  if (item.status === 'draft') return { stage: 'draft', label: 'Черновик', tone: 'neutral' }
+  if (!item.selected_variant_id || item.issues_open > 0) return { stage: 'audit', label: 'На аудите', tone: 'warning' }
+  return { stage: 'done', label: 'Готово', tone: 'success' }
+}
+
+function readView(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'
+  } catch {
+    return 'grid'
+  }
+}
+
+function FolderTile({ project, size = 14 }: { project: Project | null; size?: number }) {
+  const Icon = project ? PROJECT_ICON_COMPONENTS[project.icon] ?? Folder : Folder
+  const color = project ? PROJECT_COLOR_CONFIGS[project.color]?.primary ?? '#0077ff' : 'var(--color-folder-gray)'
   return (
-    <div className={clsx('mac-folder-card', isActive && 'is-active')}>
+    <span className="pres-folder__tile" style={{ background: color }}>
+      <Icon size={size} />
+    </span>
+  )
+}
+
+function Cover({ item }: { item: PresentationListItem }) {
+  if (item.cover && item.theme) {
+    return <SlideView slide={item.cover} theme={item.theme} render={item.cover_image ? { image: item.cover_image, targets: {} } : undefined} />
+  }
+  return <div className="pres-cover__placeholder">{item.status === 'generating' ? <Spinner /> : <PresentationIcon size={28} />}</div>
+}
+
+/** Меню «В папку» на карточке: выбор папки из списка. */
+function MoveToFolder({ item, projects }: { item: PresentationListItem; projects: Project[] }) {
+  const queryClient = useQueryClient()
+  const notify = useToast()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (event: MouseEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+  const move = useMutation({
+    mutationFn: (projectId: string | null) => api.patch<Presentation>(`/presentations/${item.id}`, { project_id: projectId }),
+    onSuccess: () => {
+      notify('Презентация перенесена')
+      queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+  const choose = (projectId: string | null) => {
+    setOpen(false)
+    if (projectId !== (item.project?.id ?? null)) move.mutate(projectId)
+  }
+  return (
+    <div className="pres-menu" ref={ref}>
       <button
         type="button"
-        className="mac-folder-card__main"
-        onClick={onSelect}
-        title={`Открыть папку «${project.name}»`}
+        className="pres-icon-btn"
+        title={item.project ? `Папка: ${item.project.name}` : 'Переложить в папку'}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen((value) => !value)
+        }}
       >
-        <MacFolder color={project.color} icon={project.icon} size={64} />
-        <div className="mac-folder-card__info">
-          <strong className="mac-folder-card__name">{project.name}</strong>
-          <span className="mac-folder-card__count">
-            {countLabel(project.presentations_count, ['презентация', 'презентации', 'презентаций'])}
-          </span>
-          {project.access_role !== 'owner' && (
-            <Badge tone={ROLE_TONE[project.access_role]} className="mac-folder-card__role">
-              {ROLE_LABEL[project.access_role]}
-            </Badge>
-          )}
-        </div>
+        <Folder size={14} />
       </button>
-
-      <div className="mac-folder-card__actions">
-        {canManageAccess(project.access_role) ? (
-          <>
-            <button
-              className="icon-btn icon-btn--sm"
-              type="button"
-              title="Общий доступ к папке"
-              aria-label="Общий доступ к папке"
-              onClick={(e) => {
-                e.stopPropagation()
-                onShare()
-              }}
-            >
-              <Share2 size={15} />
-            </button>
-            <button
-              className="icon-btn icon-btn--sm"
-              type="button"
-              title="Оформление папки (цвет и иконка)"
-              aria-label="Оформление папки"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEdit()
-              }}
-            >
-              <Settings2 size={15} />
-            </button>
-            {project.access_role === 'owner' && (
-              <button
-                className="icon-btn icon-btn--sm icon-btn--danger"
-                type="button"
-                title="Удалить папку"
-                aria-label="Удалить папку"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onDelete()
-                }}
-              >
-                <Trash2 size={15} />
-              </button>
-            )}
-          </>
-        ) : (
-          <button
-            className="icon-btn icon-btn--sm"
-            type="button"
-            title="Участники папки"
-            aria-label="Участники папки"
-            onClick={(e) => {
-              e.stopPropagation()
-              onShare()
-            }}
-          >
-            <Users size={15} />
+      {open && (
+        <div className="pres-menu__list" onClick={(event) => event.stopPropagation()}>
+          <button type="button" className={clsx(!item.project && 'is-active')} onClick={() => choose(null)}>
+            <FolderTile project={null} size={11} />
+            Без папки
           </button>
-        )}
-      </div>
+          {projects.map((project) => (
+            <button key={project.id} type="button" className={clsx(item.project?.id === project.id && 'is-active')} onClick={() => choose(project.id)}>
+              <FolderTile project={project} size={11} />
+              {project.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function PresentationLibraryCard({
-  item,
-  projects,
-}: {
-  item: PresentationListItem
-  projects: Project[]
-}) {
-  const queryClient = useQueryClient()
-  const notify = useToast()
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
-
-  const remove = useMutation({
-    mutationFn: () => api.delete(`/presentations/${item.id}`),
-    onSuccess: () => {
-      setConfirmDelete(false)
-      notify('Презентация удалена')
-      queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects })
-    },
-    onError: (error) => notify(error.message, 'error'),
-  })
-
-  const moveToProject = useMutation({
-    mutationFn: (projectId: string | null) =>
-      api.patch<Presentation>(`/presentations/${item.id}`, { project_id: projectId }),
-    onSuccess: () => {
-      notify('Презентация была успешно перенесена в выбранную папку')
-      queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects })
-    },
-    onError: (error) => notify(error.message, 'error'),
-  })
-
-  const folderColor = item.project?.color ? (PROJECT_COLOR_CONFIGS[item.project.color]?.primary ?? '#0077ff') : '#8e8e93'
-
-  const folderOptions = useMemo(
-    () => [
-      {
-        value: '',
-        label: 'Без папки',
-        icon: <span className="presentation-card__folder-dot" style={{ backgroundColor: '#8e8e93' }} />,
-      },
-      ...projects.map((p) => ({
-        value: p.id,
-        label: p.name,
-        icon: (
-          <span
-            className="presentation-card__folder-dot"
-            style={{ backgroundColor: PROJECT_COLOR_CONFIGS[p.color]?.primary ?? '#0077ff' }}
-          />
-        ),
-      })),
-    ],
-    [projects]
-  )
-
+function CardActions({ item, projects, onShare, onDelete }: { item: PresentationListItem; projects: Project[]; onShare: () => void; onDelete: () => void }) {
+  const manage = canManageAccess(item.access_role)
   return (
-    <>
-      <div className="presentation-card presentation-card--library">
-        <Link to={presentationLink(item)} className="plain-link presentation-card__link">
-          <div className="presentation-card__cover">
-            {item.cover && item.theme ? (
-              <SlideView
-                slide={item.cover}
-                theme={item.theme}
-                render={item.cover_image ? { image: item.cover_image, targets: {} } : undefined}
-              />
-            ) : (
-              <div className="presentation-card__placeholder">
-                {item.status === 'generating' ? <Spinner /> : <PresentationIcon size={28} />}
-              </div>
-            )}
-          </div>
-          <div className="presentation-card__body">
-            <div className="presentation-card__row">
-              <div className="presentation-card__badges">
-                <Badge tone={STATUS_TONES[item.status]}>{STATUS_LABELS[item.status]}</Badge>
-                {item.access_role !== 'owner' && (
-                  <Badge tone={ROLE_TONE[item.access_role]}>{ROLE_LABEL[item.access_role]}</Badge>
-                )}
-              </div>
-              <small>{formatDate(item.updated_at)}</small>
-            </div>
-            <strong>{item.title}</strong>
-            <small>
-              {PURPOSE_LABELS[item.purpose]}
-              {item.template_name && ` · ${item.template_name}`}
-              {item.slides_count ? ` · ${countLabel(item.slides_count, ['слайд', 'слайда', 'слайдов'])}` : ''}
-            </small>
-          </div>
-        </Link>
-
-        {/* Панель папки и действий на карточке */}
-        <div className="presentation-card__footer">
-          {canManageAccess(item.access_role) ? (
-            <div className="presentation-card__folder-assign">
-              <Select
-                size="sm"
-                placement="up"
-                value={item.project?.id ?? ''}
-                options={folderOptions}
-                onChange={(val) => moveToProject.mutate(val || null)}
-              />
-            </div>
-          ) : (
-            <div className="presentation-card__folder-readonly">
-              {item.project ? (
-                <span className="presentation-card__folder-badge" style={{ borderColor: folderColor }}>
-                  <span className="presentation-card__folder-dot" style={{ backgroundColor: folderColor }} />
-                  {item.project.name}
-                </span>
-              ) : (
-                <span className="text-muted" style={{ fontSize: 12 }}>
-                  Без папки
-                </span>
-              )}
-            </div>
-          )}
-
-          <div className="presentation-card__actions" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button
-              className="icon-btn icon-btn--sm"
-              type="button"
-              title={canManageAccess(item.access_role) ? 'Поделиться презентацией' : 'Участники презентации'}
-              aria-label={canManageAccess(item.access_role) ? 'Поделиться презентацией' : 'Участники презентации'}
-              onClick={() => setShareOpen(true)}
-            >
-              {canManageAccess(item.access_role) ? <Share2 size={15} /> : <Users size={15} />}
-            </button>
-            {item.access_role === 'owner' && (
-              <button
-                className="icon-btn icon-btn--sm"
-                type="button"
-                title="Удалить презентацию"
-                aria-label="Удалить презентацию"
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 size={15} />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {shareOpen && (
-        <ShareDialog
-          presentationId={item.id}
-          title={item.title}
-          myRole={item.access_role}
-          onClose={() => setShareOpen(false)}
-        />
+    <span className="pres-actions" onClick={(event) => event.stopPropagation()}>
+      {manage && <MoveToFolder item={item} projects={projects} />}
+      <button type="button" className="pres-icon-btn" title={manage ? 'Поделиться' : 'Участники'} onClick={onShare}>
+        {manage ? <Share2 size={14} /> : <Users size={14} />}
+      </button>
+      {item.access_role === 'owner' && (
+        <button type="button" className="pres-icon-btn pres-icon-btn--danger" title="Удалить презентацию" onClick={onDelete}>
+          <Trash2 size={14} />
+        </button>
       )}
+    </span>
+  )
+}
 
-      {confirmDelete && (
-        <ConfirmDialog
-          title="Удалить презентацию?"
-          text={`«${item.title}» будет удалена без возможности восстановления вместе со всеми вариантами и файлами`}
-          loading={remove.isPending}
-          onConfirm={() => remove.mutate()}
-          onClose={() => setConfirmDelete(false)}
-        />
-      )}
-    </>
+function People({ item, size = 24 }: { item: PresentationListItem; size?: number }) {
+  if (!item.people.length) return null
+  return (
+    <span className="pres-people">
+      {item.people.slice(0, 3).map((person) => (
+        <span
+          key={person.id}
+          className="pres-avatar"
+          title={`${person.full_name} · ${ROLE_LABEL[person.role].toLowerCase()}`}
+          style={{ background: person.color, width: size, height: size }}
+        >
+          {person.initials.slice(0, 1)}
+        </span>
+      ))}
+    </span>
   )
 }
 
@@ -307,346 +183,345 @@ export function MyPresentationsPage() {
   const notify = useToast()
   const queryClient = useQueryClient()
 
-  // Активный фильтр по папкам
-  const activeProjectId = searchParams.get('project') || 'all'
-  const [searchQuery, setSearchQuery] = useState('')
+  const activeFolder = searchParams.get('project') || 'all'
+  const [query, setQuery] = useState('')
   const [sortMode, setSortMode] = useState<SortMode>('updated')
+  const [stage, setStage] = useState<Stage>('all')
+  const [view, setViewState] = useState<ViewMode>(readView)
+  const setView = (next: ViewMode) => {
+    setViewState(next)
+    try {
+      localStorage.setItem(VIEW_KEY, next)
+    } catch {
+      // хранилище недоступно — вид просто не запоминается
+    }
+  }
 
-  // Модальные окна
   const [editingProject, setEditingProject] = useState<Project | null | 'new'>(null)
   const [sharingProject, setSharingProject] = useState<Project | null>(null)
   const [deletingProject, setDeletingProject] = useState<Project | null>(null)
+  const [sharingItem, setSharingItem] = useState<PresentationListItem | null>(null)
+  const [deletingItem, setDeletingItem] = useState<PresentationListItem | null>(null)
 
   const deleteProject = useMutation({
     mutationFn: (id: string) => api.delete(`/projects/${id}`),
     onSuccess: (_data, id) => {
       setDeletingProject(null)
-      notify('Папка удалена. Презентации внутри неё остались в общем списке «Без папки»')
+      notify('Папка удалена. Презентации из неё остались в «Без папки»')
       queryClient.invalidateQueries({ queryKey: queryKeys.projects })
       queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
-      if (activeProjectId === id) {
-        setSearchParams({})
-      }
+      if (activeFolder === id) setSearchParams({})
+    },
+    onError: (error) => notify(error.message, 'error'),
+  })
+  const deletePresentation = useMutation({
+    mutationFn: (id: string) => api.delete(`/presentations/${id}`),
+    onSuccess: () => {
+      setDeletingItem(null)
+      notify('Презентация удалена')
+      queryClient.invalidateQueries({ queryKey: queryKeys.presentations })
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects })
     },
     onError: (error) => notify(error.message, 'error'),
   })
 
-  // Выбранный проект
-  const currentProject = useMemo(() => {
-    if (activeProjectId === 'all' || activeProjectId === 'unassigned') return null
-    return projects.data?.find((p) => p.id === activeProjectId) ?? null
-  }, [projects.data, activeProjectId])
-
-  // Фильтрация презентаций
-  const filteredPresentations = useMemo(() => {
-    let list = presentations.data ?? []
-
-    if (activeProjectId === 'unassigned') {
-      list = list.filter((item) => !item.project)
-    } else if (activeProjectId !== 'all') {
-      list = list.filter((item) => item.project?.id === activeProjectId)
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim()
-      list = list.filter(
-        (item) =>
-          item.title.toLowerCase().includes(q) ||
-          item.template_name?.toLowerCase().includes(q) ||
-          item.project?.name.toLowerCase().includes(q)
-      )
-    }
-
+  const all = presentations.data ?? []
+  const currentProject = activeFolder !== 'all' && activeFolder !== 'unassigned' ? projects.data?.find((p) => p.id === activeFolder) ?? null : null
+  const inFolder = useMemo(
+    () =>
+      activeFolder === 'all'
+        ? all
+        : activeFolder === 'unassigned'
+          ? all.filter((item) => !item.project)
+          : all.filter((item) => item.project?.id === activeFolder),
+    [all, activeFolder],
+  )
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim()
+    const list = inFolder.filter(
+      (item) =>
+        (stage === 'all' || stageOf(item).stage === stage) &&
+        (!q || item.title.toLowerCase().includes(q) || item.template_name?.toLowerCase().includes(q) || item.project?.name.toLowerCase().includes(q)),
+    )
     return [...list].sort((left, right) => {
       if (sortMode === 'title') return left.title.localeCompare(right.title, 'ru')
-      if (sortMode === 'status') return left.status.localeCompare(right.status, 'ru')
+      if (sortMode === 'status') return stageOf(left).label.localeCompare(stageOf(right).label, 'ru')
       return right.updated_at.localeCompare(left.updated_at)
     })
-  }, [presentations.data, activeProjectId, searchQuery, sortMode])
+  }, [inFolder, query, stage, sortMode])
 
-  const totalCount = presentations.data?.length ?? 0
-  const unassignedCount = useMemo(
-    () => (presentations.data ?? []).filter((item) => !item.project).length,
-    [presentations.data]
+  // Совместная работа: люди из общих презентаций, с высшей ролью и тем, где вы пересекаетесь.
+  const collaborators = useMemo(() => {
+    const byId = new Map<string, { id: string; name: string; initials: string; color: string; role: PresentationListItem['access_role']; titles: string[] }>()
+    const rank = { owner: 4, coowner: 3, editor: 2, viewer: 1 }
+    for (const item of all) {
+      for (const person of item.people) {
+        const entry = byId.get(person.id) ?? { id: person.id, name: person.full_name, initials: person.initials, color: person.color, role: person.role, titles: [] }
+        if (rank[person.role] > rank[entry.role]) entry.role = person.role
+        entry.titles.push(item.title)
+        byId.set(person.id, entry)
+      }
+    }
+    return [...byId.values()].sort((a, b) => b.titles.length - a.titles.length).slice(0, 6)
+  }, [all])
+
+  const selectFolder = (folderId: string) => setSearchParams(folderId === 'all' ? {} : { project: folderId })
+  const unassigned = all.filter((item) => !item.project).length
+  const studioLink = (item: PresentationListItem) =>
+    item.status === 'ready' && item.selected_variant_id ? `/presentations/${item.id}/editor` : presentationLink(item)
+  const auditLink = (item: PresentationListItem) => (item.selected_variant_id ? `/presentations/${item.id}/audit` : presentationLink(item))
+
+  const folderRow = (id: string, name: string, count: number, project: Project | null, extra?: ReactNode) => (
+    <div key={id} className={clsx('pres-folder', activeFolder === id && 'is-active')}>
+      <button type="button" className="pres-folder__main" onClick={() => selectFolder(id)}>
+        <FolderTile project={project} />
+        <span className="pres-folder__name">{name}</span>
+        <span className="pres-folder__count">{count}</span>
+      </button>
+      {extra}
+    </div>
   )
 
-  const selectFolder = (folderId: string) => {
-    if (folderId === 'all') {
-      setSearchParams({})
-    } else {
-      setSearchParams({ project: folderId })
-    }
-  }
-
   return (
-    <div className="dashboard my-presentations-page">
-      {/* Заголовок раздела */}
-      <section className="my-presentations-header">
-        <div>
-          <nav className="my-presentations-breadcrumb">
-            <span
-              role="button"
-              tabIndex={0}
-              className={clsx('breadcrumb-link', activeProjectId !== 'all' && 'is-clickable')}
-              onClick={() => selectFolder('all')}
-              onKeyDown={(e) => e.key === 'Enter' && selectFolder('all')}
-            >
-              Мои презентации
-            </span>
-            {currentProject && (
-              <>
-                <ChevronRight size={14} className="breadcrumb-separator" />
-                <span className="breadcrumb-current">
-                  <MacFolder color={currentProject.color} icon={currentProject.icon} size={20} />
-                  {currentProject.name}
-                </span>
-              </>
-            )}
-            {activeProjectId === 'unassigned' && (
-              <>
-                <ChevronRight size={14} className="breadcrumb-separator" />
-                <span className="breadcrumb-current">Без папки</span>
-              </>
-            )}
-          </nav>
+    <div className="pres-page">
+      <header className="pres-header">
+        <div className="pres-header__text">
           <h1>{currentProject ? currentProject.name : 'Мои презентации'}</h1>
-          <p className="my-presentations-subtitle">
+          <p>
             {currentProject
               ? `Презентации в папке «${currentProject.name}»`
               : 'Группируйте презентации по папкам, присваивайте им любые названия, а также настраивайте стиль и делитесь доступом'}
           </p>
         </div>
-      </section>
-
-      {/* Секция папок в стиле macOS */}
-      <section className="section">
-        <div className="section__header">
-          <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-            <h2>Папки проектов</h2>
-            <span className="section__count-badge">{projects.data?.length ?? 0}</span>
-          </div>
-          {activeProjectId !== 'all' && (
-            <button
-              type="button"
-              className="text-btn"
-              onClick={() => selectFolder('all')}
-              style={{ fontSize: 13 }}
-            >
-              Показать все
-            </button>
-          )}
-        </div>
-
-        {projects.isPending ? (
-          <Spinner />
-        ) : projects.error ? (
-          <ErrorState error={projects.error} />
-        ) : (
-          <div className="mac-folders-grid">
-            {/* Карточка «Все презентации» */}
-            <div
-              className={clsx('mac-folder-card mac-folder-card--meta', activeProjectId === 'all' && 'is-active')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  selectFolder('all')
-                }
-              }}
-              onClick={() => selectFolder('all')}
-            >
-              <div className="mac-folder-card__main">
-                <MacFolder color="blue" icon="folder" size={72} badge={totalCount} />
-                <div className="mac-folder-card__info">
-                  <strong className="mac-folder-card__name">Все презентации</strong>
-                  <span className="mac-folder-card__count">
-                    {countLabel(totalCount, ['презентация', 'презентации', 'презентаций'])}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Карточка «Без папки» */}
-            <div
-              className={clsx(
-                'mac-folder-card mac-folder-card--meta',
-                activeProjectId === 'unassigned' && 'is-active'
-              )}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  selectFolder('unassigned')
-                }
-              }}
-              onClick={() => selectFolder('unassigned')}
-            >
-              <div className="mac-folder-card__main">
-                <MacFolder color="gray" icon="folder" size={72} badge={unassignedCount} />
-                <div className="mac-folder-card__info">
-                  <strong className="mac-folder-card__name">Без папки</strong>
-                  <span className="mac-folder-card__count">
-                    {countLabel(unassignedCount, ['презентация', 'презентации', 'презентаций'])}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Пользовательские папки в стиле macOS */}
-            {projects.data?.map((project) => (
-              <FolderCardItem
-                key={project.id}
-                project={project}
-                isActive={activeProjectId === project.id}
-                onSelect={() => selectFolder(project.id)}
-                onEdit={() => setEditingProject(project)}
-                onShare={() => setSharingProject(project)}
-                onDelete={() => setDeletingProject(project)}
-              />
-            ))}
-
-            {/* Кнопка быстрого добавления новой папки */}
-            <button
-              type="button"
-              className="mac-folder-add-card"
-              onClick={() => setEditingProject('new')}
-            >
-              <span className="mac-folder-add-card__icon">
-                <FolderPlus size={24} />
-              </span>
-              <strong>Новая папка</strong>
-              <small>Например, Продуктовый отдел</small>
-            </button>
-          </div>
-        )}
-      </section>
-
-      {/* Секция презентаций с фильтрами и поиском */}
-      <section className="section">
-        <div className="section__header section__header--controls">
-          <div className="row" style={{ alignItems: 'center', gap: 12 }}>
-            <h2>
-              {currentProject
-                ? `Презентации в папке «${currentProject.name}»`
-                : activeProjectId === 'unassigned'
-                ? 'Презентации без папки'
-                : 'Все презентации'}
-            </h2>
-            <span className="section__count-badge">{filteredPresentations.length}</span>
-          </div>
-
-          {/* Поиск по названию */}
-          <div className="library-controls">
-            <Select
-              size="sm"
-              className="status-filter-select"
-              value={sortMode}
-              options={[
-                { value: 'updated', label: 'Сначала новые' },
-                { value: 'title', label: 'По названию' },
-                { value: 'status', label: 'По статусу' },
-              ]}
-              onChange={(value) => setSortMode(value as SortMode)}
-            />
-            <div className="search-box">
-              <Search size={16} className="search-box__icon" />
-              <input
-                type="text"
-                placeholder="Поиск презентации..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="search-box__input"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="icon-btn icon-btn--sm search-box__clear"
-                  onClick={() => setSearchQuery('')}
-                  aria-label="Очистить поиск"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Список презентаций */}
-        {presentations.isPending ? (
-          <CardGridSkeleton count={8} />
-        ) : presentations.error ? (
-          <ErrorState error={presentations.error} />
-        ) : filteredPresentations.length === 0 ? (
-          <EmptyState
-            icon={<PresentationIcon size={32} />}
-            title={
-              searchQuery
-                ? `Ничего не найдено по запросу «${searchQuery}»`
-                : currentProject
-                ? `В папке «${currentProject.name}» пока нет презентаций`
-                : 'Презентаций пока нет'
-            }
-            text={
-              currentProject
-                ? 'Создайте презентацию сразу внутри этой папки, и она появится здесь'
-                : 'Создайте новую презентацию или переместите существующую в эту папку'
-            }
-            action={
-              <Button
-                icon={<Plus size={16} />}
-                onClick={() =>
-                  navigate(
-                    currentProject
-                      ? `/presentations/new?project=${currentProject.id}`
-                      : '/presentations/new'
-                  )
-                }
-              >
-                {currentProject ? `Создать в «${currentProject.name}»` : 'Создать презентацию'}
-              </Button>
-            }
+        <div className="pres-header__controls">
+          <label className="pres-search">
+            <Search size={16} />
+            <input value={query} placeholder="Поиск презентации…" onChange={(event) => setQuery(event.target.value)} />
+            {query && (
+              <button type="button" onClick={() => setQuery('')} aria-label="Очистить поиск">
+                <X size={14} />
+              </button>
+            )}
+          </label>
+          <Select
+            className="pres-sort"
+            value={sortMode}
+            options={[
+              { value: 'updated', label: 'Сначала новые' },
+              { value: 'title', label: 'По названию' },
+              { value: 'status', label: 'По статусу' },
+            ]}
+            onChange={(value) => setSortMode(value as SortMode)}
           />
-        ) : (
-          <div className="grid grid-cards">
-            {filteredPresentations.map((item) => (
-              <PresentationLibraryCard
-                key={item.id}
-                item={item}
-                projects={projects.data ?? []}
-              />
-            ))}
+        </div>
+      </header>
+
+      <div className="pres-layout">
+        <aside className="pres-sidebar">
+          <div className="pres-folders">
+            <span className="pres-caption">Папки проектов</span>
+            {folderRow('all', 'Все презентации', all.length, null)}
+            {folderRow('unassigned', 'Без папки', unassigned, null)}
+            {projects.isPending ? (
+              <Spinner />
+            ) : projects.error ? (
+              <ErrorState error={projects.error} />
+            ) : (
+              projects.data?.map((project) =>
+                folderRow(
+                  project.id,
+                  project.name,
+                  project.presentations_count,
+                  project,
+                  <span className="pres-folder__tools">
+                    <button type="button" title={canManageAccess(project.access_role) ? 'Доступ к папке' : 'Участники'} onClick={() => setSharingProject(project)}>
+                      {canManageAccess(project.access_role) ? <Share2 size={13} /> : <Users size={13} />}
+                    </button>
+                    {canManageAccess(project.access_role) && (
+                      <button type="button" title="Оформление папки" onClick={() => setEditingProject(project)}>
+                        <Settings2 size={13} />
+                      </button>
+                    )}
+                    {project.access_role === 'owner' && (
+                      <button type="button" title="Удалить папку" onClick={() => setDeletingProject(project)}>
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </span>,
+                ),
+              )
+            )}
+            <button type="button" className="pres-folder-add" onClick={() => setEditingProject('new')}>
+              <FolderPlus size={16} />
+              Новая папка
+            </button>
           </div>
-        )}
-      </section>
 
-      {/* Модальное окно редактирования/создания папки (macOS Folder Appearance) */}
-      {editingProject && (
-        <ProjectEditorModal
-          project={editingProject === 'new' ? null : editingProject}
-          onClose={() => setEditingProject(null)}
-        />
-      )}
+          {collaborators.length > 0 && (
+            <div className="pres-team">
+              <span className="pres-caption">Совместная работа</span>
+              {collaborators.map((person) => (
+                <div key={person.id} className="pres-team__row">
+                  <span className="pres-avatar pres-avatar--lg" style={{ background: person.color }}>
+                    {person.initials.slice(0, 1)}
+                  </span>
+                  <span className="pres-team__text">
+                    {person.name}
+                    <small>
+                      {ROLE_LABEL[person.role].toLowerCase()} ·{' '}
+                      {person.titles.length === 1 ? `«${person.titles[0]}»` : countLabel(person.titles.length, ['презентация', 'презентации', 'презентаций'])}
+                    </small>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
 
-      {/* Модальное окно общего доступа к папке */}
+        <section className="pres-main">
+          <div className="pres-toolbar">
+            {FILTERS.map((filter) => (
+              <button key={filter.value} type="button" className={clsx('pres-filter', stage === filter.value && 'is-active')} onClick={() => setStage(filter.value)}>
+                {filter.label}
+              </button>
+            ))}
+            <span className="pres-count">{countLabel(filtered.length, ['презентация', 'презентации', 'презентаций'])}</span>
+            <div className="pres-view">
+              <button type="button" className={clsx(view === 'grid' && 'is-active')} onClick={() => setView('grid')} aria-label="Плиткой">
+                <LayoutGrid size={15} />
+              </button>
+              <button type="button" className={clsx(view === 'list' && 'is-active')} onClick={() => setView('list')} aria-label="Списком">
+                <List size={15} />
+              </button>
+            </div>
+          </div>
+
+          {presentations.isPending ? (
+            <CardGridSkeleton count={6} className="pres-grid" />
+          ) : presentations.error ? (
+            <ErrorState error={presentations.error} />
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={<PresentationIcon size={32} />}
+              title={query ? `Ничего не найдено по запросу «${query}»` : currentProject ? `В папке «${currentProject.name}» пока нет презентаций` : 'Презентаций пока нет'}
+              text={stage !== 'all' ? 'Попробуйте другой фильтр' : 'Создайте новую презентацию или переложите существующую в эту папку'}
+              action={
+                <Button
+                  icon={<Plus size={16} />}
+                  onClick={() => navigate(currentProject ? `/presentations/new?project=${currentProject.id}` : '/presentations/new')}
+                >
+                  {currentProject ? `Создать в «${currentProject.name}»` : 'Создать презентацию'}
+                </Button>
+              }
+            />
+          ) : view === 'grid' ? (
+            <div className="pres-grid">
+              {filtered.map((item) => {
+                const status = stageOf(item)
+                return (
+                  <article key={item.id} className="pres-card" onClick={() => navigate(presentationLink(item))}>
+                    <div className="pres-cover">
+                      <Cover item={item} />
+                      <span className="pres-cover__people">
+                        <People item={item} />
+                      </span>
+                    </div>
+                    <div className="pres-card__body">
+                      <div className="pres-card__row">
+                        <Badge tone={status.tone}>{status.label}</Badge>
+                        <small>{formatDate(item.updated_at)}</small>
+                      </div>
+                      <strong className="pres-card__title">{item.title}</strong>
+                      <span className="pres-card__meta">
+                        {PURPOSE_LABELS[item.purpose]}
+                        {item.template_name && ` · ${item.template_name}`}
+                        {item.slides_count ? ` · ${countLabel(item.slides_count, ['слайд', 'слайда', 'слайдов'])}` : ''}
+                      </span>
+                      <div className="pres-card__footer" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" className="pres-pill pres-pill--primary" onClick={() => navigate(studioLink(item))}>
+                          <Pencil size={13} />
+                          Студия
+                        </button>
+                        <button type="button" className="pres-pill" onClick={() => navigate(auditLink(item))}>
+                          <ShieldCheck size={13} />
+                          Аудит
+                        </button>
+                        <span className="pres-spacer" />
+                        {item.comments_open > 0 && (
+                          <span className="pres-comments" title="Открытые обсуждения">
+                            <MessageSquare size={13} />
+                            {item.comments_open}
+                          </span>
+                        )}
+                        <CardActions item={item} projects={projects.data ?? []} onShare={() => setSharingItem(item)} onDelete={() => setDeletingItem(item)} />
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="pres-list">
+              {filtered.map((item) => {
+                const status = stageOf(item)
+                return (
+                  <div key={item.id} className="pres-row" role="button" tabIndex={0} onClick={() => navigate(presentationLink(item))} onKeyDown={(event) => event.key === 'Enter' && navigate(presentationLink(item))}>
+                    <div className="pres-row__cover">
+                      <Cover item={item} />
+                    </div>
+                    <div className="pres-row__text">
+                      <strong>{item.title}</strong>
+                      <span>
+                        {PURPOSE_LABELS[item.purpose]}
+                        {item.template_name && ` · ${item.template_name}`}
+                        {item.slides_count ? ` · ${countLabel(item.slides_count, ['слайд', 'слайда', 'слайдов'])}` : ''}
+                      </span>
+                    </div>
+                    <span className="pres-row__status">
+                      <Badge tone={status.tone}>{status.label}</Badge>
+                    </span>
+                    <span className="pres-row__date">{formatDate(item.updated_at)}</span>
+                    <div className="pres-row__actions" onClick={(event) => event.stopPropagation()}>
+                      <People item={item} size={22} />
+                      <button type="button" className="pres-pill" onClick={() => navigate(auditLink(item))}>
+                        Аудит
+                      </button>
+                      <button type="button" className="pres-pill pres-pill--primary" onClick={() => navigate(studioLink(item))}>
+                        Студия
+                      </button>
+                      <CardActions item={item} projects={projects.data ?? []} onShare={() => setSharingItem(item)} onDelete={() => setDeletingItem(item)} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {editingProject && <ProjectEditorModal project={editingProject === 'new' ? null : editingProject} onClose={() => setEditingProject(null)} />}
       {sharingProject && (
-        <ProjectShareDialog
-          projectId={sharingProject.id}
-          name={sharingProject.name}
-          myRole={sharingProject.access_role}
-          onClose={() => setSharingProject(null)}
-        />
+        <ProjectShareDialog projectId={sharingProject.id} name={sharingProject.name} myRole={sharingProject.access_role} onClose={() => setSharingProject(null)} />
       )}
-
-      {/* Диалог подтверждения удаления папки */}
       {deletingProject && (
         <ConfirmDialog
           title="Удалить папку?"
-          text={`Папка «${deletingProject.name}» будет удалена. Все презентации внутри неё останутся в сохранности и перейдут в категорию «Без папки»`}
+          text={`Папка «${deletingProject.name}» будет удалена. Презентации из неё останутся и перейдут в «Без папки»`}
           loading={deleteProject.isPending}
           onConfirm={() => deleteProject.mutate(deletingProject.id)}
           onClose={() => setDeletingProject(null)}
+        />
+      )}
+      {sharingItem && (
+        <ShareDialog presentationId={sharingItem.id} title={sharingItem.title} myRole={sharingItem.access_role} onClose={() => setSharingItem(null)} />
+      )}
+      {deletingItem && (
+        <ConfirmDialog
+          title="Удалить презентацию?"
+          text={`«${deletingItem.title}» будет удалена без возможности восстановления вместе со всеми вариантами и файлами`}
+          loading={deletePresentation.isPending}
+          onConfirm={() => deletePresentation.mutate(deletingItem.id)}
+          onClose={() => setDeletingItem(null)}
         />
       )}
     </div>
