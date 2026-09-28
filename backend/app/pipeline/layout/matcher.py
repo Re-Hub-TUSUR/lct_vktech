@@ -53,7 +53,8 @@ UNUSED_BODY_PENALTY = 1.0
 MIN_COLUMN_WIDTH = 0.12
 
 
-def _item_capacity(unit: dict[str, Any]) -> dict[str, float]:
+def item_capacity(unit: dict[str, Any]) -> dict[str, float]:
+    """Ёмкость элемента паттерна в знаках: заголовок, текст, число, дата."""
     caps = {"title": 0.0, "text": 0.0, "value": 0.0, "date": 0.0}
     for slot in unit["slots"]:
         role, chars = slot["role"], slot["chars"]
@@ -73,7 +74,7 @@ def _item_capacity(unit: dict[str, Any]) -> dict[str, float]:
 
 def _item_penalty(content: ItemContent, unit: dict[str, Any]) -> float | None:
     """Штраф за посадку элемента содержимого в элемент паттерна; None — не помещается."""
-    caps = _item_capacity(unit)
+    caps = item_capacity(unit)
     if content.value and (not caps["value"] or len(content.value) > caps["value"] * MAX_OVERFLOW):
         return None
     title = len(content.title) + (len(content.date) + 3 if content.date and not caps["date"] else 0)
@@ -176,7 +177,7 @@ def text_capacity(slide: Slide, pattern: dict[str, Any]) -> tuple[int, int]:
     count = len(content_for(slide).items)
     body = 0
     for unit in units(pattern, slide.kind)[:count]:
-        caps = _item_capacity(unit)
+        caps = item_capacity(unit)
         # Даты и показатели считаются в объёме текста слайда — значит, и их слоты входят в ёмкость.
         body += int(caps["title"] + caps["text"] + caps["date"] + caps["value"])
     return title, body

@@ -19,11 +19,13 @@ from app.core.redis import publish_presentation_update, redis_client
 from app.core.storage import save_upload, storage_path
 from app.models import ContentFile, Generation
 from app.pipeline.ai.llm import llm_enabled
-from app.pipeline.content.image_matcher import assign_content_images_to_drafts
+from app.pipeline.content.image_matcher import assign_content_images_to_drafts, has_slide_images
 from app.pipeline.content.ingest import sources_digest
 from app.pipeline.export.pptx_export import ExportError
 from app.pipeline.export.render import RenderError
-from app.pipeline.layout.composer import compose_single_variant, relayout_edited_slide
+from app.pipeline.layout.composer import assign_layouts, compose_single_variant, relayout_edited_slide
+from app.pipeline.layout.fitting import fit_drafts
+from app.pipeline.layout.matcher import assign_patterns
 from app.pipeline.planning.editor import EditError, edit_slide
 from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.planning.planner import plan_outline
@@ -185,13 +187,14 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     # Если план был из fallback (модель не ответила на стадии генерации), рерол привлекает LLM!
     generation = await db.get(Generation, variant.generation_id)
     specs = list(generation.plan if generation and generation.plan else [])
+    images_available = has_slide_images(files, presentation.id)
+    sources = sources_digest(
+        [(f.filename, f.extracted_text or "") for f in files],
+        per_file=settings.llm_source_chars,
+        total=settings.llm_sources_total_chars,
+    )
 
     if (not specs or not any(s.get("plan_kind") for s in specs)) and llm_enabled():
-        sources = sources_digest(
-            [(f.filename, f.extracted_text or "") for f in files],
-            per_file=settings.llm_source_chars,
-            total=settings.llm_sources_total_chars,
-        )
         plan = await asyncio.to_thread(
             plan_outline,
             title=presentation.title,
@@ -203,6 +206,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
             tone=options.tone,
             audience=options.audience,
             patterns=template.patterns if template else None,
+            custom_skills=options.custom_skills,
+            images_available=images_available,
         )
         specs = plan.specs
         await asyncio.to_thread(
@@ -214,6 +219,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
             language=options.language,
             tone=options.tone,
             audience=options.audience,
+            custom_skills=options.custom_skills,
+            patterns=template.patterns if template else None,
         )
         if generation is not None:
             generation.plan = copy.deepcopy(specs)
@@ -235,10 +242,26 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         groups=group_labels(),
         seed=seed,
         patterns=template.patterns if template else None,
+        images_available=images_available,
     )
     if template is not None:
-        # Те же правила визуализации, что и при генерации (стадия «Графики, таблицы, инфографика»).
         names = {layout["key"]: layout["name"] for layout in template.layouts or []}
+        # Как при генерации: текст, не влезший в слоты нового слайда-примера, сокращает модель.
+        await asyncio.to_thread(
+            fit_drafts,
+            [draft],
+            template.patterns,
+            layout_names=names,
+            title=presentation.title,
+            purpose=presentation.purpose,
+            brief=presentation.brief or "",
+            sources=sources,
+            language=options.language,
+            tone=options.tone,
+            audience=options.audience,
+            custom_skills=options.custom_skills,
+        )
+        # Те же правила визуализации, что и при генерации (стадия «Графики, таблицы, инфографика»).
         refine_variant(draft.slides, template.patterns, position=variant.position, layout_names=names)
 
     # Привязка графических ассетов контент-пакета к рерольнутому варианту
@@ -367,6 +390,7 @@ async def regenerate_slide(
             language=ctx.language,
             tone=ctx.tone,
             audience=ctx.audience,
+            # Скиллы презентации (стиль, аудитория) действуют и на правку из чата.
             custom_skills=skills,
             pattern=ctx.patterns.get(slide.pattern_id or ""),
         )

@@ -245,12 +245,17 @@ def _prepared(path: Path, width: int) -> bytes | None:
 
 
 def picture_slides(slides: list[Slide], renders: dict[str, dict[str, Any]]) -> set[str]:
-    """Слайды с фотографиями или иллюстрациями: картинка крупнее иконки (логотипы мастера сюда не входят)."""
+    """Слайды с фото из материалов или загруженными пользователем, крупнее иконки. Иллюстрации самого
+    шаблона (3D-декор слайдов-примеров) — часть его дизайна: судья их не оценивает, заменить их нечем."""
     minimum = float(review_params().get("picture_min_area", 0.04))
     result = set()
     for slide in slides:
         facts = (renders.get(slide.id) or {}).get("facts") or {}
-        if any(p["bbox"][2] * p["bbox"][3] >= minimum for p in facts.get("pictures") or [] if len(p.get("bbox") or []) == 4):
+        if any(
+            p.get("user") and p["bbox"][2] * p["bbox"][3] >= minimum
+            for p in facts.get("pictures") or []
+            if len(p.get("bbox") or []) == 4
+        ):
             result.add(slide.id)
     return result
 

@@ -1,6 +1,6 @@
 name: auditor
 title: Аудит слайдов
-version: 0.2.0
+version: 0.2.1
 kind: agent
 runtime: llm
 stage: audit
@@ -367,7 +367,9 @@ params:
       kind: contextual
       severity: warning
       method: vlm
-      description: Судья смотрит на рендер слайда с фотографиями и иллюстрациями (логотипы и декор не в счёт).
+      description: >
+        Судья смотрит на рендер слайда с фото из материалов или загруженными пользователем.
+        Иллюстрации и декор самого шаблона — часть его дизайна и не оцениваются.
     - id: content.service_text
       title: Служебный мусор — реплики спикера, куски промпта
       category: content

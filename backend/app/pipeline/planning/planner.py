@@ -67,6 +67,8 @@ META_TITLES = re.compile(
     re.IGNORECASE,
 )
 CLOSING_TITLE_WORDS = 8
+# На сколько слайдов план может быть короче запрошенного без повторного запроса.
+PLAN_COUNT_SLACK = 2
 CLOSING_FALLBACK = "Спасибо"
 
 
@@ -85,7 +87,7 @@ class DeckPlan:
         return f"План на {len(self.specs)} слайдов ({kinds}) · {self.usage.detail() if self.usage else ''}"
 
 
-def response_schema(groups: dict[str, str]) -> dict[str, Any]:
+def response_schema(groups: dict[str, str], kinds: list[str] | None = None) -> dict[str, Any]:
     """Строгая схема плана: типы и группы — только из списков, которые понимает композитор."""
     return {
         "name": "deck_outline",
@@ -99,7 +101,7 @@ def response_schema(groups: dict[str, str]) -> dict[str, Any]:
                         "type": "object",
                         "properties": {
                             "ref": {"type": "string"},
-                            "kind": {"type": "string", "enum": list(PLAN_KINDS)},
+                            "kind": {"type": "string", "enum": kinds or list(PLAN_KINDS)},
                             "group": {"type": "string", "enum": [*groups, ""]},
                             "priority": {"type": "integer"},
                             "topic": {"type": "string"},
@@ -212,16 +214,21 @@ def plan_outline(
     audience: str = "",
     patterns: list[dict[str, Any]] | None = None,
     custom_skills: list[dict[str, Any]] | None = None,
+    images_available: bool = True,
 ) -> DeckPlan:
-    """План колоды: LLM, а при её отсутствии или ошибке — колода из тезисов брифа (planning/outline.py)."""
+    """План колоды: LLM, а при её отсутствии или ошибке — колода из тезисов брифа (planning/outline.py).
+    images_available=False — картинок для слайдов нет, тип «тезисы с иллюстрацией» модели не предлагается."""
     fallback = lambda warning=None: DeckPlan(  # noqa: E731 — короткая ветка отката
         specs=build_outline(title=title, purpose=purpose, brief=brief), warning=warning
     )
     if not llm_enabled():
         return fallback()
 
-    groups = dict(get_skill("outline_planner").params.get("groups") or {})
-    prefer = template_kinds(patterns)
+    params = get_skill("outline_planner").params
+    groups = dict(params.get("groups") or {})
+    kinds = {kind: hint for kind, hint in PLAN_KINDS.items() if images_available or kind != "image_text"}
+    storyline = ((params.get("purposes") or {}).get(purpose) or {}).get("storyline") or "проблема → решение → результат → следующий шаг"
+    prefer = [kind for kind in template_kinds(patterns) if kind in kinds]
     system, user = _prompt(
         "outline_planner",
         {
@@ -230,7 +237,8 @@ def plan_outline(
             "audience": audience or "профессиональная аудитория",
             "tone": TONES.get(tone, tone),
             "language": "русский" if language == "ru" else "английский",
-            "kinds": "\n".join(f"- {kind}: {hint}" for kind, hint in PLAN_KINDS.items()),
+            "kinds": "\n".join(f"- {kind}: {hint}" for kind, hint in kinds.items()),
+            "storyline": storyline,
             "groups": ", ".join(f"{key} — {label}" for key, label in groups.items()),
             "prefer": ", ".join(prefer) if prefer else "ограничений нет",
             "title": title,
@@ -247,7 +255,7 @@ def plan_outline(
             http,
             system=system,
             user=user,
-            schema=response_schema(groups),
+            schema=response_schema(groups, list(kinds)),
             usage=usage,
             label="план колоды",
             max_tokens=settings.llm_plan_max_tokens,
@@ -264,11 +272,26 @@ def plan_outline(
                 http,
                 system=system_retry,
                 user=user,
-                schema=response_schema(groups),
+                schema=response_schema(groups, list(kinds)),
                 usage=usage,
                 label="план колоды (повтор)",
                 max_tokens=settings.llm_plan_max_tokens,
             )
+        # Модель изредка сокращает колоду: план заметно короче запрошенного — один повтор с напоминанием.
+        slides = answer.get("slides") if answer else None
+        if isinstance(slides, list) and len(slides) < slides_count - PLAN_COUNT_SLACK:
+            logger.warning("План на %s слайдов вместо %s — повторяю", len(slides), slides_count)
+            again = ask(
+                http,
+                system=system,
+                user=user + f"\n\nВ прошлом ответе было {len(slides)} слайдов — нужно ровно {slides_count}.",
+                schema=response_schema(groups, list(kinds)),
+                usage=usage,
+                label="план колоды (число слайдов)",
+                max_tokens=settings.llm_plan_max_tokens,
+            )
+            if again and isinstance(again.get("slides"), list) and len(again["slides"]) > len(slides):
+                answer = again
     if not answer or not isinstance(answer.get("slides"), list):
         logger.warning("LLM не построила план — колода собирается из тезисов брифа")
         return fallback("модель не ответила")

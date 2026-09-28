@@ -27,10 +27,12 @@ from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
 from app.pipeline.ai.vlm import vlm_enabled
 from app.pipeline.content.image_analyzer import parse_image_meta
-from app.pipeline.content.image_matcher import assign_content_images_to_drafts
+from app.pipeline.content.image_matcher import assign_content_images_to_drafts, has_slide_images
 from app.pipeline.content.ingest import extract_text, sources_digest, split_sentences
 from app.pipeline.layout.composer import axis_config, compose_variants
+from app.pipeline.layout.fitting import fit_drafts
 from app.pipeline.planning.outline import group_labels, purpose_label
+from app.pipeline.planning.deck_editor import edit_deck
 from app.pipeline.planning.planner import plan_outline
 from app.pipeline.planning.writer import write_slides
 from app.pipeline.skills import skills_snapshot
@@ -212,9 +214,12 @@ async def _run_stages(
             per_file=settings.llm_source_chars,
             total=settings.llm_sources_total_chars,
         )
+        # Фото для слайдов есть только в материалах: text-to-image не подключена.
+        images_available = has_slide_images(presentation.files, presentation.id)
         stage.detail = (
             f"Бриф: {len(theses)} тезисов · файлов: {len(presentation.files)} · извлечено {chars} знаков текста"
             + (f" · в запрос к модели уйдёт {len(sources)}" if sources else "")
+            + ("" if images_available else " · фото для слайдов в материалах нет")
         )
 
     purpose = purpose_label(presentation.purpose)
@@ -233,6 +238,7 @@ async def _run_stages(
                 audience=options.audience,
                 patterns=template.patterns,
                 custom_skills=options.custom_skills,
+                images_available=images_available,
             ),
         )
         specs = plan.specs
@@ -251,11 +257,25 @@ async def _run_stages(
                 tone=options.tone,
                 audience=options.audience,
                 custom_skills=options.custom_skills,
+                patterns=template.patterns,
+            ),
+        )
+        # Слайды писались параллельно — выпускающий редактор сводит термины, числа и связки колоды.
+        edited = await _keep_alive(
+            tracker.generation.id,
+            asyncio.to_thread(
+                edit_deck,
+                specs,
+                title=presentation.title,
+                purpose=purpose,
+                language=options.language,
+                tone=options.tone,
+                custom_skills=options.custom_skills,
             ),
         )
         # План с текстами хранится у прогона: по нему рерол пересобирает вариант без новых запросов.
         tracker.generation.plan = copy.deepcopy(specs)
-        stage.detail = written.detail()
+        stage.detail = " · ".join(part for part in (written.detail(), edited.detail()) if part)
 
     async with tracker.stage("layout") as stage:
         drafts = compose_variants(
@@ -267,6 +287,25 @@ async def _run_stages(
             roles=template.layout_roles,
             groups=group_labels(),
             patterns=template.patterns,
+            images_available=images_available,
+        )
+        # Текст, который не влез в слоты выбранного слайда-примера, сокращает модель, а не кегль.
+        fitted = await _keep_alive(
+            tracker.generation.id,
+            asyncio.to_thread(
+                fit_drafts,
+                drafts,
+                template.patterns,
+                layout_names={layout["key"]: layout["name"] for layout in template.layouts or []},
+                title=presentation.title,
+                purpose=purpose,
+                brief=presentation.brief or "",
+                sources=sources,
+                language=options.language,
+                tone=options.tone,
+                audience=options.audience,
+                custom_skills=options.custom_skills,
+            ),
         )
         axis_title = axis_config(options.variant_axis)[1]["title"]
         total = sum(len(d.slides) for d in drafts)
@@ -275,6 +314,7 @@ async def _run_stages(
             f"Ось «{axis_title}»: "
             + ", ".join(f"{d.letter} — {len(d.slides)} сл." for d in drafts)
             + f" · по паттернам шаблона {patterned} из {total}"
+            + (f" · {fitted.detail()}" if fitted.detail() else "")
         )
 
     async with tracker.stage("visuals") as stage:

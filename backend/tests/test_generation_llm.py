@@ -81,7 +81,7 @@ def llm_on(monkeypatch):
 
 
 def test_plan_is_normalized_for_composer(llm_on):
-    plan = planner.plan_outline(title="Цифровой дизайнер", purpose="product", brief=BRIEF, sources="", slides_count=8)
+    plan = planner.plan_outline(title="Цифровой дизайнер", purpose="product", brief=BRIEF, sources="", slides_count=5)
     assert plan.source == "llm" and plan.usage.calls == 1
     kinds = [spec["kind"] for spec in plan.specs]
     assert kinds[0] == "title" and kinds[-1] == "closing"
@@ -148,3 +148,10 @@ def test_answer_without_expected_fields_keeps_plan_facts(llm_on, monkeypatch):
     spec = next(item for item in plan.specs if item["ref"] == "problem")
     assert not writer._apply(spec, {"insight": "Только вывод"}, {"max_bullets": 5, "max_words": 14, "max_cards": 4})
     assert spec["bullets"] == ["8 часов на колоду", "правки идут по кругу"]
+
+
+def test_short_plan_is_requested_again(llm_on):
+    """План заметно короче запрошенного (4 слайда вместо 8) — один повтор с напоминанием о числе слайдов."""
+    plan = planner.plan_outline(title="Цифровой дизайнер", purpose="product", brief=BRIEF, sources="", slides_count=8)
+    assert plan.usage.calls == 2
+    assert "нужно ровно 8" in llm_on[-1]["messages"][1]["content"]
