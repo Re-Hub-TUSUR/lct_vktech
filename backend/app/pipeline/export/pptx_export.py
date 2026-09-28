@@ -30,9 +30,10 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE, MSO_SHAPE_TYPE, PP_PLACEHOLDER
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
+from pptx.shapes.picture import Picture
 from pptx.util import Emu, Pt
 
-from app.core.storage import storage_path
+from app.core.storage import generated_image_path, storage_path
 from app.pipeline.export.chart_style import chart_caption, highlight_points, number_format
 from app.pipeline.export.facts import digest, slide_facts
 from app.pipeline.export.motion import apply_motion
@@ -279,14 +280,21 @@ def _resolve_image_url(url: str | None) -> Path | None:
             if matches:
                 return _ensure_raster(matches[0])
 
-    # 2. Пользовательские изображения: storage_path("user_images", filename)
+    # 2. Иллюстрации модели text-to-image: /presentations/{id}/images/{name}
+    match = re.search(r"/presentations/([0-9a-fA-F-]+)/images/([0-9a-f]{32}\.jpg)", url)
+    if match:
+        generated = generated_image_path(match.group(1), match.group(2))
+        if generated is not None and generated.is_file():
+            return generated
+
+    # 3. Пользовательские изображения: storage_path("user_images", filename)
     filename = Path(url).name
     if filename:
         user_img = storage_path("user_images", filename)
         if user_img.is_file():
             return _ensure_raster(user_img)
 
-    # 3. Прямой путь на файловой системе
+    # 4. Прямой путь на файловой системе
     direct_path = Path(url)
     try:
         if direct_path.is_file():
@@ -359,6 +367,36 @@ def _round_picture(pic, radius: float | None) -> None:
         logger.exception("Не удалось скруглить картинку: %s", radius)
 
 
+def _example_picture(slide, shape_id: int):
+    """Элемент картинки слайда-примера (p:pic) по id фигуры в клоне; None — это не картинка."""
+    for c_nv_pr in slide._element.iter(qn("p:cNvPr")):
+        if c_nv_pr.get("id") == str(shape_id):
+            element = c_nv_pr.getparent().getparent()
+            return element if element.tag == qn("p:pic") else None
+    return None
+
+
+def _swap_picture(slide, shape_id: int, path: Path, crop: list[float] | None) -> bool:
+    """Подменяет изображение в картинке слайда-примера, не трогая её рамку и оформление."""
+    element = _example_picture(slide, shape_id)
+    blip = element.find(f".//{qn('a:blip')}") if element is not None else None
+    if blip is None:
+        return False
+    try:
+        _, rel_id = slide.part.get_or_add_image_part(str(path))
+    except Exception:  # noqa: BLE001 — не вышло подменить: картинка встанет поверх
+        logger.exception("Не удалось подменить картинку %s в слайде-примере", path)
+        return False
+    blip.set(qn("r:embed"), rel_id)
+    if blip.get(qn("r:link")) is not None:
+        del blip.attrib[qn("r:link")]
+    # Векторная копия картинки (asvg:svgBlip в расширениях) показалась бы вместо новой.
+    for ext_list in blip.findall(qn("a:extLst")):
+        blip.remove(ext_list)
+    _apply_crop(Picture(element, slide.shapes), crop, path)
+    return True
+
+
 def _slide_image(spec: Slide) -> Path | None:
     """Унифицированное разрешение пути к картинке слайда (контент-пакет, user_images или прямой путь)."""
     if not spec.image or not spec.image.url:
@@ -369,8 +407,24 @@ def _slide_image(spec: Slide) -> Path | None:
 _user_image = _slide_image
 
 
-def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
-    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
+def _fresh_id(picture, ceiling: int) -> None:
+    """Новой картинке — id больше любого id слайда-примера. Фигуры шаблона, удалённые при заполнении,
+    освобождают свои id, и новая фигура могла бы занять такой id — тогда _shapes принял бы её за фигуру
+    шаблона, которую удалил пользователь, и убрал бы со слайда."""
+    tree = picture._element.getparent()
+    taken = [int(el.get("id")) for el in tree.iter(qn("p:cNvPr")) if (el.get("id") or "").isdigit()]
+    c_nv_pr = picture._element.find(f"{qn('p:nvPicPr')}/{qn('p:cNvPr')}")
+    if c_nv_pr is not None:
+        c_nv_pr.set("id", str(max([ceiling, *taken]) + 1))
+
+
+def _max_shape_id(slide) -> int:
+    return max((int(el.get("id")) for el in slide._element.iter(qn("p:cNvPr")) if (el.get("id") or "").isdigit()), default=0)
+
+
+def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx, ceiling: int = 0) -> None:
+    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера.
+    ceiling — наибольший id фигуры слайда-примера до заполнения (см. _fresh_id)."""
     path = _slide_image(spec) if (spec.kind in {"image_text", "title"} or (spec.image and spec.image.url)) else None
     if path is None:
         return
@@ -381,6 +435,7 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
     if "image" in elem_boxes:
         ix, iy, iw, ih = elem_boxes["image"]
         pic = slide.shapes.add_picture(str(path), int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
+        _fresh_id(pic, ceiling)
         _apply_crop(pic, elem_crops.get("image"), path)
         _round_picture(pic, (spec.element_radii or {}).get("image"))
         placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
@@ -389,6 +444,11 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
             holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
             if holder is not None:
                 remove(holder._element)
+        elif pattern.get("images") and spec.kind != "title":
+            # Картинку передвинули: фото слайда-примера на старом месте не остаётся.
+            example = _example_picture(slide, pattern["images"][0]["id"])
+            if example is not None:
+                remove(example)
         return
 
     placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
@@ -407,16 +467,22 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
         if pattern.get("images"):
             x, y, w, h = pattern["images"][0]["bbox"]
             pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+            _fresh_id(pic, ceiling)
             _apply_crop(pic, elem_crops.get("image"), path)
             _round_picture(pic, (spec.element_radii or {}).get("image"))
         else:
             logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
             pic = slide.shapes.add_picture(str(path), int(ctx.width * 0.06), int(ctx.height * 0.06), logo_w, logo_h)
+            _fresh_id(pic, ceiling)
             _apply_crop(pic, elem_crops.get("image"), path)
             _round_picture(pic, (spec.element_radii or {}).get("image"))
     else:
+        # Картинка встаёт на место фото слайда-примера: рамка, маска, скругление и эффекты шаблона остаются.
+        if pattern.get("images") and _swap_picture(slide, pattern["images"][0]["id"], path, elem_crops.get("image")):
+            return
         x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
         pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+        _fresh_id(pic, ceiling)
         _apply_crop(pic, elem_crops.get("image"), path)
         _round_picture(pic, (spec.element_radii or {}).get("image"))
 
@@ -428,6 +494,7 @@ def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx,
         if layout is None:
             raise ExportError(f"Макет паттерна {pattern['id']} не найден")
         slide = prs.slides.add_slide(layout)
+        ceiling = _max_shape_id(slide)
         slide_targets = fill_pattern(
             slide, pattern, spec, accents=chart_colors, background=ctx.background, steps=ctx.steps
         )
@@ -437,10 +504,11 @@ def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx,
         if not 0 <= index < len(sources):
             raise ExportError(f"Слайд-пример паттерна {pattern['id']} не найден")
         slide = clone_slide(prs, sources[index])
+        ceiling = _max_shape_id(slide)
         slide_targets = fill_pattern(
             slide, pattern, spec, accents=chart_colors, background=ctx.background, steps=ctx.steps
         )
-    _place_image(slide, pattern, spec, ctx)
+    _place_image(slide, pattern, spec, ctx, ceiling)
     _shapes(slide, spec.shapes, ctx, pattern_shapes=pattern.get("shapes"))
     return slide_targets
 

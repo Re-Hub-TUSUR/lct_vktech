@@ -225,7 +225,7 @@ def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool
         elif style == "image":
             slide.kind = "image_text"
             slide.bullets = bullets[: min(max_bullets, 4)]
-            slide.image = ImageSpec(prompt=spec.get("image_prompt") or f"Иллюстрация к слайду «{topic}»")
+            slide.image = _image(spec, topic)
         else:
             slide.bullets = bullets[:max_bullets]
     elif kind == "two_columns":
@@ -238,12 +238,20 @@ def _to_slide(spec: dict[str, Any], profile: dict[str, Any], speaker_notes: bool
         slide.quote = Quote(**spec["quote"])
     elif kind == "image_text":
         slide.bullets = bullets[:max_bullets]
-        slide.image = ImageSpec(prompt=spec.get("image_prompt") or f"Иллюстрация к слайду «{topic}»")
+        slide.image = _image(spec, topic)
 
     if speaker_notes:
         # Заметку мог написать автор текстов (LLM); иначе — дежурная подсказка по типу слайда.
         slide.notes = spec.get("notes") or _notes(kind, topic, insight)
     return slide
+
+
+def _image(spec: dict[str, Any], topic: str) -> ImageSpec:
+    """Картинка слайда: уже нарисованная для этого слайда плана (рерол) или задание на неё."""
+    drawn = spec.get("image") or {}
+    if drawn.get("url"):
+        return ImageSpec(prompt=drawn.get("prompt") or topic, url=drawn["url"], status="generated")
+    return ImageSpec(prompt=spec.get("image_prompt") or f"Иллюстрация к слайду «{topic}»")
 
 
 def _columns(columns: list[dict[str, Any]], max_bullets: int) -> list[Column]:

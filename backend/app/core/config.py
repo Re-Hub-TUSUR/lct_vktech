@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -78,6 +79,22 @@ class Settings(BaseSettings):
     vlm_disable_reasoning: bool = True
     # Доп. поля запроса JSON-строкой, например для vLLM: {"chat_template_kwargs": {"enable_thinking": false}}.
     vlm_extra_body: str | None = None
+
+    # Text-to-image для иллюстраций слайдов (ТЗ, п. 3.1): открытые веса до 20B, по умолчанию
+    # FLUX.2 [klein] 4B (Apache 2.0). Пусто — картинки не генерируются, слайды с иллюстрацией не планируются.
+    # T2I_API: chat — /chat/completions с modalities ["image"] (RouterAI, OpenRouter);
+    # images — OpenAI Images API /images/generations (свой сервер с моделью).
+    t2i_base_url: str | None = None
+    # Пусто — ключ LLM_API_KEY, если модель у того же провайдера (тот же хост), что и LLM.
+    t2i_api_key: str | None = None
+    t2i_model: str | None = None
+    t2i_api: Literal["chat", "images"] = "chat"
+    t2i_timeout_seconds: float = 90
+    t2i_concurrency: int = 4
+    # Не больше стольких картинок на одну генерацию (три варианта вместе; один слайд плана — одна картинка).
+    t2i_max_images: int = 8
+    # Сид первой картинки: те же тексты и шаблон дают те же картинки.
+    t2i_seed: int = 2026
 
 
 settings = Settings()

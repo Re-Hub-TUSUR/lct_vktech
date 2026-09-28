@@ -41,6 +41,15 @@ x-backend-env: &backend-env
   VLM_MAX_TOKENS: ${VLM_MAX_TOKENS:-900}
   VLM_DISABLE_REASONING: ${VLM_DISABLE_REASONING:-true}
   VLM_EXTRA_BODY: ${VLM_EXTRA_BODY:-}
+  # Text-to-image для иллюстраций слайдов (необязательно): FLUX.2 [klein] 4B, Apache 2.0.
+  T2I_BASE_URL: ${T2I_BASE_URL:-}
+  T2I_API_KEY: ${T2I_API_KEY:-}
+  T2I_MODEL: ${T2I_MODEL:-}
+  T2I_API: ${T2I_API:-chat}
+  T2I_TIMEOUT_SECONDS: ${T2I_TIMEOUT_SECONDS:-90}
+  T2I_CONCURRENCY: ${T2I_CONCURRENCY:-4}
+  T2I_MAX_IMAGES: ${T2I_MAX_IMAGES:-8}
+  T2I_SEED: ${T2I_SEED:-2026}
 
 services:
   db:

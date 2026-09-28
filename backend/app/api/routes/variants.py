@@ -19,6 +19,7 @@ from app.core.redis import publish_presentation_update, redis_client
 from app.core.storage import save_upload, storage_path
 from app.models import ContentFile, Generation
 from app.pipeline.ai.llm import llm_enabled
+from app.pipeline.ai.t2i import t2i_enabled
 from app.pipeline.content.image_matcher import assign_content_images_to_drafts, has_slide_images
 from app.pipeline.content.ingest import sources_digest
 from app.pipeline.export.pptx_export import ExportError
@@ -53,6 +54,7 @@ from app.services.audit import (
     review_variant,
 )
 from app.services.export import ExportUnavailable, export_deck
+from app.services.illustrations import illustrate
 from app.services.renders import rendered_images, schedule_render, variant_dir
 from app.services.skills import resolve_skills
 from app.services.templates import template_theme
@@ -187,7 +189,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     # Если план был из fallback (модель не ответила на стадии генерации), рерол привлекает LLM!
     generation = await db.get(Generation, variant.generation_id)
     specs = list(generation.plan if generation and generation.plan else [])
-    images_available = has_slide_images(files, presentation.id)
+    # Слайды с иллюстрацией — если есть фото в материалах или картинки нарисует модель.
+    images_available = has_slide_images(files, presentation.id) or (options.generate_images and t2i_enabled())
     sources = sources_digest(
         [(f.filename, f.extracted_text or "") for f in files],
         per_file=settings.llm_source_chars,
@@ -244,6 +247,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         patterns=template.patterns if template else None,
         images_available=images_available,
     )
+    # Фото из материалов — раньше картинок модели: слайду с подходящим фото рисовать нечего.
+    assign_content_images_to_drafts([draft], files, presentation.id)
     if template is not None:
         names = {layout["key"]: layout["name"] for layout in template.layouts or []}
         # Как при генерации: текст, не влезший в слоты нового слайда-примера, сокращает модель.
@@ -264,8 +269,9 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         # Те же правила визуализации, что и при генерации (стадия «Графики, таблицы, инфографика»).
         refine_variant(draft.slides, template.patterns, position=variant.position, layout_names=names)
 
-    # Привязка графических ассетов контент-пакета к рерольнутому варианту
-    assign_content_images_to_drafts([draft], files, presentation.id)
+    if template is not None:
+        # Картинки слайдов плана уже нарисованы при генерации; модель дорисует только новые.
+        await illustrate([draft], presentation=presentation, template=template, options=options, generation=generation)
 
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)
@@ -477,6 +483,9 @@ async def generate_slide_from_prompt(
         slide.pattern_id = None
         slide.shapes = []
         relayout_edited_slide(slide, template.patterns, template.layout_roles or {}, template.layouts or [], position=variant.position)
+        # Слайд-кейс получает иллюстрацию модели; без неё остаётся рамка под фото пользователя.
+        options = GenerationSettings.model_validate(presentation.settings or {})
+        await illustrate([[slide]], presentation=presentation, template=template, options=options, drop_missing=False)
     if base is not None and base_index is not None:
         slide.animations = _kept_animations(base.animations, slide)
         slides[base_index] = slide

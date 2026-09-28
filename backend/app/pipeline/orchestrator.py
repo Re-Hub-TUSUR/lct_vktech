@@ -25,6 +25,7 @@ from app.core.db import SessionLocal
 from app.core.redis import generation_channel, publish_presentation_update, redis_client, touch_heartbeat
 from app.models import Generation, Presentation, Template, Variant
 from app.models.base import utcnow
+from app.pipeline.ai.t2i import t2i_enabled
 from app.pipeline.ai.vlm import vlm_enabled
 from app.pipeline.content.image_analyzer import parse_image_meta
 from app.pipeline.content.image_matcher import assign_content_images_to_drafts, has_slide_images
@@ -36,10 +37,19 @@ from app.pipeline.planning.deck_editor import edit_deck
 from app.pipeline.planning.planner import plan_outline
 from app.pipeline.planning.writer import write_slides
 from app.pipeline.skills import skills_snapshot
+from app.pipeline.visuals.illustrations import (
+    ImagePlan,
+    apply_images,
+    plan_images,
+    remember_images,
+    run_images,
+    slide_aspect,
+)
 from app.pipeline.visuals.visualizer import VisualsReport, refine_variant
 from app.schemas.presentation import GenerationSettings
 from app.services.audit import build_audit_context, refresh_audit, review_variant
 from app.services.renders import render_variant, renders_supported
+from app.services.illustrations import template_image_style
 from app.services.templates import analyze_template, apply_parsed, needs_analysis
 
 logger = logging.getLogger(__name__)
@@ -56,6 +66,14 @@ async def _publish_generation_update(generation: Generation) -> None:
 
 class PipelineError(RuntimeError):
     pass
+
+
+def _background(work) -> asyncio.Future:
+    """Фоновая работа прогона: если до её результата дело не дошло (генерация упала раньше),
+    исключение не всплывает в лог как «never retrieved»."""
+    task = asyncio.ensure_future(work)
+    task.add_done_callback(lambda done: done.cancelled() or done.exception())
+    return task
 
 
 async def _keep_alive(generation_id: uuid.UUID, work):
@@ -194,6 +212,10 @@ async def _run_stages(
             f"{len(template.tokens.get('palette') or [])} цветов палитры · шрифты: {fonts}"
         )
 
+    # Иллюстрации моделью text-to-image: стиль шаблона считается в фоне, пока пишутся план и тексты.
+    illustrate = options.generate_images and t2i_enabled()
+    style_task = _background(template_image_style(template)) if illustrate else None
+
     async with tracker.stage("content") as stage:
         chars = 0
         for file in presentation.files:
@@ -214,12 +236,13 @@ async def _run_stages(
             per_file=settings.llm_source_chars,
             total=settings.llm_sources_total_chars,
         )
-        # Фото для слайдов есть только в материалах: text-to-image не подключена.
-        images_available = has_slide_images(presentation.files, presentation.id)
+        # Слайды с иллюстрацией планируются, если есть фото в материалах или картинки нарисует модель.
+        photos = has_slide_images(presentation.files, presentation.id)
+        images_available = photos or illustrate
         stage.detail = (
             f"Бриф: {len(theses)} тезисов · файлов: {len(presentation.files)} · извлечено {chars} знаков текста"
             + (f" · в запрос к модели уйдёт {len(sources)}" if sources else "")
-            + ("" if images_available else " · фото для слайдов в материалах нет")
+            + ("" if photos else " · фото для слайдов в материалах нет" + (", иллюстрации нарисует модель" if illustrate else ""))
         )
 
     purpose = purpose_label(presentation.purpose)
@@ -289,6 +312,25 @@ async def _run_stages(
             patterns=template.patterns,
             images_available=images_available,
         )
+        # Фото из материалов — раньше картинок модели: слайду с подходящим фото рисовать нечего.
+        photo_stats = assign_content_images_to_drafts(drafts, presentation.files, presentation.id)
+        aspect = slide_aspect(template.tokens)
+        image_plan: ImagePlan | None = plan_images(drafts, template.patterns, aspect=aspect) if illustrate else None
+        images_task = None
+        if image_plan is not None and image_plan.jobs:
+            style = await style_task
+            # Модель рисует, пока тексты подгоняются под слоты и строятся визуализации.
+            images_task = _background(
+                asyncio.to_thread(
+                    run_images,
+                    image_plan,
+                    presentation_id=presentation.id,
+                    title=presentation.title,
+                    purpose=purpose,
+                    style=style,
+                    custom_skills=options.custom_skills,
+                )
+            )
         # Текст, который не влез в слоты выбранного слайда-примера, сокращает модель, а не кегль.
         fitted = await _keep_alive(
             tracker.generation.id,
@@ -327,24 +369,39 @@ async def _run_stages(
         stage.detail = visuals.detail()
 
     async with tracker.stage("images") as stage:
-        image_stats = assign_content_images_to_drafts(drafts, presentation.files, presentation.id)
-        matched = image_stats.get("matched", 0)
-        with_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and slide.image.url)
-        without_url = sum(1 for draft in drafts for slide in draft.slides if slide.image and not slide.image.url)
-
-        if not options.generate_images and not with_url:
-            stage.skipped = True
-            stage.detail = "Генерация новых изображений отключена в настройках"
+        result = await _keep_alive(tracker.generation.id, images_task) if images_task is not None else None
+        # Слайды «текст и изображение» без картинки верстаются тезисами — пустой рамки на слайде не будет.
+        dropped = apply_images(
+            drafts,
+            image_plan,
+            patterns=template.patterns,
+            roles=template.layout_roles,
+            layouts=template.layouts,
+            aspect=aspect,
+        )
+        if result is not None:
+            # Картинки — часть плана прогона: рерол варианта возьмёт их, а не нарисует заново.
+            plan = copy.deepcopy(tracker.generation.plan or [])
+            remember_images(plan, drafts)
+            tracker.generation.plan = plan
+        photos_used = sum(
+            1
+            for draft in drafts
+            for slide in draft.slides
+            if slide.image and slide.image.url and "/files/" in slide.image.url
+        )
+        photos_note = f" · фото из материалов: {photos_used}" if photos_used else ""
+        if not options.generate_images:
+            stage.detail = "Генерация изображений отключена в настройках" + photos_note
+        elif not illustrate:
+            stage.detail = "Модель text-to-image не настроена (T2I_*)" + photos_note
         else:
-            stage.skipped = False
-            parts = []
-            if with_url:
-                parts.append(f"Подобрано фото из материалов: {with_url} (вставлены вместо генерации)")
-            if without_url and options.generate_images:
-                parts.append(f"подготовлено промптов для генерации: {without_url}")
-            if not parts:
-                parts.append("В вариантах нет слайдов с изображениями")
-            stage.detail = " · ".join(parts)
+            stage.detail = (
+                result.detail() if result is not None else "В вариантах нет слайдов, которым нужна иллюстрация"
+            ) + photos_note
+        if dropped:
+            stage.detail += f" · без картинки свёрстано тезисами: {dropped}"
+        logger.info("Картинки: %s · фото из материалов %s", stage.detail, photo_stats)
 
     variants = [
         Variant(

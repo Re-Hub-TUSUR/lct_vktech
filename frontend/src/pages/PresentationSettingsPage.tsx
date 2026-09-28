@@ -28,6 +28,11 @@ const DEFAULT_SETTINGS: GenerationSettings = {
   custom_skills: [],
 }
 
+/** Название модели для подписи: «black-forest-labs/flux.2-klein-4b» → «flux.2-klein-4b». */
+function modelTitle(model: string | null | undefined): string {
+  return (model ?? '').split('/').pop() || 'text-to-image'
+}
+
 function bumpSkillVersion(version: string): string {
   const [major, minor, patch] = version.split('.').map(Number)
   return `${Number.isFinite(major) ? major : 1}.${Number.isFinite(minor) ? minor : 0}.${(Number.isFinite(patch) ? patch : 0) + 1}`
@@ -132,6 +137,15 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<unknown>(null)
 
+  // Новая презентация: иллюстрации включены, если на сервере подключена модель text-to-image.
+  const imagesDefaultApplied = useRef(Boolean(presentation))
+  useEffect(() => {
+    if (imagesDefaultApplied.current || !options.data) return
+    imagesDefaultApplied.current = true
+    const available = Boolean(options.data.images?.available)
+    setForm((current) => ({ ...current, settings: { ...current.settings, generate_images: available } }))
+  }, [options.data])
+
   // Новая презентация: скиллы, включённые по умолчанию на странице «Скиллы», подключаются сразу.
   const skillPresets = useSkillPresets()
   const defaultsApplied = useRef(Boolean(presentation))
@@ -173,6 +187,8 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   // Участник общей презентации может использовать личный шаблон владельца только внутри неё.
   const selectedTemplate = templates.data?.find((template) => template.id === form.templateId) ?? presentation?.template ?? undefined
   const axis = options.data?.variant_axes.find((item) => item.value === form.settings.variant_axis)
+  const imagesAvailable = Boolean(options.data?.images?.available)
+  const imagesModel = modelTitle(options.data?.images?.model)
   const canEdit = !presentation || presentation.access_role !== 'viewer'
   const isGenerating = presentation?.status === 'generating'
   const isBusy = Boolean(step || isSubmitting || isGenerating)
@@ -495,10 +511,15 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                 hint="Попадут в заметки слайдов .pptx"
               />
               <Toggle
-                checked={form.settings.generate_images}
+                checked={form.settings.generate_images && imagesAvailable}
                 onChange={(value) => setOption('generate_images', value)}
+                disabled={!imagesAvailable}
                 label="Генерировать изображения"
-                hint="Задача со звёздочкой: модель text-to-image до 20B. Пока — заглушка"
+                hint={
+                  imagesAvailable
+                    ? `Иллюстрации в стиле шаблона для слайдов «текст и изображение» · ${imagesModel}`
+                    : 'Модель text-to-image не подключена на сервере (T2I_*)'
+                }
               />
             </div>
           </Card>

@@ -1,20 +1,27 @@
 name: image_generator
 title: Генерация изображений
-version: 0.1.0
+version: 1.0.0
 kind: skill
-runtime: mock
+runtime: t2i
 stage: images
-model: text-to-image ≤ 20B (не подключена)
+model: FLUX.2 [klein] 4B (black-forest-labs/FLUX.2-klein-4B, Apache 2.0)
 description: >
-  Задача со звёздочкой: генерация иллюстраций для слайдов моделью text-to-image
-  с открытыми весами. Сейчас готовятся только промпты, на слайде — заглушка.
+  Иллюстрации для слайдов «текст и изображение» моделью text-to-image с открытыми весами
+  (ТЗ, п. 3.1; pipeline/visuals/illustrations.py). Промпт = сюжет арт-директора (image_director)
+  + стиль иллюстраций шаблона (image_style) + цвета бренда + правила кадра. Один слайд плана —
+  одна картинка на все три варианта; пропорции — по рамке картинки в паттерне шаблона, в рамку
+  картинка вписывается кадрированием по центру, без искажений. Сид фиксирован — при тех же
+  текстах картинки воспроизводятся. Картинка не получилась — слайд верстается тезисами без рамки.
 prompt:
-  system: |
-    Составь промпт для иллюстрации к деловому слайду. Стиль — плоская векторная графика
-    в цветах палитры: {palette}. Без текста на изображении.
-  user: |
-    Заголовок слайда: {title}
-    Смысл слайда: {summary}
+  # {subject} — сюжет от арт-директора; {style}, {background}, {colors} — стиль шаблона.
+  template: |
+    {subject}. {style} Background: {background}. Color accents: {colors}. Clean, uncluttered
+    composition, the main subject centered with generous empty margins around it, nothing cut
+    off at the edges. Absolutely no text, letters, numbers, labels, logos or watermarks.
 params:
-  width: 1024
-  height: 768
+  # Пропорции рамки у слайда на макете (без паттерна): картинка справа от текста — почти квадрат.
+  layout_ratio: "1:1"
+  # Картинка сохраняется JPEG до 1280 px: рамка на слайде редко шире 800 px, а мегабайтные PNG
+  # раздувают .pptx и замедляют рендер в LibreOffice.
+  max_side: 1280
+  jpeg_quality: 88

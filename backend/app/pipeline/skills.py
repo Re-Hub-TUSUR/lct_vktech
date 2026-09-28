@@ -31,7 +31,9 @@ class Skill:
             "version": self.version,
             "runtime": self.runtime,
             # Для стадий с моделью показываем ту, что реально подключена сейчас.
-            "model": {"llm": settings.llm_model, "vlm": settings.vlm_model}.get(self.runtime, self.model)
+            "model": {"llm": settings.llm_model, "vlm": settings.vlm_model, "t2i": settings.t2i_model}.get(
+                self.runtime, self.model
+            )
             or self.model,
         }
 
