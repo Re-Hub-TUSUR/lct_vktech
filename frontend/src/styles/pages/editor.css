@@ -1,0 +1,1014 @@
+/* ==========================================================================
+   Полноэкранный редактор презентаций в стиле Google Презентаций
+   ========================================================================== */
+.gslides-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  position: fixed;
+  inset: 0;
+  background: var(--color-canvas);
+  color: var(--color-text);
+  z-index: 1000;
+  overflow: hidden;
+  user-select: none;
+  font-family: var(--font-sans);
+}
+
+/* Верхняя строка Google Slides */
+.gslides-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.gslides-header__left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gslides-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.gslides-back-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.gslides-title-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gslides-title-input {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: transparent;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.gslides-title-input:hover {
+  border-color: var(--color-border);
+}
+
+.gslides-title-input:focus {
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.15);
+}
+
+.gslides-save-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  padding-left: 6px;
+}
+
+.gslides-save-status.is-dirty {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.gslides-save-status.is-saved {
+  color: #10b981;
+}
+
+.gslides-header__right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.gslides-header-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.gslides-header-btn:hover {
+  background: var(--color-surface-hover);
+}
+
+.gslides-header-btn--icon {
+  padding: 7px;
+  width: 32px;
+  justify-content: center;
+}
+
+.gslides-header-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+}
+
+.gslides-header-btn--primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+.gslides-header-btn--success {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+.gslides-header-btn--success:hover {
+  background: #059669;
+}
+
+/* Меню-бар Google Slides: Файл, Правка, Вид, Вставка, Формат, Слайд */
+.gslides-menubar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 14px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.gslides-menu-item {
+  position: relative;
+}
+
+.gslides-menu-btn {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.gslides-menu-btn:hover,
+.gslides-menu-btn.is-open {
+  background: var(--color-surface-hover);
+}
+
+.gslides-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 6px 0;
+  min-width: 220px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.gslides-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+  transition: background 0.1s;
+}
+
+.gslides-dropdown-item:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+.gslides-dropdown-item-shortcut {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.gslides-dropdown-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+/* Панель инструментов (Google Slides Toolbar) */
+.gslides-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  overflow: visible;
+  position: relative;
+  z-index: 40;
+  flex-shrink: 0;
+}
+
+.gslides-custom-select .select__trigger {
+  height: 28px;
+  padding: 2px 8px 2px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  min-width: 88px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.gslides-custom-select--font .select__trigger {
+  min-width: 140px;
+  max-width: 175px;
+}
+
+.gslides-custom-select .select__menu {
+  z-index: 1000;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+
+.gslides-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gslides-tool-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--color-border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.gslides-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.gslides-tool-btn:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
+}
+
+.gslides-tool-btn.is-active {
+  background: var(--color-primary-soft);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.gslides-tool-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.gslides-tool-select {
+  height: 30px;
+  padding: 0 24px 0 9px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  background-color: var(--color-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color: var(--color-text, #1e293b);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.gslides-tool-select:hover {
+  border-color: var(--color-primary, #0077ff);
+  background-color: var(--color-surface, #f8fafc);
+}
+
+.gslides-tool-select:focus {
+  border-color: var(--color-primary, #0077ff);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.15);
+}
+
+/* Колорпикер плашка */
+.gslides-color-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.gslides-color-swatch-bar {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.gslides-color-popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  z-index: 1000;
+  width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gslides-color-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+
+.gslides-color-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  transition: transform 0.12s;
+  padding: 0;
+}
+
+.gslides-color-circle:hover {
+  transform: scale(1.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.gslides-color-circle.is-active {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.gslides-custom-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gslides-custom-color-input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Рабочее пространство редактора (Three-pane workspace) */
+.gslides-workspace {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-canvas);
+}
+
+/* Левая панель - Filmstrip миниатюр слайдов */
+.gslides-filmstrip {
+  width: 190px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.gslides-filmstrip.is-collapsed {
+  width: 44px;
+}
+
+.gslides-filmstrip.is-collapsed .gslides-filmstrip__header {
+  padding: 8px 4px;
+  justify-content: center;
+}
+
+.gslides-filmstrip__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.gslides-filmstrip__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gslides-thumb-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  cursor: pointer;
+}
+
+.gslides-thumb-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  width: 16px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.gslides-thumb-card {
+  flex: 1;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  /* Как и главный холст — миниатюра слайда всегда светлая, до отрисовки его настоящего фона. */
+  background: #ffffff;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  transition: all 0.15s;
+}
+
+.gslides-thumb-item:hover .gslides-thumb-card {
+  border-color: var(--color-border-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.gslides-thumb-item.is-selected .gslides-thumb-card {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.25);
+}
+
+.gslides-thumb-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.gslides-thumb-item:hover .gslides-thumb-actions,
+.gslides-thumb-item.is-selected .gslides-thumb-actions {
+  opacity: 1;
+}
+
+.gslides-thumb-action-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  padding: 0;
+}
+
+.gslides-thumb-action-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+
+.gslides-thumb-action-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.gslides-thumb-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 4px 8px 12px 26px;
+  padding: 10px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.gslides-thumb-add:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* Подсказка вместо инструментов оформления, которые сборка не переносит в .pptx */
+.gslides-tool-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  cursor: help;
+  white-space: nowrap;
+}
+
+span.gslides-title-input {
+  display: inline-block;
+}
+
+span.gslides-title-input:hover {
+  border-color: transparent;
+}
+
+/* Центральный холст (Canvas Area) */
+.gslides-canvas-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: var(--color-canvas);
+}
+
+.gslides-canvas-viewport {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+  min-height: 0;
+  position: relative;
+}
+
+.gslides-canvas-frame {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: 4px;
+  /* Холст слайда всегда светлый (пока не отрисуется реальный фон слайда/шаблона),
+     как настоящая бумага/экран — не зависит от тёмной темы интерфейса. */
+  background: #ffffff;
+  position: relative;
+  transition: width 0.15s, height 0.15s;
+  overflow: hidden;
+}
+
+/* Нижняя панель заметок докладчика на холсте */
+.gslides-notes-bar {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: max-height 0.2s ease;
+}
+
+.gslides-notes-bar__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border: none;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gslides-notes-bar__toggle:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+.gslides-notes-bar__content {
+  padding: 10px 16px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.gslides-notes-bar-textarea {
+  width: 100%;
+  min-height: 70px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text);
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+}
+
+.gslides-notes-bar-textarea:focus {
+  border-color: var(--color-primary);
+}
+
+/* Правая боковая панель (Sidebar: Свойства / Макеты / AI) */
+.gslides-sidebar {
+  width: 330px;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width 0.2s ease;
+}
+
+.gslides-sidebar.is-collapsed {
+  width: 0;
+  border-left: none;
+}
+
+.gslides-sidebar__tabs {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  flex-shrink: 0;
+}
+
+.gslides-sidebar__tab {
+  flex: 1;
+  padding: 9px 8px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  text-align: center;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+
+.gslides-sidebar__tab:hover {
+  color: var(--color-text);
+}
+
+.gslides-sidebar__tab.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.gslides-sidebar__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Секции в боковой панели */
+.gslides-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.gslides-sidebar-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.gslides-sidebar-section__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gslides-sidebar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gslides-sidebar-label {
+  font-size: 12.5px;
+  color: var(--color-text);
+}
+
+/* Всплывающее модальное окно выбора цвета поверх экрана */
+.gslides-color-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: gslidesFadeIn 0.15s ease-out;
+}
+
+.gslides-color-modal {
+  background: var(--color-surface);
+  border-radius: 14px;
+  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  width: 330px;
+  max-width: 95vw;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: gslidesScaleIn 0.15s ease-out;
+}
+
+@keyframes gslidesFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes gslidesScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.gslides-color-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.gslides-color-modal__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gslides-color-modal__subtitle {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.gslides-color-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.gslides-color-modal__close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
+.gslides-color-modal__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.gslides-color-modal__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gslides-color-modal__section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gslides-color-modal__swatches {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 7px;
+}
+
+.gslides-color-swatch-item {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: transform 0.12s, box-shadow 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gslides-color-swatch-item:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.18);
+  z-index: 2;
+}
+
+.gslides-color-swatch-item.is-selected {
+  outline: 2.5px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.gslides-color-swatch-item--transparent {
+  background: repeating-conic-gradient(#e2e8f0 0% 25%, #ffffff 0% 50%) 50% / 10px 10px;
+}
+
+.gslides-color-modal__custom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gslides-color-modal__picker-input {
+  width: 40px;
+  height: 36px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  background: transparent;
+}
+
+.gslides-color-modal__hex-input {
+  flex: 1;
+  height: 36px;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gslides-color-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  gap: 8px;
+}
+
+/* Адаптивность редактора для 14-дюймовых ноутбуков и компактных экранов (1280px-1440px) */
+@media (max-width: 1440px) {
+  .gslides-toolbar {
+    gap: 4px;
+    padding: 5px 8px;
+  }
+  .gslides-tool-btn {
+    height: 28px;
+    min-width: 28px;
+    padding: 0 5px;
+    font-size: 11.5px;
+    gap: 3px;
+  }
+  .gslides-tool-select {
+    height: 28px;
+    font-size: 11.5px;
+    padding: 0 20px 0 6px;
+  }
+  .gslides-filmstrip {
+    width: 160px;
+  }
+  .gslides-canvas-viewport {
+    padding: 12px 16px;
+  }
+  .gslides-header {
+    padding: 6px 12px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .gslides-toolbar {
+    gap: 3px;
+    padding: 4px 6px;
+  }
+  .gslides-tool-btn {
+    height: 26px;
+    min-width: 26px;
+    padding: 0 4px;
+    font-size: 11px;
+  }
+  .gslides-tool-select {
+    height: 26px;
+    font-size: 11px;
+    max-width: 110px;
+    padding: 0 18px 0 5px;
+  }
+  .gslides-filmstrip {
+    width: 140px;
+  }
+  .gslides-canvas-viewport {
+    padding: 8px 12px;
+  }
+}
+

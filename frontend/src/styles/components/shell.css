@@ -1,0 +1,613 @@
+/* ===== Плотность и адаптив оболочки ===== */
+.dashboard-section--templates .grid-cards {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .topbar {
+    gap: var(--space-4);
+  }
+  .topbar__actions {
+    gap: var(--space-2);
+  }
+  .user-chip {
+    max-width: 170px;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    height: 58px;
+    gap: 10px;
+    padding: 0 12px;
+  }
+  .logo {
+    min-width: 0;
+  }
+  .logo__img {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+  .logo__text {
+    overflow: hidden;
+    font-size: 15px;
+    text-overflow: ellipsis;
+  }
+  .logo__text small {
+    display: none;
+  }
+  .topbar__menu-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+  .topbar__nav {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 12px;
+    right: 12px;
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-lg);
+  }
+  .topbar.is-menu-open .topbar__nav {
+    display: flex;
+  }
+  .topbar__nav a {
+    padding: 11px 12px;
+  }
+  .topbar__actions {
+    gap: 4px;
+  }
+  .topbar__actions > .btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: var(--radius-md);
+  }
+  .topbar__actions > .btn .btn__label {
+    display: none;
+  }
+  .topbar__actions > .btn > svg {
+    width: 18px;
+    height: 18px;
+  }
+  .user-chip {
+    width: 36px;
+    max-width: 36px;
+    padding: 4px;
+  }
+  .user-chip__name {
+    display: none;
+  }
+  .page {
+    padding: var(--space-5) var(--space-4) var(--space-7);
+  }
+  .hero {
+    gap: var(--space-5);
+    padding: var(--space-5);
+    border-radius: var(--radius-lg);
+  }
+  .hero h1 {
+    font-size: 27px;
+  }
+  .hero__pipeline li {
+    align-items: flex-start;
+  }
+  .section__header,
+  .section__header--controls {
+    align-items: flex-start;
+  }
+  .section__header a {
+    margin-top: 2px;
+  }
+  .search-box {
+    width: 100%;
+    min-width: 0;
+  }
+  .library-controls {
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+  }
+  .library-controls .search-box {
+    flex: 1;
+  }
+  .library-controls .select--sm .select__trigger {
+    height: 36px;
+  }
+  .mac-folders-grid,
+  .grid-cards,
+  .grid-templates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+  .mac-folder-card__main {
+    padding: var(--space-3) var(--space-2) var(--space-2);
+  }
+  .mac-folder-card--meta .mac-folder-card__name {
+    font-size: 14px;
+  }
+  .presentation-card__body,
+  .template-card__body {
+    padding: var(--space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .topbar__theme-toggle {
+    display: none;
+  }
+  .mac-folders-grid,
+  .grid-cards,
+  .grid-templates {
+    grid-template-columns: 1fr;
+  }
+  .hero__pipeline-icon {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Модальное окно настройки папки (цвета macOS и иконки) */
+.folder-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.folder-picker__preview-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.folder-picker__preview-mac {
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
+}
+
+.folder-picker__preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.folder-picker__preview-hint {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-subtle);
+  font-weight: 600;
+}
+
+.folder-picker__preview-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.folder-picker__preview-desc {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.folder-picker__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.folder-picker__group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.folder-picker__swatches {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.folder-picker__swatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative;
+}
+
+.folder-picker__swatch:hover {
+  transform: scale(1.15);
+}
+
+.folder-picker__swatch.is-selected {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--color-primary), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.folder-picker__icons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 8px;
+}
+
+.folder-picker__icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.folder-picker__icon-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.folder-picker__icon-btn.is-selected {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 119, 255, 0.35);
+}
+
+/* Диалог подтверждения */
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* Общий доступ к папке и презентациям */
+.modal--share {
+  width: min(520px, 100%);
+}
+
+.share-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.share-dialog__create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.share-dialog__create .field {
+  width: 100%;
+}
+
+.share-dialog__create-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.share-list__role-select {
+  width: auto;
+  min-width: 125px;
+}
+
+.share-dialog__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.share-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 12px;
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.share-list li.is-inactive {
+  opacity: 0.5;
+}
+
+.share-list__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.share-list__person {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.share-list__person strong {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.share-list__person small {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.share-list__role {
+  width: auto;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* Чипсы проектов на Главной */
+.dashboard-project-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: var(--space-3);
+}
+
+.dashboard-project-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.dashboard-project-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-project-chip__count {
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-muted);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.presentation-card__project-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.presentation-card__project-tag span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn--sm {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.icon-btn--danger:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-weight: 500;
+  padding: 0;
+}
+
+.text-btn:hover {
+  text-decoration: underline;
+}
+
+/* Полноэкранный показ всей презентации (кнопка «на весь экран» в аудите) */
+.slideshow {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  color: #fff;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.slideshow.is-idle {
+  cursor: none;
+}
+.slideshow__stage {
+  /* Слайд вписывается в экран целиком: ширина — меньшая из ширины окна и высоты, умноженной на пропорции. */
+  width: min(100vw, calc(100vh * var(--slideshow-aspect, 1.7778)));
+  cursor: pointer;
+}
+.slideshow.is-idle .slideshow__stage {
+  cursor: none;
+}
+.slideshow__slide {
+  width: 100%;
+}
+.slideshow__btn {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.25s ease, background 0.15s ease;
+}
+.slideshow__btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.8);
+}
+.slideshow__btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.slideshow__close {
+  top: 16px;
+  right: 16px;
+}
+.slideshow__nav {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 52px;
+  height: 52px;
+}
+.slideshow__nav--prev {
+  left: 16px;
+}
+.slideshow__nav--next {
+  right: 16px;
+}
+.slideshow__counter {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.25s ease;
+}
+.slideshow__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+}
+.slideshow__progress span {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+/* Пока мышь неподвижна, интерфейс скрыт, чтобы не мешать слайду (кроме кнопок, если это сенсорный экран — они появятся по касанию). */
+.slideshow.is-idle .slideshow__btn,
+.slideshow.is-idle .slideshow__counter {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Диалог доступа: блок «Ваша роль» для редактора и наблюдателя и подсказка про ссылки */
+.share-dialog__me {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.share-dialog__me-label {
+  font-weight: 600;
+}
+.share-dialog__me .muted {
+  flex-basis: 100%;
+  margin: 0;
+}
+.share-dialog__hint {
+  margin: 0;
+  font-size: 12px;
+}
+

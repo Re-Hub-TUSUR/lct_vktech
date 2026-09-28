@@ -1,0 +1,431 @@
+/* ===== Экспорт ===== */
+.export-formats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+.export-format {
+  align-items: flex-start;
+}
+.export-format p {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  flex: 1;
+}
+.export-format__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+/* Паттерны слайдов на странице шаблона */
+.pattern-gallery__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
+}
+.pattern-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+.pattern-card.is-disabled .pattern-card__image {
+  opacity: 0.55;
+}
+.pattern-card__image {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pattern-card__image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pattern-card__number {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.pattern-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.pattern-card__roles,
+.pattern-card__purpose {
+  font-size: 12px;
+  line-height: 1.35;
+}
+.pattern-box {
+  position: absolute;
+  border: 1.5px solid;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.pattern-box--title,
+.pattern-legend__title {
+  border-color: #3d8bff;
+  background: rgba(61, 139, 255, 0.14);
+}
+.pattern-box--item,
+.pattern-legend__item {
+  border-color: #1a9d5a;
+  background: rgba(26, 157, 90, 0.12);
+}
+.pattern-box--slot,
+.pattern-legend__slot {
+  border-color: #f0a000;
+  border-style: dashed;
+  background: rgba(240, 160, 0, 0.12);
+}
+.pattern-box--frame,
+.pattern-legend__frame {
+  border-color: #7a4de8;
+  background: rgba(122, 77, 232, 0.12);
+}
+.pattern-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.pattern-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border: 1.5px solid;
+  border-radius: 2px;
+  margin-left: 8px;
+}
+
+/* Статус сборки превью варианта */
+.variant-card__render-status {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 2px 8px;
+  pointer-events: none;
+}
+
+/* Модальное окно редактирования данных диаграммы */
+.chart-editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.chart-editor-modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.22);
+  width: 100%;
+  max-width: 760px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modal-pop 0.18s ease-out;
+}
+@keyframes modal-pop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.chart-editor-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chart-editor-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.chart-editor-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+.chart-editor-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--color-surface-muted);
+}
+.chart-data-table-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+}
+.chart-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.chart-data-table th,
+.chart-data-table td {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+}
+.chart-data-table th {
+  background: var(--color-surface-muted, #f1f3f5);
+  font-weight: 600;
+  text-align: left;
+}
+.chart-table-input {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 13px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text);
+  outline: none;
+}
+.chart-table-input:hover {
+  border-color: var(--color-border);
+}
+.chart-table-input:focus {
+  border-color: var(--color-primary);
+  background: var(--color-surface);
+}
+.chart-table-input--num {
+  text-align: right;
+}
+.icon-btn-tiny {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.icon-btn-tiny:hover {
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+
+/* Ховер на блоке диаграммы на слайде в режиме редактирования */
+.slide__chart-box {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.slide__chart-box.is-editable-chart {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: outline 0.15s;
+}
+.slide__chart-box.is-editable-chart:hover {
+  outline: 2px dashed var(--color-primary, #0077ff);
+}
+.slide__chart-hint {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  background: transparent;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.slide__chart-box.is-editable-chart:hover .slide__chart-hint {
+  opacity: 1;
+}
+.slide__chart-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.slide__chart-delete-btn:hover {
+  background: rgb(220, 38, 38);
+}
+
+/* Широкий экран. Слайд ВСЕГДА показывается целиком и в полную ширину колонки, в своих пропорциях
+   (--slide-aspect у шаблона): он не обрезается и не сжимается, чтобы «влезть» в высоту окна.
+   Высота рабочей области — не жёсткая, а «минимум до низа экрана» (--audit-h считает AuditPage): на большом мониторе
+   область заполняет экран, на низком растёт вместе со слайдом и страница просто прокручивается.
+   Миниатюры и панель замечаний имеют contain: size — их собственное содержимое не влияет на высоту строки сетки
+   (её задаёт слайд), они растягиваются на неё и прокручиваются внутри себя. */
+@media (min-width: 1201px) {
+  .audit-layout {
+    height: auto;
+    min-height: var(--audit-h, 0px);
+    grid-template-columns: 125px minmax(0, 1fr) 420px;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .audit-summary-bar,
+  .slide-edit-topbar {
+    grid-column: 1 / 3;
+    grid-row: 1;
+  }
+  /* Миниатюры и панель замечаний «прилипают» под верхней панелью и не выше окна: при прокрутке низкой страницы
+     они остаются на виду, и кнопки «Скрыть / Исправить» не уезжают за край экрана. */
+  .audit-slides {
+    grid-column: 1;
+    grid-row: 2;
+    position: sticky;
+    top: calc(var(--topbar-height) + var(--space-4));
+    align-self: start;
+    contain: size;
+    min-height: 0;
+    height: min(100%, calc(100vh - var(--topbar-height) - var(--space-4) * 2));
+    max-height: none;
+    overflow-y: auto;
+  }
+  .audit-stage {
+    grid-column: 2;
+    grid-row: 2;
+    position: static;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+  .audit-stage-card {
+    flex: none;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+  .audit-stage-canvas {
+    width: 100%;
+    max-height: calc(100vh - var(--topbar-height, 60px) - 210px);
+    max-width: calc((100vh - var(--topbar-height, 60px) - 210px) * var(--slide-aspect, 1.77778));
+    aspect-ratio: var(--slide-aspect, 1.77778);
+    background: var(--color-surface);
+    border-radius: 8px;
+    box-shadow: 0 0 0 1px var(--color-border), 0 4px 20px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: max-width 0.2s ease, max-height 0.2s ease;
+  }
+  .audit-panel {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    position: sticky;
+    top: calc(var(--topbar-height) + var(--space-4));
+    align-self: start;
+    contain: size;
+    min-height: 0;
+    height: min(100%, calc(100vh - var(--topbar-height) - var(--space-4) * 2));
+    max-height: none;
+    overflow: hidden;
+  }
+  .audit-panel .audit-issues-scroll,
+  .audit-panel .issues,
+  .audit-panel .checks,
+  .audit-panel .audit-empty {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+/* Дизайн-система шаблона */
+.design-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+}
+.design-grid h3 {
+  margin-bottom: var(--space-2);
+}
+.design-warning {
+  margin-top: var(--space-3);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-size: 13px;
+}
+.icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  gap: 8px;
+}
+.icon-grid img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  padding: 4px;
+  border-radius: 6px;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+}
+

@@ -1,0 +1,85 @@
+/* ===== Тосты и модальные окна ===== */
+.toasts {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 280px;
+  max-width: 420px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 12px 32px rgba(16, 24, 40, 0.16);
+  font-size: 14px;
+  font-weight: 500;
+  animation: toast-in 0.2s ease;
+}
+.toast span {
+  flex: 1;
+}
+.toast .icon-btn {
+  color: var(--color-primary);
+}
+.toast .icon-btn:hover:not(:disabled) {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+.toast > svg:first-child {
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+.toast-error > svg:first-child {
+  color: var(--color-danger);
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: rgba(15, 18, 24, 0.6);
+}
+.modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.modal-wide {
+  width: min(1180px, 100%);
+}
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+.modal__body {
+  padding: var(--space-5);
+  overflow: auto;
+}
+

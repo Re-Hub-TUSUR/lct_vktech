@@ -1,0 +1,101 @@
+/* ==========================================================================
+   Всплывающие заметки докладчика поверх слайда (Audit Slide Notes Overlay)
+   ========================================================================== */
+.audit-slide-notes-overlay {
+  position: absolute;
+  bottom: 14px;
+  left: 16px;
+  right: 16px;
+  z-index: 50;
+  pointer-events: auto;
+  animation: slideNotesFadeUp 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.audit-slide-notes-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.audit-slide-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.audit-slide-notes-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.audit-slide-notes-body {
+  padding: 10px 14px;
+}
+
+.audit-slide-notes-textarea {
+  width: 100%;
+  height: 80px;
+  min-height: 55px;
+  max-height: 160px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text);
+  line-height: 1.45;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.audit-slide-notes-textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(0, 119, 255, 0.15);
+}
+
+.audit-slide-notes-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+@keyframes slideNotesFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.audit-editor-toggle-btn--primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.audit-editor-toggle-btn--primary:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+  color: #ffffff;
+}
+

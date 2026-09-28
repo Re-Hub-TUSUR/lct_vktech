@@ -1,0 +1,107 @@
+/* ===== Страница шаблона ===== */
+.template-hero {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 1.2fr;
+  gap: var(--space-6);
+  align-items: start;
+}
+.template-hero__preview {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+}
+.template-hero__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+@media (max-width: 900px) {
+  .template-hero {
+    grid-template-columns: 1fr;
+  }
+}
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-3);
+}
+.swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.swatch__color {
+  height: 48px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+.swatch code {
+  width: fit-content;
+}
+.swatch small {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.fonts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.font-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.font-row span {
+  font-size: 20px;
+}
+.font-row small {
+  color: var(--color-text-muted);
+}
+.type-scale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.type-scale span {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+}
+.roles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+.roles div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--space-3);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.roles dt {
+  color: var(--color-text-muted);
+}
+.roles dd {
+  margin: 0;
+  font-weight: 600;
+}
+@media (max-width: 560px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .template-hero__info .row .btn {
+    flex: 1 1 100%;
+  }
+  .roles div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+

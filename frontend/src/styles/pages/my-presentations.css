@@ -1,0 +1,427 @@
+/* ===== Раздел «Мои презентации» и папки проектов macOS ===== */
+.my-presentations-page {
+  padding-bottom: var(--space-6);
+}
+
+.my-presentations-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+.my-presentations-page > .section:first-of-type {
+  margin-top: 0;
+}
+
+.my-presentations-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.my-presentations-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.breadcrumb-link {
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.breadcrumb-link:hover {
+  color: var(--color-primary);
+}
+
+.breadcrumb-link.is-clickable {
+  color: var(--color-primary);
+}
+
+.breadcrumb-separator {
+  color: var(--color-text-subtle);
+}
+
+.breadcrumb-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.my-presentations-subtitle {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  margin-top: 4px;
+  max-width: 680px;
+}
+
+/* Баннер выбранного проекта / папки */
+.mac-folder-hero-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.mac-folder-hero-banner__left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.mac-folder-hero-banner__details h2 {
+  font-size: 20px;
+  margin-bottom: 2px;
+}
+
+.mac-folder-hero-banner__details p {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.mac-folder-hero-banner__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Сетка macOS папок */
+.mac-folders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--space-3);
+}
+
+.mac-folder-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.mac-folder-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.mac-folder-card.is-active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary), var(--shadow-md);
+  background: linear-gradient(180deg, var(--color-surface-muted) 0%, var(--color-surface) 100%);
+}
+
+.mac-folder-card__main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-4) var(--space-3) var(--space-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+}
+
+.mac-folder-card__info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: var(--space-3);
+  width: 100%;
+}
+
+.mac-folder-card__name {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.mac-folder-card__count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.mac-folder-card__role {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.mac-folder-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px var(--space-2) var(--space-2);
+  border-top: 1px solid var(--color-surface-muted);
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.mac-folder-card:hover .mac-folder-card__actions {
+  opacity: 1;
+}
+
+.mac-folder-card--meta {
+  cursor: pointer;
+  justify-content: center;
+}
+.mac-folder-card:focus-within,
+.mac-folder-card:focus-visible {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft), var(--shadow-md);
+}
+
+.mac-folder-card--meta .mac-folder-card__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-3);
+  height: 100%;
+}
+
+.mac-folder-card--meta .mac-folder-card__info {
+  margin-top: 10px;
+  gap: 4px;
+}
+
+.mac-folder-card--meta .mac-folder-card__name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mac-folder-card--meta .mac-folder-card__count {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* Кнопка создания папки */
+.mac-folder-add-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: transparent;
+  border: 2px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 140px;
+}
+
+.mac-folder-add-card:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+  transform: translateY(-2px);
+}
+
+.mac-folder-add-card__icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-surface-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-2);
+  transition: background 0.15s;
+}
+
+.mac-folder-add-card:hover .mac-folder-add-card__icon {
+  background: var(--color-surface);
+}
+
+.mac-folder-add-card strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mac-folder-add-card small {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 2px;
+}
+
+/* Контролы и поиск */
+.section__header--controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.section__count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+}
+
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 260px;
+}
+.library-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: min(100%, 430px);
+}
+.library-controls .select {
+  flex: 0 0 auto;
+}
+/* Сортировка слева от строки поиска — той же высоты, что и строка поиска рядом (36px) */
+.status-filter-select .select__trigger {
+  height: 36px;
+}
+.search-box:focus-within {
+  border-radius: var(--radius-md);
+}
+.search-box:focus-within .search-box__input {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.search-box__icon {
+  position: absolute;
+  left: 10px;
+  color: var(--color-text-subtle);
+  pointer-events: none;
+}
+
+.search-box__input {
+  padding-left: 32px;
+  padding-right: 30px;
+  height: 36px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+}
+
+.search-box__clear {
+  position: absolute;
+  right: 6px;
+}
+
+/* Карточка презентации в библиотеке с подвалом для быстрой смены папки */
+.presentation-card--library {
+  display: flex;
+  flex-direction: column;
+  overflow: visible !important;
+  position: relative;
+}
+
+.presentation-card--library:has(.select.is-open),
+.presentation-card--library.has-open-select {
+  z-index: 50;
+}
+
+.presentation-card--library .presentation-card__link {
+  flex: 1 1 auto;
+  color: inherit;
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.presentation-card--library .presentation-card__cover {
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.presentation-card__link:hover {
+  text-decoration: none;
+}
+
+.presentation-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--color-surface-muted);
+  border-top: 1px solid var(--color-border);
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+  overflow: visible;
+}
+
+.presentation-card__folder-assign {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.presentation-card__folder-readonly {
+  flex: 1;
+  min-width: 0;
+}
+
+.presentation-card__folder-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.presentation-card__folder-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
