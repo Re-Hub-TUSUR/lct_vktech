@@ -17,7 +17,7 @@ docker compose up --build
 Первая сборка занимает несколько минут. После запуска:
 
 - приложение — http://localhost:8080 (порт меняется переменной `APP_PORT`);
-- документация API (Swagger) — http://localhost:8080/api/docs, ReDoc — http://localhost:8080/api/redoc; без запуска сервиса — [Swagger UI онлайн](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/maratsaratov/lct_vktech/main/docs/openapi.json), [docs/swagger.html](docs/swagger.html) и спецификация [docs/openapi.json](docs/openapi.json).
+- документация API (Swagger) — http://localhost:8080/api/docs, ReDoc — http://localhost:8080/api/redoc; без запуска сервиса — [docs/swagger.html](docs/swagger.html) и спецификация [docs/openapi.json](docs/openapi.json).
 
 Готовых аккаунтов нет — зарегистрируйтесь. Шаблоны из папки `shablon/` готовы сразу: их разбор (паттерны и рендеры) лежит в `cache/` и раскладывается при старте за секунды. Свой шаблон разбирается при загрузке — минута-две на рендер.
 
