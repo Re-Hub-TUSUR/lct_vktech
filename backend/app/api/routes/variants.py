@@ -31,11 +31,14 @@ from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.planning.planner import plan_outline
 from app.pipeline.planning.single import generate_slide
 from app.pipeline.planning.writer import write_slides
+from app.pipeline.visuals.motion_rules import animate_deck, animate_slide
 from app.pipeline.visuals.visualizer import refine_variant
 from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
 from app.schemas.presentation import GenerationSettings
 from app.schemas.slide import (
+    AnimateRequest,
+    AnimateResponse,
     BatchSlidesUpdate,
     GenerateSlideRequest,
     RegenerateSlideRequest,
@@ -266,6 +269,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
 
     # Привязка графических ассетов контент-пакета к рерольнутому варианту
     assign_content_images_to_drafts([draft], files, presentation.id)
+    # Как стадия «Анимации и переходы» генерации: рерол собирает слайды заново, без неё анимации пропадали.
+    draft.slides = animate_deck(draft.slides, options.animations)
 
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)
@@ -303,6 +308,19 @@ async def upload_variant_image(
 
     image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
     return {"url": image_url, "filename": filename}
+
+
+@router.post("/{variant_id}/animate", response_model=AnimateResponse)
+async def animate_slides(variant_id: uuid.UUID, payload: AnimateRequest, user: CurrentUser, db: DbSession) -> AnimateResponse:
+    """Анимации и переходы по правилам генерации. Ничего не сохраняет: редактор кладёт ответ в историю
+    правок (Ctrl+Z) и сохраняет обычным путём."""
+    await get_variant_for_user(db, variant_id, user, editable=True)
+    chosen = set(payload.slide_ids) if payload.slide_ids is not None else None
+    slides = [
+        animate_slide(slide, payload.mode, overwrite=payload.overwrite) if chosen is None or slide.id in chosen else slide
+        for slide in payload.slides
+    ]
+    return AnimateResponse(slides=slides, animated=sum(1 for slide in slides if slide.animations))
 
 
 @router.put("/{variant_id}/slides", response_model=ResolveResponse)
@@ -477,10 +495,14 @@ async def generate_slide_from_prompt(
         slide.pattern_id = None
         slide.shapes = []
         relayout_edited_slide(slide, template.patterns, template.layout_roles or {}, template.layouts or [], position=variant.position)
+    # Анимации — как у сгенерированной колоды: пустые (новый слайд или прежние не подошли) — по правилам.
+    mode = GenerationSettings.model_validate(presentation.settings or {}).animations
     if base is not None and base_index is not None:
         slide.animations = _kept_animations(base.animations, slide)
+        slide = animate_slide(slide, mode)
         slides[base_index] = slide
     else:
+        slide = animate_slide(slide, mode)
         after = next((i for i, s in enumerate(slides) if s.id == payload.after_slide_id), len(slides) - 1)
         slides.insert(after + 1, slide)
     variant.slides = [s.model_dump(mode="json") for s in slides]

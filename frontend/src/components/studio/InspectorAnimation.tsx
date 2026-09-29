@@ -1,9 +1,17 @@
 import clsx from 'clsx'
 import { ArrowRight, ArrowUp, ChevronDown, ChevronUp, CircleOff, PanelLeftOpen, Play, Scaling, SunDim, X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
-import type { AnimationTrigger, AnimationType, Slide, SlideAnimation, TransitionType } from '../../api/types'
-import { ANIMATION_LABELS, DEFAULT_DURATION, TRANSITION_LABELS, TRANSITION_TYPES, TRIGGER_LABELS } from '../../lib/motion'
+import type { AnimationTrigger, AnimationType, MotionMode, Slide, SlideAnimation, TransitionType } from '../../api/types'
+import {
+  ANIMATION_LABELS,
+  DEFAULT_DURATION,
+  MOTION_MODE_LABELS,
+  MOTION_MODES,
+  TRANSITION_LABELS,
+  TRANSITION_TYPES,
+  TRIGGER_LABELS,
+} from '../../lib/motion'
 import { TRANSITION_ICONS } from './Filmstrip'
 
 const EFFECTS: { type: AnimationType | 'none'; label: string; icon: ReactNode }[] = [
@@ -33,6 +41,9 @@ export function InspectorAnimation({
   onSelectTarget,
   onTransition,
   onTransitionAll,
+  defaultMode,
+  autoBusy,
+  onAutoAnimate,
 }: {
   slide: Slide
   slideNumber: number
@@ -50,7 +61,13 @@ export function InspectorAnimation({
   onSelectTarget: (target: string) => void
   onTransition: (type: TransitionType) => void
   onTransitionAll: () => void
+  /** Режим автоанимаций из настроек генерации. */
+  defaultMode: MotionMode
+  autoBusy: boolean
+  /** Анимации и переходы по правилам генерации: текущему слайду или всей презентации. */
+  onAutoAnimate: (mode: MotionMode, scope: 'slide' | 'deck') => void
 }) {
+  const [mode, setMode] = useState<MotionMode>(defaultMode)
   const animations = slide.animations ?? []
   const current = target ? animations.find((item) => item.target === target) : undefined
   const transition = slide.transition?.type ?? 'none'
@@ -203,6 +220,36 @@ export function InspectorAnimation({
         </button>
         <small className="studio-hint">
           Анимации и переходы попадают в .pptx как эффекты PowerPoint. Длительность перехода — {slide.transition?.duration_ms ?? DEFAULT_DURATION} мс.
+        </small>
+      </section>
+
+      <section className="studio-section">
+        <div className="studio-section__title">
+          <span>Автоанимации</span>
+        </div>
+        <div className="studio-transitions">
+          {MOTION_MODES.map((item) => (
+            <button
+              key={item}
+              type="button"
+              disabled={!canEdit}
+              className={clsx('studio-effect studio-effect--small', mode === item && 'is-active')}
+              onClick={() => setMode(item)}
+            >
+              {MOTION_MODE_LABELS[item]}
+            </button>
+          ))}
+        </div>
+        <div className="studio-auto-anim">
+          <button type="button" className="studio-btn-ghost" disabled={!canEdit || autoBusy} onClick={() => onAutoAnimate(mode, 'slide')}>
+            Этот слайд
+          </button>
+          <button type="button" className="studio-btn-ghost" disabled={!canEdit || autoBusy} onClick={() => onAutoAnimate(mode, 'deck')}>
+            Вся презентация
+          </button>
+        </div>
+        <small className="studio-hint">
+          По тем же правилам, что и при генерации: элементы появляются сами по очереди. Заменяет анимации и переходы — Ctrl+Z вернёт прежние.
         </small>
       </section>
     </div>

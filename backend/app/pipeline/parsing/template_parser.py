@@ -24,7 +24,7 @@ from app.pipeline.parsing.layout_patterns import extract_layout_patterns
 from app.pipeline.parsing.patterns import extract_patterns, pattern_summary
 from app.pipeline.skills import get_skill
 
-PARSER_VERSION = "0.5.2"
+PARSER_VERSION = "0.5.3"
 
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"

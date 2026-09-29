@@ -15,6 +15,7 @@ p:timing нативными эффектами PowerPoint, переход — в
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from lxml import etree
 from pptx.oxml.ns import qn
@@ -24,6 +25,8 @@ from app.schemas.slide import Slide, SlideAnimation, SlideShape
 logger = logging.getLogger(__name__)
 
 Rect = tuple[float, float, float, float]
+# Цель эффекта: фигура целиком (spid) или абзац текстовой фигуры (spid, номер абзаца).
+Target = int | tuple[int, int]
 
 # Фигура, занимающая больше этой доли слайда, — фон или подложка макета, а не элемент.
 BACKGROUND_SHARE = 0.55
@@ -46,6 +49,8 @@ PRESETS = {
 RISE_Y = 40 / 540
 SLIDE_X = 120 / 960
 TRANSITIONS = {"fade": "fade", "push": "push", "zoom": "zoom", "wipe": "wipe"}
+# Пункт списка без своей фигуры: на макете все тезисы — абзацы одного плейсхолдера.
+LIST_ITEM = re.compile(r"^(bullets)\.(\d+)$")
 
 
 @dataclass
@@ -53,6 +58,15 @@ class _Shape:
     element: etree._Element
     spid: int
     rect: Rect
+
+
+def _has_text(shape: _Shape) -> bool:
+    return shape.element is not None and any((node.text or "").strip() for node in shape.element.iter(qn("a:t")))
+
+
+def _paragraph_count(shape: _Shape) -> int:
+    body = shape.element.find(qn("p:txBody")) if shape.element is not None else None
+    return len(body.findall(qn("a:p"))) if body is not None else 0
 
 
 def _area(rect: Rect) -> float:
@@ -127,11 +141,31 @@ def resolve(address: str, rects: dict[str, Rect], shapes: list[_Shape], taken: s
     found = []
     for shape in free:
         size = _area(shape.rect)
-        if size <= 0 or size > BACKGROUND_SHARE:
+        # Крупная фигура — фон или подложка, но не текстовый блок: плейсхолдер тезисов бывает больше полслайда.
+        if size <= 0 or (size > BACKGROUND_SHARE and not _has_text(shape)):
             continue
         if _intersection(shape.rect, area) / size >= INSIDE_SHARE:
             found.append(shape)
     return found
+
+
+def resolve_paragraph(address: str, rects: dict[str, Rect], shapes: list[_Shape]) -> tuple[int, int] | None:
+    """Абзац текстовой фигуры для пункта списка, у которого нет своей рамки (bullets.2 → 3-й абзац блока
+    тезисов). Так PowerPoint анимирует список «по абзацам»."""
+    match = LIST_ITEM.match(address)
+    if match is None or address in rects:
+        return None
+    rect = rects.get(match.group(1))
+    if rect is None:
+        return None
+    area, index = _grow(rect), int(match.group(2))
+    for shape in shapes:
+        size = _area(shape.rect)
+        if size <= 0 or not _has_text(shape) or index >= _paragraph_count(shape):
+            continue
+        if _intersection(shape.rect, area) / size >= INSIDE_SHARE:
+            return shape.spid, index
+    return None
 
 
 # --- p:timing ------------------------------------------------------------------------------------
@@ -158,11 +192,15 @@ def _cond(delay: str = "0", **attrib: str) -> etree._Element:
     return _el("p:cond", {"delay": delay, **attrib})
 
 
-def _target(spid: int) -> etree._Element:
-    return _el("p:tgtEl", None, _el("p:spTgt", {"spid": str(spid)}))
+def _target(target: Target) -> etree._Element:
+    spid, paragraph = (target, None) if isinstance(target, int) else target
+    shape = _el("p:spTgt", {"spid": str(spid)})
+    if paragraph is not None:
+        shape.append(_el("p:txEl", None, _el("p:pRg", {"st": str(paragraph), "end": str(paragraph)})))
+    return _el("p:tgtEl", None, shape)
 
 
-def _behavior(ids: _Ids, spid: int, duration: int, attr: str | None = None, **extra: str) -> etree._Element:
+def _behavior(ids: _Ids, spid: Target, duration: int, attr: str | None = None, **extra: str) -> etree._Element:
     ctn = _el("p:cTn", {"id": ids(), "dur": str(duration), "fill": "hold"})
     children = [ctn, _target(spid)]
     if attr:
@@ -176,7 +214,7 @@ def _text_el(tag: str, text: str) -> etree._Element:
     return element
 
 
-def _set_visible(ids: _Ids, spid: int) -> etree._Element:
+def _set_visible(ids: _Ids, spid: Target) -> etree._Element:
     ctn = _el("p:cTn", {"id": ids(), "dur": "1", "fill": "hold"}, _el("p:stCondLst", None, _cond("0")))
     behavior = _el(
         "p:cBhvr",
@@ -188,11 +226,11 @@ def _set_visible(ids: _Ids, spid: int) -> etree._Element:
     return _el("p:set", None, behavior, _el("p:to", None, _el("p:strVal", {"val": "visible"})))
 
 
-def _fade(ids: _Ids, spid: int, duration: int) -> etree._Element:
+def _fade(ids: _Ids, spid: Target, duration: int) -> etree._Element:
     return _el("p:animEffect", {"transition": "in", "filter": "fade"}, _behavior(ids, spid, duration))
 
 
-def _move(ids: _Ids, spid: int, duration: int, attr: str, start: str, end: str) -> etree._Element:
+def _move(ids: _Ids, spid: Target, duration: int, attr: str, start: str, end: str) -> etree._Element:
     tavs = _el(
         "p:tavLst",
         None,
@@ -207,7 +245,7 @@ def _move(ids: _Ids, spid: int, duration: int, attr: str, start: str, end: str) 
     )
 
 
-def _effect_behaviors(ids: _Ids, animation: SlideAnimation, spid: int) -> list[etree._Element]:
+def _effect_behaviors(ids: _Ids, animation: SlideAnimation, spid: Target) -> list[etree._Element]:
     duration = animation.duration_ms
     behaviors = [_set_visible(ids, spid)]
     kind = animation.type
@@ -230,7 +268,7 @@ def _effect_behaviors(ids: _Ids, animation: SlideAnimation, spid: int) -> list[e
 NODE_TYPES = {"click": "clickEffect", "with": "withEffect", "after": "afterEffect"}
 
 
-def _effect_par(ids: _Ids, animation: SlideAnimation, spids: list[int], node_type: str, group: int) -> etree._Element:
+def _effect_par(ids: _Ids, animation: SlideAnimation, spids: list[Target], node_type: str, group: int) -> etree._Element:
     preset, subtype = PRESETS.get(animation.type, PRESETS["fade"])
     behaviors: list[etree._Element] = []
     for spid in spids:
@@ -252,7 +290,7 @@ def _effect_par(ids: _Ids, animation: SlideAnimation, spids: list[int], node_typ
     return _el("p:par", None, ctn)
 
 
-def build_timing(steps: list[tuple[SlideAnimation, list[int]]]) -> etree._Element | None:
+def build_timing(steps: list[tuple[SlideAnimation, list[Target]]]) -> etree._Element | None:
     """p:timing по списку (анимация, её фигуры) в порядке показа.
 
     Щелчок открывает группу; «вместе с предыдущей» идёт в тот же момент, «после предыдущей» — когда
@@ -267,7 +305,7 @@ def build_timing(steps: list[tuple[SlideAnimation, list[int]]]) -> etree._Elemen
     main_ctn_id = ids()
 
     # Группы щелчков → моменты (параллельные блоки) → эффекты.
-    groups: list[list[list[tuple[SlideAnimation, list[int], str]]]] = []
+    groups: list[list[list[tuple[SlideAnimation, list[Target], str]]]] = []
     for animation, spids in steps:
         trigger = animation.trigger
         if trigger == "click" or not groups:
@@ -326,7 +364,14 @@ def build_timing(steps: list[tuple[SlideAnimation, list[int]]]) -> etree._Elemen
             _el("p:childTnLst", None, main),
         ),
     )
-    return _el("p:timing", None, _el("p:tnLst", None, root))
+    # Абзацы в анимации — список строится «по абзацам» (p:bldP build="p"), иначе PowerPoint покажет текст сразу.
+    paragraph_shapes = sorted({target[0] for _, targets in steps for target in targets if not isinstance(target, int)})
+    builds = (
+        _el("p:bldLst", None, *(_el("p:bldP", {"spid": str(spid), "grpId": "0", "build": "p"}) for spid in paragraph_shapes))
+        if paragraph_shapes
+        else None
+    )
+    return _el("p:timing", None, _el("p:tnLst", None, root), builds)
 
 
 def build_transition(spec: Slide) -> etree._Element | None:
@@ -390,13 +435,17 @@ def apply_motion(
         shapes = [shape for shape in shapes if shape.spid not in removed]
         targets = {key: value for key, value in targets.items() if key not in hidden}
 
-    steps: list[tuple[SlideAnimation, list[int]]] = []
+    steps: list[tuple[SlideAnimation, list[Target]]] = []
     taken: set[int] = set()
     # Фигуры слайда разбираются первыми: иначе карточка «заберёт» фигуру, у которой своя анимация.
     ordered = sorted(spec.animations or [], key=lambda item: not item.target.startswith("shape:"))
-    claimed: dict[int, list[int]] = {}
+    claimed: dict[int, list[Target]] = {}
     for animation in ordered:
         if animation.target in hidden:
+            continue
+        paragraph = resolve_paragraph(animation.target, rects, shapes)
+        if paragraph is not None:
+            claimed[id(animation)] = [paragraph]
             continue
         found = resolve(animation.target, rects, shapes, taken)
         taken.update(shape.spid for shape in found)
