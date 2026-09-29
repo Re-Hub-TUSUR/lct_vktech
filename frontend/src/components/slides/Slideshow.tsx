@@ -146,8 +146,8 @@ export function Slideshow({
         style={{ '--slideshow-aspect': String(theme.aspect) } as CSSProperties}
         onClick={next}
       >
-        {/* Переход к слайду (Slide.transition) и анимации его элементов по порядку. Слайд с анимациями
-            рисуется живой вёрсткой: у картинки рендера нет отдельных элементов. */}
+        {/* Переход к слайду (Slide.transition) и анимации его элементов по порядку. Слайд — рендер экспорта:
+            анимируемые элементы вырезаются из него по рамкам сборки и проявляются поверх фона макета. */}
         <div
           key={slide.id}
           className={clsx('slideshow__frame', transitionClass(slide))}
@@ -158,7 +158,6 @@ export function Slideshow({
             theme={theme}
             number={index + 1}
             render={renderFor?.(index)}
-            preferInteractive={Boolean(slide.animations?.length)}
             play={play}
             className="slideshow__slide"
           />

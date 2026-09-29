@@ -447,6 +447,8 @@ export function SlideView(props: SlideViewProps) {
         highlights={props.highlights}
         activeTarget={props.activeTarget}
         className={props.className}
+        play={props.play}
+        underlay={props.play?.length ? slideUnderlay(props.slide, props.theme) : undefined}
       />
     )
   }
@@ -824,6 +826,45 @@ function InteractiveSlideView({
 }
 
 /** Слайд как картинка из собранного .pptx; проблемы аудита — рамками поверх элементов. */
+/** Подложка макета слайда (рендер макета без содержимого и цвет фона) — на неё «проявляются» анимируемые куски рендера. */
+function slideUnderlay(slide: Slide, theme: SlideTheme): { image?: string | null; color: string } {
+  const pattern = slide.pattern_id ? theme.patterns?.find((item) => item.id === slide.pattern_id) : undefined
+  const layoutKey = slide.layout_key || pattern?.layout_key
+  const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
+  const skin = (layoutKey && theme.layouts?.[layoutKey]) || (roleKey && theme.layouts?.[roleKey]) || undefined
+  return { image: skin?.image, color: skin?.background ?? theme.background }
+}
+
+/**
+ * Рамка анимируемого элемента на рендере. У пункта списка на макете своей рамки нет (все тезисы — абзацы
+ * одного плейсхолдера): её дают строки текста рендера внутри блока, сгруппированные по абзацам.
+ */
+function pieceRect(render: SlideRender, target: string): FrameRect | undefined {
+  if (render.targets[target]) return render.targets[target]
+  const item = target.match(/^(bullets)\.(\d+)$/)
+  const parent = item ? render.targets[item[1]] : undefined
+  if (!item || !parent) return undefined
+  const [px, py, pw, ph] = parent
+  const inside = (render.facts?.lines ?? []).filter(({ bbox: [x, y, w, h] }) => {
+    const cx = x + w / 2
+    const cy = y + h / 2
+    return cx >= px && cx <= px + pw && cy >= py && cy <= py + ph
+  })
+  const blocks = new Map<number, FrameRect[]>()
+  for (const line of inside) blocks.set(line.block, [...(blocks.get(line.block) ?? []), line.bbox])
+  const paragraphs = [...blocks.values()].map((rects) => unionRects(...rects)!).sort((a, b) => a[1] - b[1])
+  const rect = paragraphs[Number(item[2])]
+  // Небольшой запас: маркер пункта и выносные элементы букв не должны обрезаться.
+  return rect && [Math.max(px, rect[0] - 0.03), rect[1] - 0.006, Math.min(rect[2] + 0.04, px + pw - Math.max(px, rect[0] - 0.03)), rect[3] + 0.012]
+}
+
+/** SVG-маска «слайд без анимируемых кусков»: evenodd-дыры по рамкам (координаты в долях слайда). */
+function holesMask(rects: FrameRect[]): string {
+  const holes = rects.map(([x, y, w, h]) => `M${x} ${y}h${w}v${h}h${-w}z`).join('')
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'><path fill='white' fill-rule='evenodd' d='M0 0H1V1H0z${holes}'/></svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
 function RenderedSlide({
   slide,
   render,
@@ -832,6 +873,8 @@ function RenderedSlide({
   highlights,
   activeTarget,
   className,
+  play,
+  underlay,
 }: {
   slide: Slide
   render: SlideRender
@@ -840,7 +883,23 @@ function RenderedSlide({
   highlights?: Highlights
   activeTarget?: string | null
   className?: string
+  /** Анимации показа: куски рендера по рамкам элементов появляются поверх подложки макета. */
+  play?: PlayItem[]
+  underlay?: { image?: string | null; color: string }
 }) {
+  const scopeId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  // Каждый кусок — один раз: несколько анимаций с общей рамкой (нет своей) не должны дублировать картинку.
+  const pieces: { target: string; rect: FrameRect }[] = []
+  for (const item of play ?? []) {
+    const rect = pieceRect(render, item.target)
+    if (rect && !pieces.some((piece) => piece.rect.join() === rect.join())) pieces.push({ target: item.target, rect })
+  }
+  const animated = new Set(pieces.map((piece) => piece.target))
+  const motionCss = pieces.length
+    ? slideMotionCss(`[data-sv="${scopeId}"]`, undefined, false, (play ?? []).filter((item) => animated.has(item.target)))
+    : ''
+  const mask = pieces.length ? holesMask(pieces.map((piece) => piece.rect)) : undefined
+
   const marks = Object.entries(highlights ?? {}).flatMap(([target, severity]) => {
     if (target === 'slide') return []
     const rect = targetRect(render.targets, target)
@@ -855,9 +914,29 @@ function RenderedSlide({
         slideSeverity && ['flagged', `flag-${slideSeverity}`, activeTarget === 'slide' && 'flag-active'],
         className,
       )}
-      style={{ aspectRatio: String(aspect) }}
+      style={{ aspectRatio: String(aspect), ...(underlay && pieces.length ? { background: underlay.color } : {}) }}
+      data-sv={pieces.length ? scopeId : undefined}
     >
-      <img className="slide__render" src={render.image} alt={slide.title} draggable={false} loading="lazy" />
+      {motionCss && <style>{motionCss}</style>}
+      {pieces.length > 0 && underlay?.image && <img className="slide__render" src={underlay.image} alt="" draggable={false} />}
+      <img
+        className="slide__render"
+        src={render.image}
+        alt={slide.title}
+        draggable={false}
+        loading="lazy"
+        style={mask ? { maskImage: mask, WebkitMaskImage: mask, maskSize: '100% 100%', WebkitMaskSize: '100% 100%' } : undefined}
+      />
+      {pieces.map(({ target, rect: [x, y, w, h] }) => (
+        <div key={target} data-element-id={target} className="slide__piece" style={box([x, y, w, h])}>
+          <img
+            src={render.image}
+            alt=""
+            draggable={false}
+            style={{ width: `${100 / w}%`, height: `${100 / h}%`, left: `${(-x / w) * 100}%`, top: `${(-y / h) * 100}%` }}
+          />
+        </div>
+      ))}
       {marks.map(({ target, severity, rect }) => (
         <span
           key={target}

@@ -31,7 +31,7 @@ from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.planning.planner import plan_outline
 from app.pipeline.planning.single import generate_slide
 from app.pipeline.planning.writer import write_slides
-from app.pipeline.visuals.motion_rules import animate_slide
+from app.pipeline.visuals.motion_rules import animate_deck, animate_slide
 from app.pipeline.visuals.visualizer import refine_variant
 from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
@@ -269,6 +269,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
 
     # Привязка графических ассетов контент-пакета к рерольнутому варианту
     assign_content_images_to_drafts([draft], files, presentation.id)
+    # Как стадия «Анимации и переходы» генерации: рерол собирает слайды заново, без неё анимации пропадали.
+    draft.slides = animate_deck(draft.slides, options.animations)
 
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)
