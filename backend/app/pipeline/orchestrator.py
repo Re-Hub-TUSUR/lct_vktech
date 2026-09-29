@@ -36,6 +36,7 @@ from app.pipeline.planning.deck_editor import edit_deck
 from app.pipeline.planning.planner import plan_outline
 from app.pipeline.planning.writer import write_slides
 from app.pipeline.skills import skills_snapshot
+from app.pipeline.visuals.motion_rules import MOTION_LABELS, animate_deck
 from app.pipeline.visuals.visualizer import VisualsReport, refine_variant
 from app.schemas.presentation import GenerationSettings
 from app.services.audit import build_audit_context, refresh_audit, review_variant
@@ -351,6 +352,14 @@ async def _run_stages(
             if not parts:
                 parts.append("В вариантах нет слайдов с изображениями")
             stage.detail = " · ".join(parts)
+
+    async with tracker.stage("motion") as stage:
+        # После картинок: обложке с фото достаётся и её появление. Правила, без модели — мгновенно.
+        for draft in drafts:
+            draft.slides = animate_deck(draft.slides, options.animations)
+        animated = sum(1 for draft in drafts for slide in draft.slides if slide.animations)
+        total = sum(len(draft.slides) for draft in drafts)
+        stage.detail = f"{MOTION_LABELS[options.animations]} · с анимациями {animated} из {total} слайдов"
 
     variants = [
         Variant(

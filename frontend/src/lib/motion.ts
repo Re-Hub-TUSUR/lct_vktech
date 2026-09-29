@@ -1,4 +1,4 @@
-import type { AnimationTrigger, AnimationType, Slide, SlideAnimation, TransitionType } from '../api/types'
+import type { AnimationTrigger, AnimationType, MotionMode, Slide, SlideAnimation, TransitionType } from '../api/types'
 
 // Анимации элементов и переходы слайдов Студии. Эффекты — CSS keyframes из styles/pages/studio.css
 // (vk-*, tr-*), те же, что сборка пишет в .pptx (backend export/motion.py).
@@ -24,6 +24,13 @@ export const TRANSITION_LABELS: Record<TransitionType, string> = {
   zoom: 'Масштаб',
   wipe: 'Шторка',
 }
+export const MOTION_MODE_LABELS: Record<MotionMode, string> = {
+  none: 'Без анимаций',
+  subtle: 'Сдержанные',
+  lively: 'Живые',
+}
+export const MOTION_MODES = Object.keys(MOTION_MODE_LABELS) as MotionMode[]
+
 export const TRANSITION_TYPES = Object.keys(TRANSITION_LABELS) as TransitionType[]
 
 export const EASE = 'cubic-bezier(.16,1,.3,1)'

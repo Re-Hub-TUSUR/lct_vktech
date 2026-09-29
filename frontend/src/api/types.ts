@@ -462,7 +462,16 @@ export interface GenerationSettings {
   variant_axis: VariantAxis
   generate_images: boolean
   speaker_notes: boolean
+  /** Автоанимации колоды по правилам: без / сдержанные / живые (backend visuals/motion_rules.py). */
+  animations?: MotionMode
   custom_skills: CustomSkill[]
+}
+
+export type MotionMode = 'none' | 'subtle' | 'lively'
+
+export interface AnimateResponse {
+  slides: Slide[]
+  animated: number
 }
 
 export interface ContentFile {

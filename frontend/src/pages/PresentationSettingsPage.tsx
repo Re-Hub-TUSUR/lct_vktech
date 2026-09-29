@@ -30,6 +30,7 @@ import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
 import { Badge, Button, ErrorState, FullPageSpinner, Segmented, Select, Spinner, Toggle } from '../components/ui'
 import { ALL_CONTENT_EXTENSIONS, countLabel, formatSize, getContentCategory, getImageKindLabel } from '../lib/format'
+import { MOTION_MODE_LABELS, MOTION_MODES } from '../lib/motion'
 
 const DEFAULT_SETTINGS: GenerationSettings = {
   slides_count: 12,
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS: GenerationSettings = {
   variant_axis: 'density',
   generate_images: false,
   speaker_notes: true,
+  animations: 'subtle',
   custom_skills: [],
 }
 const BRIEF_LIMIT = 20000
@@ -720,6 +722,16 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                   )
                 })}
               </div>
+            </div>
+
+            <div className="settings-field">
+              <span>Анимации и переходы</span>
+              <Segmented
+                value={form.settings.animations ?? 'subtle'}
+                onChange={(value) => setOption('animations', value)}
+                options={MOTION_MODES.map((mode) => ({ value: mode, label: MOTION_MODE_LABELS[mode] }))}
+              />
+              <small className="settings-hint">Элементы появляются сами по очереди — в показе и в .pptx. Поправить можно в редакторе.</small>
             </div>
 
             <div className="settings-toggles">
