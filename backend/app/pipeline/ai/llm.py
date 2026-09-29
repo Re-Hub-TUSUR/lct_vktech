@@ -23,6 +23,7 @@ import httpx
 
 from app.core.config import settings
 from app.pipeline.ai import client as api
+from app.pipeline.ai.keys import auth_headers, split_keys
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class Usage:
 @contextmanager
 def open_client(cfg: ModelConfig | None = None):
     cfg = cfg or writer_model()
-    headers = {"Authorization": f"Bearer {cfg.api_key}"} if cfg.api_key else {}
+    headers = auth_headers(cfg.api_key)
     with httpx.Client(base_url=cfg.base_url, headers=headers, timeout=cfg.timeout) as http:
         yield http
 
@@ -169,7 +170,7 @@ def ask(
     answer = None
     for attempt_idx, delay in enumerate(RETRY_DELAYS):
         try:
-            answer = api.ask_json(http, payload, options, label)
+            answer = api.ask_json(http, payload, options, label, keys=split_keys(cfg.api_key))
             break
         except Exception as exc:
             if _is_retryable(exc) and attempt_idx < len(RETRY_DELAYS) - 1:

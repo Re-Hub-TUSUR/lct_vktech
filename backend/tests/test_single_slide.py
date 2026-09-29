@@ -1,9 +1,18 @@
 """Слайд по описанию из Студии без модели: тип по подсказке и содержимому, числа только из источников."""
 
+import pytest
+
+from app.core.config import settings
 from app.pipeline.planning.single import choose_kind, generate_slide, split_prompt, unsupported_numbers
 from app.schemas.slide import ChartData, ChartSeries, Slide
 
 CTX = dict(deck=[], title="Колода", purpose="продукт", brief="", sources="")
+
+
+@pytest.fixture(autouse=True)
+def no_model(monkeypatch):
+    """Путь без модели: LLM_* из окружения контейнера не должны подменять его настоящей моделью."""
+    monkeypatch.setattr(settings, "llm_base_url", None)
 
 
 def test_split_prompt_title_and_items():

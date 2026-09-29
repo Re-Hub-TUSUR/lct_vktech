@@ -17,6 +17,8 @@ from typing import Any
 
 import httpx
 
+from app.pipeline.ai import keys as api_keys
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,21 +31,23 @@ class Answer:
 
 
 def parse_json(content: str) -> dict[str, Any]:
+    """JSON-объект из ответа модели. Число, строка или список вместо объекта — не ответ: вызывающий код
+    ждёт словарь, и такое значение роняло генерацию ('int' object has no attribute 'get')."""
     text = content.strip()
     fence = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text, re.IGNORECASE)
-    if fence:
-        try:
-            return json.loads(fence.group(1))
-        except json.JSONDecodeError:
-            pass
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    candidates = [fence.group(1)] if fence else []
+    candidates.append(text)
     match = re.search(r"\{[\s\S]*\}", text)
-    if not match:
-        raise ValueError("в ответе нет JSON")
-    return json.loads(match.group(0))
+    if match:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise ValueError("в ответе нет JSON-объекта")
 
 
 def message_text(message: dict[str, Any]) -> str:
@@ -76,12 +80,17 @@ def attempts(*, extra: dict[str, Any], disable_reasoning: bool, schema: dict[str
 
 
 def ask_json(
-    client: httpx.Client, payload: dict[str, Any], options: list[dict[str, Any]], label: str
+    client: httpx.Client,
+    payload: dict[str, Any],
+    options: list[dict[str, Any]],
+    label: str,
+    keys: list[str] | None = None,
 ) -> Answer:
-    """POST /chat/completions с перебором вариантов запроса и разбором JSON из ответа."""
+    """POST /chat/completions с перебором вариантов запроса и разбором JSON из ответа.
+    keys — API-ключи роли: запрос уходит на наименее загруженный (ai/keys.py)."""
     response = None
     for extra in options:
-        response = client.post("/chat/completions", json={**payload, **extra})
+        response = api_keys.post(client, "/chat/completions", json={**payload, **extra}, keys=keys or [])
         if response.status_code != 400:
             break
     response.raise_for_status()

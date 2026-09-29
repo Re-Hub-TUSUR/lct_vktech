@@ -19,6 +19,7 @@ from app.core.redis import publish_presentation_update, redis_client
 from app.core.storage import save_upload, storage_path
 from app.models import ContentFile, Generation
 from app.pipeline.ai.llm import llm_enabled
+from app.pipeline.ai.t2i import t2i_enabled
 from app.pipeline.content.image_matcher import assign_content_images_to_drafts, has_slide_images
 from app.pipeline.content.ingest import sources_digest
 from app.pipeline.export.pptx_export import ExportError
@@ -31,11 +32,14 @@ from app.pipeline.planning.outline import build_outline, group_labels
 from app.pipeline.planning.planner import plan_outline
 from app.pipeline.planning.single import generate_slide
 from app.pipeline.planning.writer import write_slides
+from app.pipeline.visuals.motion_rules import animate_deck, animate_slide
 from app.pipeline.visuals.visualizer import refine_variant
 from app.schemas.audit import AuditReport, RegenerateSlideResponse, ResolveRequest, ResolveResponse
 from app.schemas.generation import PresentationBrief, VariantDetailResponse, VariantOut
 from app.schemas.presentation import GenerationSettings
 from app.schemas.slide import (
+    AnimateRequest,
+    AnimateResponse,
     BatchSlidesUpdate,
     GenerateSlideRequest,
     RegenerateSlideRequest,
@@ -53,6 +57,7 @@ from app.services.audit import (
     review_variant,
 )
 from app.services.export import ExportUnavailable, export_deck
+from app.services.illustrations import illustrate
 from app.services.renders import rendered_images, schedule_render, variant_dir
 from app.services.skills import resolve_skills
 from app.services.templates import template_theme
@@ -187,7 +192,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
     # Если план был из fallback (модель не ответила на стадии генерации), рерол привлекает LLM!
     generation = await db.get(Generation, variant.generation_id)
     specs = list(generation.plan if generation and generation.plan else [])
-    images_available = has_slide_images(files, presentation.id)
+    # Слайды с иллюстрацией — если есть фото в материалах или картинки нарисует модель.
+    images_available = has_slide_images(files, presentation.id) or (options.generate_images and t2i_enabled())
     sources = sources_digest(
         [(f.filename, f.extracted_text or "") for f in files],
         per_file=settings.llm_source_chars,
@@ -244,6 +250,8 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         patterns=template.patterns if template else None,
         images_available=images_available,
     )
+    # Фото из материалов — раньше картинок модели: слайду с подходящим фото рисовать нечего.
+    assign_content_images_to_drafts([draft], files, presentation.id)
     if template is not None:
         names = {layout["key"]: layout["name"] for layout in template.layouts or []}
         # Как при генерации: текст, не влезший в слоты нового слайда-примера, сокращает модель.
@@ -264,8 +272,12 @@ async def reroll_variant(variant_id: uuid.UUID, user: CurrentUser, db: DbSession
         # Те же правила визуализации, что и при генерации (стадия «Графики, таблицы, инфографика»).
         refine_variant(draft.slides, template.patterns, position=variant.position, layout_names=names)
 
-    # Привязка графических ассетов контент-пакета к рерольнутому варианту
-    assign_content_images_to_drafts([draft], files, presentation.id)
+    if template is not None:
+        # Картинки слайдов плана уже нарисованы при генерации; модель дорисует только новые.
+        await illustrate([draft], presentation=presentation, template=template, options=options, generation=generation)
+    # Как стадия «Анимации и переходы» генерации: рерол собирает слайды заново, без неё анимации пропадали.
+    # Анимации — после картинок: слайд без картинки уже свёрстан тезисами.
+    draft.slides = animate_deck(draft.slides, options.animations)
 
     variant.slides = [slide.model_dump(mode="json") for slide in draft.slides]
     ctx = await build_audit_context(db, presentation, template)
@@ -303,6 +315,19 @@ async def upload_variant_image(
 
     image_url = f"/api/variants/{variant.id}/images/{image_rel_path}"
     return {"url": image_url, "filename": filename}
+
+
+@router.post("/{variant_id}/animate", response_model=AnimateResponse)
+async def animate_slides(variant_id: uuid.UUID, payload: AnimateRequest, user: CurrentUser, db: DbSession) -> AnimateResponse:
+    """Анимации и переходы по правилам генерации. Ничего не сохраняет: редактор кладёт ответ в историю
+    правок (Ctrl+Z) и сохраняет обычным путём."""
+    await get_variant_for_user(db, variant_id, user, editable=True)
+    chosen = set(payload.slide_ids) if payload.slide_ids is not None else None
+    slides = [
+        animate_slide(slide, payload.mode, overwrite=payload.overwrite) if chosen is None or slide.id in chosen else slide
+        for slide in payload.slides
+    ]
+    return AnimateResponse(slides=slides, animated=sum(1 for slide in slides if slide.animations))
 
 
 @router.put("/{variant_id}/slides", response_model=ResolveResponse)
@@ -477,10 +502,17 @@ async def generate_slide_from_prompt(
         slide.pattern_id = None
         slide.shapes = []
         relayout_edited_slide(slide, template.patterns, template.layout_roles or {}, template.layouts or [], position=variant.position)
+        # Слайд-кейс получает иллюстрацию модели; без неё остаётся рамка под фото пользователя.
+        options = GenerationSettings.model_validate(presentation.settings or {})
+        await illustrate([[slide]], presentation=presentation, template=template, options=options, drop_missing=False)
+    # Анимации — как у сгенерированной колоды: пустые (новый слайд или прежние не подошли) — по правилам.
+    mode = GenerationSettings.model_validate(presentation.settings or {}).animations
     if base is not None and base_index is not None:
         slide.animations = _kept_animations(base.animations, slide)
+        slide = animate_slide(slide, mode)
         slides[base_index] = slide
     else:
+        slide = animate_slide(slide, mode)
         after = next((i for i, s in enumerate(slides) if s.id == payload.after_slide_id), len(slides) - 1)
         slides.insert(after + 1, slide)
     variant.slides = [s.model_dump(mode="json") for s in slides]

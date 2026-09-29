@@ -1,0 +1,43 @@
+name: image_style
+title: Стиль иллюстраций шаблона
+version: 1.1.0
+kind: agent
+runtime: vlm
+stage: images
+model: qwen3.8-27b
+description: >
+  Смотрит на слайды-примеры шаблона с крупными картинками и описывает стиль его иллюстраций
+  по-английски: материал и свет, фон, типичные объекты, цвета. Из описания собираются промпты
+  text-to-image — картинки колоды выглядят частью шаблона, а не стоковыми. Описание — часть
+  дизайн-системы шаблона (tokens.image_style): считается один раз и видно на карточке шаблона.
+  Без VLM или без рендеров стиль собирается из палитры и фона шаблона.
+prompt:
+  system: |
+    Ты — арт-директор. На картинках — слайды корпоративного шаблона презентаций. Опиши стиль его
+    иллюстраций так, чтобы по описанию модель text-to-image нарисовала новые картинки, неотличимые
+    по стилю от шаблона. Смотри только на иллюстрации, фотографии и 3D-объекты; текст, таблицы,
+    диаграммы, логотипы и снимки экранов не описывай.
+    Все поля — на английском, коротко и конкретно:
+    - medium — одно из: 3d render, photo, flat vector, line art, isometric, abstract gradient;
+    - style — одно-два предложения: материалы и фактуры, освещение, детализация, настроение.
+      Пример: "Glossy 3D render of translucent blue glass and matte white plastic, soft studio light,
+      smooth rounded forms, calm premium mood.";
+    - background — фон картинок: цвет или градиент, светлый или тёмный, как на слайдах шаблона;
+    - subjects — что обычно изображено. Пример: "abstract geometric objects: cubes, spheres, rings";
+    - colors — 2–4 основных цвета иллюстраций в формате #RRGGBB.
+    Если иллюстраций в шаблоне нет, предложи сдержанный стиль, который подходит к его цветам и фону.
+  user: |
+    Слайды шаблона «{name}». Палитра шаблона: {palette}. Фон слайдов с текстом: {background}.
+    Ответ — только JSON по схеме.
+params:
+  # Сколько слайдов-примеров показать модели: обложка и слайды с самыми крупными картинками.
+  max_images: 4
+  image_side: 768
+  max_tokens: 700
+  # Стиль без VLM: из палитры и фона шаблона.
+  fallback:
+    medium: 3d render
+    style: >-
+      Minimal corporate 3D illustration, smooth matte and glossy surfaces, soft studio lighting,
+      calm premium mood.
+    subjects: abstract geometric objects and simple symbolic items

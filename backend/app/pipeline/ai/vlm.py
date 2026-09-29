@@ -29,6 +29,8 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.core.config import settings
+from app.pipeline.ai.keys import auth_headers, split_keys
+from app.pipeline.ai.keys import post as post_with_keys
 from app.pipeline.parsing.patterns import CATEGORIES, USABLE_TYPES, is_service, is_usable, pattern_schema
 from app.pipeline.skills import get_skill
 
@@ -182,7 +184,7 @@ def label_pattern(client: httpx.Client, pattern: dict[str, Any], image: bytes) -
     }
     response = None
     for extra in _attempts():
-        response = client.post("/chat/completions", json={**payload, **extra})
+        response = post_with_keys(client, "/chat/completions", json={**payload, **extra}, keys=split_keys(settings.vlm_api_key))
         if response.status_code != 400:
             break
     response.raise_for_status()
@@ -288,7 +290,7 @@ def enrich_patterns(patterns: list[dict[str, Any]], images_dir: Path) -> dict[st
     if not candidates:
         return stats
 
-    headers = {"Authorization": f"Bearer {settings.vlm_api_key}"} if settings.vlm_api_key else {}
+    headers = auth_headers(settings.vlm_api_key)
     with httpx.Client(base_url=settings.vlm_base_url, headers=headers, timeout=settings.vlm_timeout_seconds) as client:
 
         def work(pattern: dict[str, Any]) -> tuple[dict[str, Any], PatternLabel | None]:

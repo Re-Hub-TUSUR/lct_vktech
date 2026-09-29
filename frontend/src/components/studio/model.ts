@@ -172,9 +172,9 @@ export function templatePalette(theme: SlideTheme): string[] {
   return Array.from(new Set(list.filter(Boolean).map((color) => color.toUpperCase()))).slice(0, 8)
 }
 
-/** Шрифты шаблона: заголовков и текста. */
+/** Шрифты шаблона: заголовков, текста и остальные гарнитуры его слайдов. */
 export function templateFonts(theme: SlideTheme): string[] {
-  return Array.from(new Set([theme.heading_font, theme.body_font].filter(Boolean)))
+  return Array.from(new Set([theme.heading_font, theme.body_font, ...(theme.fonts ?? [])].filter(Boolean)))
 }
 
 /** Рамка элемента на слайде в долях [x, y, w, h] — по DOM-узлу внутри корня слайда. */

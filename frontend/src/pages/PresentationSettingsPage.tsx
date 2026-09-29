@@ -30,6 +30,7 @@ import { TemplateUploader } from '../components/TemplateUploader'
 import { useToast } from '../components/Toast'
 import { Badge, Button, ErrorState, FullPageSpinner, Segmented, Select, Spinner, Toggle } from '../components/ui'
 import { ALL_CONTENT_EXTENSIONS, countLabel, formatSize, getContentCategory, getImageKindLabel } from '../lib/format'
+import { MOTION_MODE_LABELS, MOTION_MODES } from '../lib/motion'
 
 const DEFAULT_SETTINGS: GenerationSettings = {
   slides_count: 12,
@@ -39,6 +40,7 @@ const DEFAULT_SETTINGS: GenerationSettings = {
   variant_axis: 'density',
   generate_images: false,
   speaker_notes: true,
+  animations: 'subtle',
   custom_skills: [],
 }
 const BRIEF_LIMIT = 20000
@@ -52,6 +54,11 @@ const SIZE_PRESETS = [
 ]
 /** Шаблонов в сетке формы (вместе с плиткой загрузки — две строки по четыре); остальные — в «Все шаблоны». */
 const TEMPLATE_GRID_LIMIT = 7
+
+/** Название модели для подписи: «black-forest-labs/flux.2-klein-4b» → «flux.2-klein-4b». */
+function modelTitle(model: string | null | undefined): string {
+  return (model ?? '').split('/').pop() || 'text-to-image'
+}
 
 function bumpSkillVersion(version: string): string {
   const [major, minor, patch] = version.split('.').map(Number)
@@ -235,6 +242,16 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
 
+  // Новая презентация: иллюстрации включены, если на сервере подключена модель text-to-image
+  // (если нет черновика — в нём уже есть выбор пользователя).
+  const imagesDefaultApplied = useRef(Boolean(presentation) || draftRestored)
+  useEffect(() => {
+    if (imagesDefaultApplied.current || !options.data) return
+    imagesDefaultApplied.current = true
+    const available = Boolean(options.data.images?.available)
+    setForm((current) => ({ ...current, settings: { ...current.settings, generate_images: available } }))
+  }, [options.data])
+
   // Новая презентация: скиллы, включённые по умолчанию на странице «Скиллы», подключаются сразу
   // (если нет черновика — в нём уже есть выбор пользователя).
   const defaultsApplied = useRef(Boolean(presentation) || draftRestored)
@@ -288,6 +305,8 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
   const templateList: TemplateSummary[] = templates.data ?? []
   const selectedTemplate = templateList.find((template) => template.id === form.templateId) ?? presentation?.template ?? undefined
   const axis = options.data?.variant_axes.find((item) => item.value === form.settings.variant_axis)
+  const imagesAvailable = Boolean(options.data?.images?.available)
+  const imagesModel = modelTitle(options.data?.images?.model)
   const tone = options.data?.tones.find((item) => item.value === form.settings.tone)
   const language = options.data?.languages.find((item) => item.value === form.settings.language)
   const limits = options.data?.slides_count ?? { min: 5, max: 20, default: 12 }
@@ -722,6 +741,16 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
               </div>
             </div>
 
+            <div className="settings-field">
+              <span>Анимации и переходы</span>
+              <Segmented
+                value={form.settings.animations ?? 'subtle'}
+                onChange={(value) => setOption('animations', value)}
+                options={MOTION_MODES.map((mode) => ({ value: mode, label: MOTION_MODE_LABELS[mode] }))}
+              />
+              <small className="settings-hint">Элементы появляются сами по очереди — в показе и в .pptx. Поправить можно в редакторе.</small>
+            </div>
+
             <div className="settings-toggles">
               <Toggle
                 checked={form.settings.speaker_notes}
@@ -729,10 +758,17 @@ function SettingsForm({ presentation }: { presentation?: Presentation }) {
                 label="Заметки докладчика"
                 hint="Попадут в заметки слайдов .pptx"
               />
-              <div className="settings-toggle-soon">
-                <Toggle checked={false} disabled onChange={() => undefined} label="Генерировать изображения" hint="Иллюстрации к слайдам нейросетью" />
-                <Badge tone="info">скоро</Badge>
-              </div>
+              <Toggle
+                checked={form.settings.generate_images && imagesAvailable}
+                onChange={(value) => setOption('generate_images', value)}
+                disabled={!imagesAvailable}
+                label="Генерировать изображения"
+                hint={
+                  imagesAvailable
+                    ? `Иллюстрации в стиле шаблона для слайдов «текст и изображение» · ${imagesModel}`
+                    : 'Модель text-to-image не подключена на сервере (T2I_*)'
+                }
+              />
             </div>
           </Collapsible>
 

@@ -3,8 +3,9 @@ from sqlalchemy import text
 
 from app.api.deps import DbSession
 from app.core.redis import redis_client
+from app.pipeline.ai.t2i import t2i_config
 from app.pipeline.skills import get_skill, load_skills
-from app.schemas.meta import AxisOption, AxisVariantOption, Option, OptionsOut, SkillOut, SlidesCountRange
+from app.schemas.meta import AxisOption, AxisVariantOption, ImagesOption, Option, OptionsOut, SkillOut, SlidesCountRange
 from app.schemas.presentation import SLIDES_DEFAULT, SLIDES_MAX, SLIDES_MIN
 
 router = APIRouter(tags=["meta"])
@@ -46,6 +47,7 @@ async def options() -> OptionsOut:
         ],
         slides_count=SlidesCountRange(min=SLIDES_MIN, max=SLIDES_MAX, default=SLIDES_DEFAULT),
         content_extensions=list(get_skill("content_analyzer").params.get("extensions") or []),
+        images=ImagesOption(available=t2i_config().enabled, model=t2i_config().model),
     )
 
 

@@ -1651,3 +1651,10 @@
     animation: none !important;
   }
 }
+
+/* Инспектор › Анимация › Автоанимации: две кнопки в строку */
+.studio-auto-anim {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}

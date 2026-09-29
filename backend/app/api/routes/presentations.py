@@ -28,7 +28,7 @@ from app.core.redis import (
     publish_presentation_update,
     redis_client,
 )
-from app.core.storage import remove_dir, remove_file, save_upload, storage_path
+from app.core.storage import GENERATED_DIR, generated_image_path, remove_dir, remove_file, save_upload, storage_path
 from app.models import ContentFile, Generation, Presentation, PresentationMember, Project, ProjectMember, SlideComment, User, Variant
 from app.models.base import utcnow
 from app.pipeline.layout.composer import axis_config
@@ -260,6 +260,7 @@ async def delete_presentation(presentation_id: uuid.UUID, user: CurrentUser, db:
     await db.delete(presentation)
     await db.commit()
     remove_dir("content", str(presentation_id))
+    remove_dir(GENERATED_DIR, str(presentation_id))
     for variant_id in variant_ids:
         remove_dir("variants", str(variant_id))
 
@@ -336,6 +337,18 @@ async def get_content_file(
     )
 
 
+@router.get("/{presentation_id}/images/{filename}")
+async def get_generated_image(presentation_id: uuid.UUID, filename: str, user: OptionalUser, db: DbSession) -> FileResponse:
+    """Иллюстрация слайда, нарисованная моделью text-to-image. Как и файлы материалов, без сессии
+    отдаётся по неугадываемому имени — ссылка на картинку работает в общем доступе к колоде."""
+    if user is not None:
+        await get_presentation_for_user(db, presentation_id, user)
+    path = generated_image_path(presentation_id, filename)
+    if path is None or not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Изображение не найдено")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
+
+
 @router.delete("/{presentation_id}/files/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_content_file(presentation_id: uuid.UUID, file_id: uuid.UUID, user: CurrentUser, db: DbSession) -> None:
     await get_presentation_for_user(db, presentation_id, user, editable=True)
@@ -375,7 +388,7 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
         presentation_id=presentation.id,
         status="queued",
         progress=0,
-        stages=initial_stages(generate_images=options.generate_images),
+        stages=initial_stages(generate_images=options.generate_images, animations=options.animations),
     )
     db.add(generation)
     presentation.status = "generating"

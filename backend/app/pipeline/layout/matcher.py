@@ -24,7 +24,9 @@ KIND_TYPES: dict[str, tuple[str, ...]] = {
     "kpi": ("kpi",),
     "timeline": ("timeline", "cards"),
     "table": ("table",),
-    "image_text": ("image_text", "text"),
+    # Картинка встаёт только в место под картинку слайда-примера; нет такого паттерна — слайд на макете
+    # (текст слева, картинка справа), а не поверх текстового паттерна.
+    "image_text": ("image_text",),
     "chart": ("chart",),
 }
 # Обложка, разделитель и финал — клоны служебных слайдов-примеров своей категории.
@@ -51,6 +53,29 @@ UNUSED_LINE_PENALTY = 0.25
 UNUSED_BODY_PENALTY = 1.0
 # Минимальная ширина столбца таблицы в долях слайда.
 MIN_COLUMN_WIDTH = 0.12
+# Какая доля текстового слота может лежать на картинке. Больше — это карточка-картинка с подписью поверх:
+# под подпись в шаблоне подобран светлый угол фото, а в новой картинке текст окажется на самом объекте.
+MAX_TEXT_ON_IMAGE = 0.15
+TEXT_ROLES = {"title", "subtitle", "body", "text", "title_text", "lines", "value", "value_label"}
+
+
+def _overlap(a: list[float], b: list[float]) -> float:
+    """Площадь пересечения рамок [x, y, w, h]."""
+    width = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+    height = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+    return max(0.0, width) * max(0.0, height)
+
+
+def image_slot_clear(pattern: dict[str, Any]) -> bool:
+    """В паттерне есть место под картинку, и текст на него не заходит."""
+    images = pattern.get("images") or []
+    if not images:
+        return False
+    frame = images[0]["bbox"]
+    boxes = [slot["bbox"] for slot in pattern.get("slots") or [] if slot.get("role") in TEXT_ROLES]
+    if pattern.get("title"):
+        boxes.append(pattern["title"]["bbox"])
+    return all(_overlap(box, frame) <= MAX_TEXT_ON_IMAGE * box[2] * box[3] for box in boxes if box[2] * box[3] > 0)
 
 
 def item_capacity(unit: dict[str, Any]) -> dict[str, float]:
@@ -143,6 +168,8 @@ def pattern_score(slide: Slide, pattern: dict[str, Any]) -> float | None:
         rows = len(slide.table.rows) + 1
         return score - max(0, rows - 8) * 0.5
 
+    if pattern["type"] == "image_text" and not image_slot_clear(pattern):
+        return None
     if pattern["type"] in {"text", "image_text"}:
         body = next((slot for slot in pattern["slots"] if slot["role"] == "body"), None)
         if body is None or not content.body:

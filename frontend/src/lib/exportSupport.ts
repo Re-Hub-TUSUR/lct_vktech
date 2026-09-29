@@ -1,4 +1,4 @@
-import type { Slide, SlideShape, SlideTheme, TextAlign } from '../api/types'
+import type { Slide, SlidePattern, SlideShape, SlideTheme, TextAlign } from '../api/types'
 
 // Что из ручных правок попадает в собранный .pptx (backend/app/pipeline/export/pptx_export.py и pattern_fill.py).
 // Редактор показывает и предлагает только это — иначе превью расходится с экспортом.
@@ -192,6 +192,50 @@ export interface Typography {
   hint?: string
 }
 
+/** Поля, которые превью и сборка по умолчанию рисуют жирными: подписи карточек и колонок, показатели, этапы, шапка таблицы. */
+const BOLD_FIELD = /^(columns\.\d+\.title|kpis\.\d+\.value|timeline\.\d+\.(date|title)|table\.columns\.\d+)$/
+
+/**
+ * Жирность поля без правки — ровно как его рисуют превью (SlideView) и сборка (pptx_export): заголовок —
+ * по стилю заголовка макета (в шаблонах VK он обычный), иначе кнопка «Жирный» горела бы у нежирного текста.
+ */
+/** Поля, у которых жирность без правки определена (заголовок, подписи блоков): её задаёт defaultBold. */
+export function hasDefaultWeight(field: string): boolean {
+  return field === 'title' || BOLD_FIELD.test(field)
+}
+
+export function defaultBold(slide: Slide, theme: SlideTheme, field: string): boolean {
+  if (field === 'title') return titleBold(slide, theme)
+  if (!BOLD_FIELD.test(field)) return false
+  // Слайд из примера: сборка сохраняет начертание текста примера (pattern_fill), а в шаблонах VK подписи
+  // карточек и колонок обычные. Иначе кнопка «Жирный» горела бы у нежирного текста.
+  const head = field.match(/^(columns|timeline|kpis)\.(\d+)\.(title|date|value)$/)
+  const items = patternOf(slide, theme)?.items ?? []
+  if (head && items.length) {
+    const roles = head[3] === 'value' ? ['value'] : ['title', 'title_text', 'date']
+    const slot = items[Number(head[2]) % items.length].slots.find((item) => roles.includes(item.role))
+    return Boolean(slot?.bold)
+  }
+  return true
+}
+
+function patternOf(slide: Slide, theme: SlideTheme): SlidePattern | undefined {
+  return slide.pattern_id ? theme.patterns?.find((item) => item.id === slide.pattern_id) : undefined
+}
+
+/**
+ * Жирный ли заголовок без правки. На слайде из примера шаблона сборка (pattern_fill) сохраняет начертание
+ * текста примера — оно главнее; иначе заголовок оформляется по стилю заголовка макета (pptx_export._render).
+ */
+export function titleBold(slide: Slide, theme: SlideTheme): boolean {
+  const pattern = patternOf(slide, theme)
+  if (pattern?.title?.bold) return true
+  const layoutKey = slide.layout_key || pattern?.layout_key
+  const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
+  const skin = (layoutKey && theme.layouts?.[layoutKey]) || (roleKey && theme.layouts?.[roleKey]) || undefined
+  return skin?.title?.bold !== false
+}
+
 /** Что из типографики можно менять у выделенного: фигуры, текстового поля, блока или слайда целиком. */
 export function typographyTarget(
   slide: Slide,
@@ -231,7 +275,7 @@ export function typographyTarget(
       font: slide.element_fonts?.[first] || slide.font_family || '',
       scale: slide.element_scales?.[first] ?? 1,
       color: slide.element_colors?.[first] || slide.text_color || null,
-      bold: slide.element_bolds?.[first] ?? first === 'title',
+      bold: slide.element_bolds?.[first] ?? defaultBold(slide, theme, first),
       align: slide.element_aligns?.[first] ?? null,
     }
   }

@@ -30,9 +30,10 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE, MSO_SHAPE_TYPE, PP_PLACEHOLDER
 from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
+from pptx.shapes.picture import Picture
 from pptx.util import Emu, Pt
 
-from app.core.storage import storage_path
+from app.core.storage import generated_image_path, storage_path
 from app.pipeline.export.chart_style import chart_caption, highlight_points, number_format
 from app.pipeline.export.facts import digest, slide_facts
 from app.pipeline.export.motion import apply_motion
@@ -102,6 +103,10 @@ class _Ctx:
     surface: str = "#E6F1FF"
     background: str = "#FFFFFF"
     font_family: str | None = None
+    # Гарнитуры шаблона по умолчанию — те же, что у превью (theme.heading_font / body_font): без них новый
+    # текст наследовал бы шрифт темы, а он в шаблонах часто формальный Arial вместо фирменной гарнитуры.
+    heading_font: str | None = None
+    body_font: str | None = None
 
     @property
     def scale(self) -> float:
@@ -165,7 +170,13 @@ def build_deck(
     }
     fallback_key = roles.get("content") if roles.get("content") in layouts else next(iter(layouts))
     theme_colors = extract_theme(prs)["colors"]
-    ctx = _Ctx(width=int(prs.slide_width), height=int(prs.slide_height), theme=theme)
+    ctx = _Ctx(
+        width=int(prs.slide_width),
+        height=int(prs.slide_height),
+        theme=theme,
+        heading_font=theme.get("heading_font"),
+        body_font=theme.get("body_font"),
+    )
 
     chrome = ctx.design.get("chrome") or {}
     # Ряды диаграмм — цветами диаграмм шаблона, если они есть, иначе акцентами темы.
@@ -279,14 +290,21 @@ def _resolve_image_url(url: str | None) -> Path | None:
             if matches:
                 return _ensure_raster(matches[0])
 
-    # 2. Пользовательские изображения: storage_path("user_images", filename)
+    # 2. Иллюстрации модели text-to-image: /presentations/{id}/images/{name}
+    match = re.search(r"/presentations/([0-9a-fA-F-]+)/images/([0-9a-f]{32}\.jpg)", url)
+    if match:
+        generated = generated_image_path(match.group(1), match.group(2))
+        if generated is not None and generated.is_file():
+            return generated
+
+    # 3. Пользовательские изображения: storage_path("user_images", filename)
     filename = Path(url).name
     if filename:
         user_img = storage_path("user_images", filename)
         if user_img.is_file():
             return _ensure_raster(user_img)
 
-    # 3. Прямой путь на файловой системе
+    # 4. Прямой путь на файловой системе
     direct_path = Path(url)
     try:
         if direct_path.is_file():
@@ -359,6 +377,36 @@ def _round_picture(pic, radius: float | None) -> None:
         logger.exception("Не удалось скруглить картинку: %s", radius)
 
 
+def _example_picture(slide, shape_id: int):
+    """Элемент картинки слайда-примера (p:pic) по id фигуры в клоне; None — это не картинка."""
+    for c_nv_pr in slide._element.iter(qn("p:cNvPr")):
+        if c_nv_pr.get("id") == str(shape_id):
+            element = c_nv_pr.getparent().getparent()
+            return element if element.tag == qn("p:pic") else None
+    return None
+
+
+def _swap_picture(slide, shape_id: int, path: Path, crop: list[float] | None) -> bool:
+    """Подменяет изображение в картинке слайда-примера, не трогая её рамку и оформление."""
+    element = _example_picture(slide, shape_id)
+    blip = element.find(f".//{qn('a:blip')}") if element is not None else None
+    if blip is None:
+        return False
+    try:
+        _, rel_id = slide.part.get_or_add_image_part(str(path))
+    except Exception:  # noqa: BLE001 — не вышло подменить: картинка встанет поверх
+        logger.exception("Не удалось подменить картинку %s в слайде-примере", path)
+        return False
+    blip.set(qn("r:embed"), rel_id)
+    if blip.get(qn("r:link")) is not None:
+        del blip.attrib[qn("r:link")]
+    # Векторная копия картинки (asvg:svgBlip в расширениях) показалась бы вместо новой.
+    for ext_list in blip.findall(qn("a:extLst")):
+        blip.remove(ext_list)
+    _apply_crop(Picture(element, slide.shapes), crop, path)
+    return True
+
+
 def _slide_image(spec: Slide) -> Path | None:
     """Унифицированное разрешение пути к картинке слайда (контент-пакет, user_images или прямой путь)."""
     if not spec.image or not spec.image.url:
@@ -369,8 +417,24 @@ def _slide_image(spec: Slide) -> Path | None:
 _user_image = _slide_image
 
 
-def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
-    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера."""
+def _fresh_id(picture, ceiling: int) -> None:
+    """Новой картинке — id больше любого id слайда-примера. Фигуры шаблона, удалённые при заполнении,
+    освобождают свои id, и новая фигура могла бы занять такой id — тогда _shapes принял бы её за фигуру
+    шаблона, которую удалил пользователь, и убрал бы со слайда."""
+    tree = picture._element.getparent()
+    taken = [int(el.get("id")) for el in tree.iter(qn("p:cNvPr")) if (el.get("id") or "").isdigit()]
+    c_nv_pr = picture._element.find(f"{qn('p:nvPicPr')}/{qn('p:cNvPr')}")
+    if c_nv_pr is not None:
+        c_nv_pr.set("id", str(max([ceiling, *taken]) + 1))
+
+
+def _max_shape_id(slide) -> int:
+    return max((int(el.get("id")) for el in slide._element.iter(qn("p:cNvPr")) if (el.get("id") or "").isdigit()), default=0)
+
+
+def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx, ceiling: int = 0) -> None:
+    """Картинка слайда: в плейсхолдер картинки макета или на место картинки слайда-примера.
+    ceiling — наибольший id фигуры слайда-примера до заполнения (см. _fresh_id)."""
     path = _slide_image(spec) if (spec.kind in {"image_text", "title"} or (spec.image and spec.image.url)) else None
     if path is None:
         return
@@ -381,6 +445,7 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
     if "image" in elem_boxes:
         ix, iy, iw, ih = elem_boxes["image"]
         pic = slide.shapes.add_picture(str(path), int(ix * ctx.width), int(iy * ctx.height), int(iw * ctx.width), int(ih * ctx.height))
+        _fresh_id(pic, ceiling)
         _apply_crop(pic, elem_crops.get("image"), path)
         _round_picture(pic, (spec.element_radii or {}).get("image"))
         placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
@@ -389,6 +454,11 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
             holder = next((ph for ph in slide.placeholders if ph.placeholder_format.idx == idx), None)
             if holder is not None:
                 remove(holder._element)
+        elif pattern.get("images") and spec.kind != "title":
+            # Картинку передвинули: фото слайда-примера на старом месте не остаётся.
+            example = _example_picture(slide, pattern["images"][0]["id"])
+            if example is not None:
+                remove(example)
         return
 
     placeholders = [image for image in pattern.get("images") or [] if image.get("placeholder")]
@@ -407,16 +477,22 @@ def _place_image(slide, pattern: dict, spec: Slide, ctx: _Ctx) -> None:
         if pattern.get("images"):
             x, y, w, h = pattern["images"][0]["bbox"]
             pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+            _fresh_id(pic, ceiling)
             _apply_crop(pic, elem_crops.get("image"), path)
             _round_picture(pic, (spec.element_radii or {}).get("image"))
         else:
             logo_w, logo_h = int(ctx.width * 0.16), int(ctx.height * 0.08)
             pic = slide.shapes.add_picture(str(path), int(ctx.width * 0.06), int(ctx.height * 0.06), logo_w, logo_h)
+            _fresh_id(pic, ceiling)
             _apply_crop(pic, elem_crops.get("image"), path)
             _round_picture(pic, (spec.element_radii or {}).get("image"))
     else:
+        # Картинка встаёт на место фото слайда-примера: рамка, маска, скругление и эффекты шаблона остаются.
+        if pattern.get("images") and _swap_picture(slide, pattern["images"][0]["id"], path, elem_crops.get("image")):
+            return
         x, y, w, h = pattern["images"][0]["bbox"] if pattern.get("images") else [0.55, 0.25, 0.38, 0.55]
         pic = slide.shapes.add_picture(str(path), int(x * ctx.width), int(y * ctx.height), int(w * ctx.width), int(h * ctx.height))
+        _fresh_id(pic, ceiling)
         _apply_crop(pic, elem_crops.get("image"), path)
         _round_picture(pic, (spec.element_radii or {}).get("image"))
 
@@ -428,6 +504,7 @@ def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx,
         if layout is None:
             raise ExportError(f"Макет паттерна {pattern['id']} не найден")
         slide = prs.slides.add_slide(layout)
+        ceiling = _max_shape_id(slide)
         slide_targets = fill_pattern(
             slide, pattern, spec, accents=chart_colors, background=ctx.background, steps=ctx.steps
         )
@@ -437,10 +514,11 @@ def _pattern_slide(prs, pattern: dict, spec: Slide, sources, layouts, ctx: _Ctx,
         if not 0 <= index < len(sources):
             raise ExportError(f"Слайд-пример паттерна {pattern['id']} не найден")
         slide = clone_slide(prs, sources[index])
+        ceiling = _max_shape_id(slide)
         slide_targets = fill_pattern(
             slide, pattern, spec, accents=chart_colors, background=ctx.background, steps=ctx.steps
         )
-    _place_image(slide, pattern, spec, ctx)
+    _place_image(slide, pattern, spec, ctx, ceiling)
     _shapes(slide, spec.shapes, ctx, pattern_shapes=pattern.get("shapes"))
     return slide_targets
 
@@ -535,8 +613,13 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     elem_bolds = getattr(spec, "element_bolds", {}) or {}
 
     title_color = elem_colors.get("title") or getattr(spec, "text_color", None)
-    title_bold = elem_bolds.get("title") if "title" in elem_bolds else (spec.is_bold if spec.is_bold is not None else True)
-    title_font = elem_fonts.get("title") or spec.font_family
+    # Жирность заголовка по умолчанию — из стиля заголовка макета, как в превью (SlideView: skin.title.bold).
+    skins, theme_roles = ctx.theme.get("layouts") or {}, ctx.theme.get("roles") or {}
+    role_key = theme_roles.get(spec.kind) or theme_roles.get("content") or ""
+    skin_title = (skins.get(spec.layout_key or "") or skins.get(role_key) or {}).get("title") or {}
+    default_bold = spec.is_bold if spec.is_bold is not None else skin_title.get("bold") is not False
+    title_bold = elem_bolds.get("title") if "title" in elem_bolds else default_bold
+    title_font = elem_fonts.get("title") or spec.font_family or ctx.heading_font
     title_scale = elem_scales.get("title", 1.0)
     if "title" in elem_boxes:
         tx, ty, tw, th = elem_boxes["title"]
@@ -544,7 +627,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         box = slide.shapes.add_textbox(*rect)
         _write(
             # Кегль заголовка шаблона (как показывает редактор), а не условные 30 pt.
-            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font
+            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font, heading=True
         )
         targets["title"] = _fraction(rect, ctx)
         _styled_frame(box.text_frame, spec, "title", scale=False)
@@ -573,7 +656,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         rect = (int(ctx.width * 0.06), int(ctx.height * 0.07), int(ctx.width * 0.88), int(ctx.height * 0.14))
         box = slide.shapes.add_textbox(*rect)
         _write(
-            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font
+            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font, heading=True
         )
         _styled_frame(box.text_frame, spec, "title", scale=False)
         targets["title"] = _fraction(rect, ctx)
@@ -697,7 +780,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     elif kind == "quote" and spec.quote:
         x, y, w, h = area
         box = slide.shapes.add_textbox(x, y, w, h)
-        _write(box.text_frame, [f"«{spec.quote.text}»"], ctx, size=30, italic=True)
+        _write(box.text_frame, [f"«{spec.quote.text}»"], ctx, size=30, italic=True, heading=True)
         _styled(box.text_frame.paragraphs[0], spec, "quote.text")
         if spec.quote.author:
             paragraph = box.text_frame.add_paragraph()
@@ -735,14 +818,16 @@ def _run(
     color: str | None = None,
     styled: bool = False,
     font_name: str | None = None,
+    heading: bool = False,
 ):
-    """styled=True — цвет текста задаёт стиль объекта (таблицы), а не фон слайда."""
+    """styled=True — цвет текста задаёт стиль объекта (таблицы), а не фон слайда.
+    heading=True — заголовочный текст (заголовок, карточки, показатели): гарнитура заголовков шаблона."""
     run = paragraph.add_run()
     run.text = text
     run.font.size = ctx.pt(size)
     run.font.bold = bold
     run.font.italic = italic
-    fn = font_name or ctx.font_family
+    fn = font_name or ctx.font_family or (ctx.heading_font if heading else ctx.body_font)
     if fn:
         run.font.name = fn
     if not styled:
@@ -761,11 +846,13 @@ def _styled_frame(text_frame, spec: Slide, field: str, *, scale: bool = True) ->
         _styled(paragraph, spec, field, scale=scale)
 
 
-def _write(text_frame, lines: list[str], ctx: _Ctx, *, size: float, bold=False, italic=False, color=None, font_name=None):
+def _write(
+    text_frame, lines: list[str], ctx: _Ctx, *, size: float, bold=False, italic=False, color=None, font_name=None, heading=False
+):
     text_frame.word_wrap = True
     for i, line in enumerate(lines):
         paragraph = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
-        _run(paragraph, line, ctx, size=size, bold=bold, italic=italic, color=color, font_name=font_name)
+        _run(paragraph, line, ctx, size=size, bold=bold, italic=italic, color=color, font_name=font_name, heading=heading)
 
 
 def _set_bullet(paragraph, ctx: _Ctx) -> None:
@@ -853,7 +940,7 @@ def _two_columns(slide, spec: Slide, area, ctx: _Ctx) -> None:
             cx, cy, cw, ch = elem_boxes[col_key]
             left, top, cur_w, cur_h = int(cx * ctx.width), int(cy * ctx.height), int(cw * ctx.width), int(ch * ctx.height)
         header = slide.shapes.add_textbox(left, top, cur_w, int(cur_h * 0.16))
-        _write(header.text_frame, [column.title], ctx, size=22, bold=True, color=ctx.theme["accent"])
+        _write(header.text_frame, [column.title], ctx, size=22, bold=True, color=ctx.theme["accent"], heading=True)
         _styled_frame(header.text_frame, spec, f"columns.{i}.title")
         _bullets_box(
             slide,
@@ -902,7 +989,7 @@ def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
         frame = card.text_frame
         frame.word_wrap = True
         frame.vertical_anchor = MSO_ANCHOR.TOP
-        _run(frame.paragraphs[0], card_spec.title, ctx, size=20, bold=True, color=ctx.theme["accent"])
+        _run(frame.paragraphs[0], card_spec.title, ctx, size=20, bold=True, color=ctx.theme["accent"], heading=True)
         _styled(frame.paragraphs[0], spec, f"columns.{i}.title")
         for j, bullet in enumerate(card_spec.bullets):
             paragraph = frame.add_paragraph()
@@ -1077,7 +1164,7 @@ def _kpis(slide, spec: Slide, area, ctx: _Ctx) -> None:
         frame = card.text_frame
         frame.word_wrap = True
         frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        _run(frame.paragraphs[0], kpi.value, ctx, size=44, bold=True, color=ctx.theme["accent"])
+        _run(frame.paragraphs[0], kpi.value, ctx, size=44, bold=True, color=ctx.theme["accent"], heading=True)
         _styled(frame.paragraphs[0], spec, f"kpis.{i}.value")
         label = frame.add_paragraph()
         _run(label, kpi.label, ctx, size=16, color=ctx.fg)

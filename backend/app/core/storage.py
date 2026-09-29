@@ -1,4 +1,5 @@
 import logging
+import re
 import shutil
 from pathlib import Path
 
@@ -9,12 +10,22 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 1024 * 1024
+# Иллюстрации модели text-to-image: generated/<id презентации>/<uuid>.jpg.
+GENERATED_DIR = "generated"
+GENERATED_NAME_RX = re.compile(r"[0-9a-f]{32}\.jpg")
 
 
 def storage_path(*parts: str) -> Path:
     path = settings.storage_dir.joinpath(*parts)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def generated_image_path(presentation_id, name: str) -> Path | None:
+    """Файл иллюстрации презентации; None — имя не из выданных генерацией (защита от путей вида ../)."""
+    if not GENERATED_NAME_RX.fullmatch(name or ""):
+        return None
+    return settings.storage_dir / GENERATED_DIR / str(presentation_id) / name
 
 
 async def save_upload(upload: UploadFile, dest: Path, max_bytes: int | None = None) -> int:

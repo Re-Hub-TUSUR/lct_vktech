@@ -1568,3 +1568,15 @@
 .slide--editable .slide__image-layer {
   cursor: pointer;
 }
+
+/* Показ: кусок рендера по рамке анимируемого элемента (SlideView › RenderedSlide) */
+.slide__piece {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+}
+.slide__piece > img {
+  position: absolute;
+  max-width: none;
+  display: block;
+}
