@@ -24,7 +24,7 @@ from app.pipeline.parsing.layout_patterns import extract_layout_patterns
 from app.pipeline.parsing.patterns import extract_patterns, pattern_summary
 from app.pipeline.skills import get_skill
 
-PARSER_VERSION = "0.5.1"
+PARSER_VERSION = "0.5.2"
 
 NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 NS_P = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -37,6 +37,8 @@ TITLE_TYPES = {"TITLE", "CENTER_TITLE"}
 BODY_TYPES = {"BODY", "OBJECT", "SUBTITLE"}
 PART_RX = re.compile(r"^ppt/(slides|slideLayouts|slideMasters)/[^/]+\.xml$")
 EMU_PER_INCH = 914400
+# С этого кегля (в сотых пункта) прогон считается заголовочным при определении гарнитуры заголовков.
+HEADING_SZ = 2400
 
 _XML_PARSER = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True)
 
@@ -96,6 +98,7 @@ def parse_template(path: str | Path) -> ParsedTemplate:
         },
         "palette": usage["palette"],
         "fonts": usage["fonts"],
+        "font_roles": usage["font_roles"],
         "type_scale": usage["type_scale"],
         # Токены дизайн-системы сверх палитры и шрифтов (parsing/design_tokens.py).
         "typography": design_tokens.safe("typography", design_tokens.typography, prs, theme, usage["type_scale"]),
@@ -443,6 +446,11 @@ def _usage(path: Path, theme: dict[str, Any], params: dict[str, Any]) -> dict[st
     colors: Counter[str] = Counter()
     color_sources: dict[str, set[str]] = defaultdict(set)
     fonts: Counter[str] = Counter()
+    # Роли гарнитур отдельно по слайдам и по макетам/мастерам: в макетах бывают служебные плейсхолдеры
+    # другим шрифтом (Calibri), а решает то, чем набраны сами слайды; макеты — если слайдов нет (.potx).
+    role_fonts: dict[str, dict[str, Counter[str]]] = {
+        part: {"heading": Counter(), "body": Counter()} for part in ("slides", "layouts")
+    }
     sizes: Counter[float] = Counter()
     stats: Counter[str] = Counter()
 
@@ -475,6 +483,12 @@ def _usage(path: Path, theme: dict[str, Any], params: dict[str, Any]) -> dict[st
                     face = theme_fonts.get("minor") or ""
                 if face:
                     fonts[face] += 1
+                    # Роль гарнитуры — по кеглю прогона: шрифты темы в шаблонах часто пустая формальность
+                    # (Arial), а весь текст слайдов набран фирменной гарнитурой прямо в прогонах.
+                    size = el.getparent().get("sz") or ""
+                    if size.isdigit():
+                        part = "slides" if match.group(1) == "slides" else "layouts"
+                        role_fonts[part]["heading" if int(size) >= HEADING_SZ else "body"][face] += 1
 
             for tag in ("rPr", "defRPr", "endParaRPr"):
                 for el in root.iter(f"{{{NS_A}}}{tag}"):
@@ -507,6 +521,11 @@ def _usage(path: Path, theme: dict[str, Any], params: dict[str, Any]) -> dict[st
     return {
         "palette": palette,
         "fonts": font_list,
+        "font_roles": {
+            role: (role_fonts["slides"][role] or role_fonts["layouts"][role]).most_common(1)[0][0]
+            for role in ("heading", "body")
+            if role_fonts["slides"][role] or role_fonts["layouts"][role]
+        },
         "type_scale": type_scale,
         "stats": {key: stats.get(key, 0) for key in ("pictures", "groups", "charts", "tables", "smartart", "media")},
     }

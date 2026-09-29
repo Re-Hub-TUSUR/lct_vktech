@@ -1,9 +1,10 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, collab, meta, notifications, presentations, projects, sharing, skills, templates, variants
+from app.api.routes import auth, collab, fonts, meta, notifications, presentations, projects, sharing, skills, templates, variants
 
 api_router = APIRouter()
 api_router.include_router(meta.router)
+api_router.include_router(fonts.router)
 api_router.include_router(auth.router)
 api_router.include_router(notifications.router)
 api_router.include_router(templates.router)

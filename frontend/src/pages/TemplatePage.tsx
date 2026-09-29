@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 
 import { api } from '../api/client'
@@ -12,6 +12,7 @@ import { TemplatePreview } from '../components/TemplateCard'
 import { useToast } from '../components/Toast'
 import { Badge, Button, Card, ErrorState, FullPageSpinner, Spinner } from '../components/ui'
 import { formatSize } from '../lib/format'
+import { ensureFonts } from '../lib/templateFonts'
 import { ROLE_LABELS } from '../lib/labels'
 
 const ROLE_ORDER = ['title', 'section', 'agenda', 'content', 'two_columns', 'image', 'closing']
@@ -23,6 +24,9 @@ export function TemplatePage() {
   const notify = useToast()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const { data: template, isPending, error } = useTemplate(templateId)
+  // Образцы гарнитур и типографики рисуются самими шрифтами шаблона.
+  const fontNames = (template?.tokens.fonts ?? []).map((font) => font.name).join('|')
+  useEffect(() => ensureFonts(fontNames.split('|')), [fontNames])
 
   const remove = useMutation({
     mutationFn: () => api.delete(`/templates/${templateId}`),

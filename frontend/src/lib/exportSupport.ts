@@ -192,6 +192,22 @@ export interface Typography {
   hint?: string
 }
 
+/** Поля, которые превью и сборка по умолчанию рисуют жирными: подписи карточек и колонок, показатели, этапы, шапка таблицы. */
+const BOLD_FIELD = /^(columns\.\d+\.title|kpis\.\d+\.value|timeline\.\d+\.(date|title)|table\.columns\.\d+)$/
+
+/**
+ * Жирность поля без правки — ровно как его рисуют превью (SlideView) и сборка (pptx_export): заголовок —
+ * по стилю заголовка макета (в шаблонах VK он обычный), иначе кнопка «Жирный» горела бы у нежирного текста.
+ */
+export function defaultBold(slide: Slide, theme: SlideTheme, field: string): boolean {
+  if (field === 'title') {
+    const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
+    const skin = (slide.layout_key && theme.layouts?.[slide.layout_key]) || (roleKey && theme.layouts?.[roleKey]) || undefined
+    return skin?.title?.bold !== false
+  }
+  return BOLD_FIELD.test(field)
+}
+
 /** Что из типографики можно менять у выделенного: фигуры, текстового поля, блока или слайда целиком. */
 export function typographyTarget(
   slide: Slide,
@@ -231,7 +247,7 @@ export function typographyTarget(
       font: slide.element_fonts?.[first] || slide.font_family || '',
       scale: slide.element_scales?.[first] ?? 1,
       color: slide.element_colors?.[first] || slide.text_color || null,
-      bold: slide.element_bolds?.[first] ?? first === 'title',
+      bold: slide.element_bolds?.[first] ?? defaultBold(slide, theme, first),
       align: slide.element_aligns?.[first] ?? null,
     }
   }

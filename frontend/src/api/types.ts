@@ -215,6 +215,8 @@ export interface SlideTheme {
   closing: SurfaceColors
   heading_font: string
   body_font: string
+  /** Все гарнитуры шаблона: заголовков, текста и остальные из его слайдов. */
+  fonts?: string[]
   aspect: number
   /** Ключ макета → оформление (только макеты, назначенные ролям). */
   layouts: Record<string, LayoutSkin>
