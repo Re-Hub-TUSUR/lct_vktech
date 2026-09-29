@@ -20,6 +20,8 @@ from urllib.parse import urlparse
 import httpx
 
 from app.core.config import settings
+from app.pipeline.ai.keys import auth_headers, split_keys
+from app.pipeline.ai.keys import post as post_with_keys
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +96,14 @@ def nearest_ratio(aspect: float) -> str:
 
 def open_client(cfg: T2IConfig | None = None) -> httpx.Client:
     cfg = cfg or t2i_config()
-    headers = {"Authorization": f"Bearer {cfg.api_key}"} if cfg.api_key else {}
-    return httpx.Client(base_url=cfg.base_url or "", headers=headers, timeout=cfg.timeout)
+    return httpx.Client(base_url=cfg.base_url or "", headers=auth_headers(cfg.api_key), timeout=cfg.timeout)
 
 
 def _decode(url: str, http: httpx.Client) -> bytes:
     if url.startswith("data:"):
         return base64.b64decode(url.partition(",")[2])
-    response = http.get(url)
+    # Картинка по ссылке может лежать на чужом хосте (CDN) — ключ API туда не отправляется.
+    response = httpx.get(url, timeout=http.timeout, follow_redirects=True)
     response.raise_for_status()
     return response.content
 
@@ -143,7 +145,7 @@ def _request(http: httpx.Client, prompt: str, *, ratio: str, seed: int, cfg: T2I
             "response_format": "b64_json",
             "seed": seed,
         }
-        response = http.post("/images/generations", json=payload)
+        response = post_with_keys(http, "/images/generations", json=payload, keys=split_keys(cfg.api_key))
         response.raise_for_status()
         return _from_images(response.json(), http)
     payload = {
@@ -153,7 +155,7 @@ def _request(http: httpx.Client, prompt: str, *, ratio: str, seed: int, cfg: T2I
         "image_config": {"aspect_ratio": ratio},
         "seed": seed,
     }
-    response = http.post("/chat/completions", json=payload)
+    response = post_with_keys(http, "/chat/completions", json=payload, keys=split_keys(cfg.api_key))
     response.raise_for_status()
     return _from_chat(response.json(), http)
 

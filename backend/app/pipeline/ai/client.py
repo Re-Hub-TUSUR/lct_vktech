@@ -17,6 +17,8 @@ from typing import Any
 
 import httpx
 
+from app.pipeline.ai import keys as api_keys
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,12 +80,17 @@ def attempts(*, extra: dict[str, Any], disable_reasoning: bool, schema: dict[str
 
 
 def ask_json(
-    client: httpx.Client, payload: dict[str, Any], options: list[dict[str, Any]], label: str
+    client: httpx.Client,
+    payload: dict[str, Any],
+    options: list[dict[str, Any]],
+    label: str,
+    keys: list[str] | None = None,
 ) -> Answer:
-    """POST /chat/completions с перебором вариантов запроса и разбором JSON из ответа."""
+    """POST /chat/completions с перебором вариантов запроса и разбором JSON из ответа.
+    keys — API-ключи роли: запрос уходит на наименее загруженный (ai/keys.py)."""
     response = None
     for extra in options:
-        response = client.post("/chat/completions", json={**payload, **extra})
+        response = api_keys.post(client, "/chat/completions", json={**payload, **extra}, keys=keys or [])
         if response.status_code != 400:
             break
     response.raise_for_status()

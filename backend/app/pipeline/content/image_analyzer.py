@@ -26,6 +26,7 @@ import httpx
 
 from app.core.config import settings
 from app.pipeline.ai import client as api
+from app.pipeline.ai.keys import auth_headers, split_keys
 from app.pipeline.ai.vlm import vlm_enabled
 
 logger = logging.getLogger(__name__)
@@ -213,7 +214,7 @@ def _analyze_with_vlm(image_bytes: bytes, filename: str) -> ImageAnalysis | None
         ],
     }
 
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    headers = auth_headers(api_key)
     options = api.attempts(
         extra=api.extra_body(settings.vlm_extra_body or settings.llm_extra_body, "VLM_EXTRA_BODY"),
         disable_reasoning=settings.vlm_disable_reasoning,
@@ -224,7 +225,7 @@ def _analyze_with_vlm(image_bytes: bytes, filename: str) -> ImageAnalysis | None
     for attempt_idx, delay in enumerate(vlm_delays):
         try:
             with httpx.Client(base_url=base_url, headers=headers, timeout=settings.vlm_timeout_seconds) as client:
-                answer = api.ask_json(client, payload, options, label=f"vlm_image_{filename}")
+                answer = api.ask_json(client, payload, options, label=f"vlm_image_{filename}", keys=split_keys(api_key))
                 if answer.data:
                     data = answer.data
                     fn_lower = filename.lower()
