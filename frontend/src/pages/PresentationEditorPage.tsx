@@ -103,6 +103,7 @@ import {
   setSlideImage,
   type SlidePatch,
 } from '../lib/slideEdits'
+import { ensureFonts } from '../lib/templateFonts'
 import { useTheme } from '../lib/theme'
 
 export function PresentationEditorPage() {
@@ -327,6 +328,8 @@ function StudioEditor({ presentation, detail, initialIndex, initialThread, canEd
   const labelOf = (target: string) => elements.find((element) => element.target === target)?.label ?? getElementLabel(target)
   const palette = useMemo(() => templatePalette(theme), [theme])
   const fonts = useMemo(() => templateFonts(theme), [theme])
+  // Названия шрифтов в выборе рисуются самими гарнитурами — их файлы нужны до открытия списка.
+  useEffect(() => ensureFonts(fonts), [fonts])
 
   // --- Текст, фигуры, блоки ------------------------------------------------------------------
 

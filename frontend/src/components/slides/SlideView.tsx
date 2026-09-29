@@ -16,6 +16,7 @@ import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender,
 import { capacity, exportView, frameTarget } from '../../lib/exportSupport'
 import { slideMotionCss, type PlayItem } from '../../lib/motion'
 import { fitFontSize } from '../../lib/fit'
+import { ensureFonts } from '../../lib/templateFonts'
 import { applyFrameCrop, frameAspect, knownSize, visibleRegion } from '../../lib/imageCrop'
 import { CroppedImage } from './CroppedImage'
 import { SlideChart } from './SlideChart'
@@ -375,6 +376,12 @@ function EditableText({ as: Tag = 'span', field, value, placeholder, edit, child
       onFocus={select}
       onClick={select}
       onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
+        // Ctrl+B/I/U браузер оформил бы тегом внутри поля, но хранится только текст: после сохранения
+        // жирность пропала бы и в .pptx не попала. Жирность поля — кнопкой «Жирный» (element_bolds).
+        if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+          e.preventDefault()
+          return
+        }
         const text = itemText(e.currentTarget)
         // В пунктах списков Enter добавляет следующий пункт, Backspace в пустом — удаляет пункт.
         if (onListItem && ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Backspace' && text === ''))) {
@@ -475,6 +482,15 @@ function InteractiveSlideView({
   onCropTargetChange,
 }: SlideViewProps) {
   const slide = useMemo(() => exportView(rawSlide, theme), [rawSlide, theme])
+  // Гарнитуры шаблона и правок: без их файлов браузер молча рисует шрифтом интерфейса.
+  const usedFonts = [
+    theme.heading_font,
+    theme.body_font,
+    slide.font_family,
+    ...Object.values(slide.element_fonts ?? {}),
+    ...(slide.shapes ?? []).map((shape) => shape.font_family),
+  ].join('|')
+  useLayoutEffect(() => ensureFonts(usedFonts.split('|')), [usedFonts])
   const [ownCrop, setOwnCrop] = useState<string | null>(null)
   // Кадрирование: в Студии им управляет плавающая панель, иначе — кнопка рамки.
   const cropping = onCropTargetChange ? (cropTarget ?? null) : ownCrop

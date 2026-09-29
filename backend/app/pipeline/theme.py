@@ -97,8 +97,11 @@ def slide_theme(
     title_cover = cover("title", accent)
     used_fonts = [f["name"] for f in tokens.get("fonts") or [] if f.get("name")]
     theme_fonts = theme.get("fonts") or {}
-    heading_font = used_fonts[0] if used_fonts else theme_fonts.get("major") or "Arial"
-    body_font = theme_fonts.get("minor") or heading_font
+    # Гарнитуры по фактическому набору крупного и мелкого текста шаблона: шрифты темы часто формальность
+    # (Arial), а слайды набраны фирменной гарнитурой прямо в прогонах (Play в шаблонах VK).
+    font_roles = tokens.get("font_roles") or {}
+    heading_font = font_roles.get("heading") or (used_fonts[0] if used_fonts else theme_fonts.get("major") or "Arial")
+    body_font = font_roles.get("body") or theme_fonts.get("minor") or heading_font
 
     size = tokens.get("slide_size") or {}
     aspect = size["width_emu"] / size["height_emu"] if size.get("height_emu") else 16 / 9
@@ -150,6 +153,8 @@ def slide_theme(
         "closing": cover("closing", title_cover["background"]),
         "heading_font": heading_font,
         "body_font": body_font,
+        # Все гарнитуры шаблона (заголовков, текста и прочие из его слайдов) — выбор шрифта в редакторе.
+        "fonts": list(dict.fromkeys([heading_font, body_font, *used_fonts])),
         "aspect": round(aspect, 4),
         "layouts": skins,
         "roles": dict(roles),
