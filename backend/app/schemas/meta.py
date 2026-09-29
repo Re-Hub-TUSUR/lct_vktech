@@ -23,6 +23,13 @@ class SlidesCountRange(BaseModel):
     default: int
 
 
+class ImagesOption(BaseModel):
+    """Генерация иллюстраций: подключена ли модель text-to-image (T2I_*) и какая."""
+
+    available: bool
+    model: str | None = None
+
+
 class OptionsOut(BaseModel):
     purposes: list[Option]
     variant_axes: list[AxisOption]
@@ -30,6 +37,7 @@ class OptionsOut(BaseModel):
     tones: list[Option]
     slides_count: SlidesCountRange
     content_extensions: list[str]
+    images: ImagesOption
 
 
 class SkillOut(BaseModel):

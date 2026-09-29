@@ -160,10 +160,11 @@ def slide_facts(
     colors = {"#" + element.get("val").upper() for element in root.iter(qn("a:srgbClr")) if element.get("val")}
     sizes = {int(prop.get("sz")) / 100 for prop in props if (prop.get("sz") or "").isdigit()}
     shapes = list(slide.shapes)
+    # Картинка в плейсхолдере (место под фото макета или слайда-примера) — тоже картинка слайда.
     pictures = [
         picture
         for shape in _walk(shapes)
-        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE
+        if shape.shape_type in (MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.PLACEHOLDER)
         and (picture := _picture(shape, width, height, user_digests)) is not None
     ]
     return {

@@ -18,10 +18,18 @@ function percent(value: number | null | undefined): string {
 }
 
 export function DesignSystemCard({ template }: { template: TemplateDetail }) {
-  const { typography, grid, chrome, table_style: tableStyle, chart_style: chartStyle, fonts_check: fonts, icons } =
-    template.tokens
+  const {
+    typography,
+    grid,
+    chrome,
+    table_style: tableStyle,
+    chart_style: chartStyle,
+    fonts_check: fonts,
+    icons,
+    image_style: imageStyle,
+  } = template.tokens
   const missing = (fonts ?? []).filter((font) => !font.available)
-  if (!typography && !grid && !chrome && !tableStyle && !chartStyle && !fonts && !icons?.length) return null
+  if (!typography && !grid && !chrome && !tableStyle && !chartStyle && !fonts && !icons?.length && !imageStyle) return null
 
   return (
     <Card>
@@ -135,6 +143,43 @@ export function DesignSystemCard({ template }: { template: TemplateDetail }) {
           </section>
         )}
       </div>
+
+      {imageStyle && (
+        <section className="stack">
+          <h3>
+            Стиль иллюстраций <Badge>{imageStyle.source === 'vlm' ? 'по картинкам шаблона' : 'по палитре'}</Badge>
+          </h3>
+          <p className="muted">
+            По этому описанию модель text-to-image рисует картинки для слайдов «текст и изображение».
+          </p>
+          <dl className="roles">
+            <div>
+              <dt>Техника</dt>
+              <dd>{imageStyle.medium}</dd>
+            </div>
+            <div>
+              <dt>Материал и свет</dt>
+              <dd>{imageStyle.style}</dd>
+            </div>
+            <div>
+              <dt>Фон</dt>
+              <dd>{imageStyle.background}</dd>
+            </div>
+            <div>
+              <dt>Типичные объекты</dt>
+              <dd>{imageStyle.subjects}</dd>
+            </div>
+            <div>
+              <dt>Цвета</dt>
+              <dd>
+                {imageStyle.colors.map((color) => (
+                  <span key={color} className="dot" style={{ background: color }} title={color} />
+                ))}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
 
       {icons && icons.length > 0 && (
         <section className="stack">

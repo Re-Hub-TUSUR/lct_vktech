@@ -312,6 +312,15 @@ export interface DesignTokens {
   fonts_check?: { name: string; available: boolean; substitute: string | null }[] | null
   /** Библиотека пиктограмм шаблона: /api/templates/{id}/icons/{file} */
   icons?: { id: string; file: string; slide_index: number; size_px: number[] | null; from_library: boolean; uses: number }[]
+  /** Стиль иллюстраций шаблона для text-to-image (skills/image_style.yaml): считается при первой генерации с картинками. */
+  image_style?: {
+    source: 'vlm' | 'fallback'
+    medium: string
+    style: string
+    background: string
+    subjects: string
+    colors: string[]
+  } | null
 }
 
 export interface TypeRole {
@@ -888,6 +897,8 @@ export interface MetaOptions {
   tones: Option<GenerationSettings['tone']>[]
   slides_count: { min: number; max: number; default: number }
   content_extensions: string[]
+  /** Генерация иллюстраций: подключена ли на сервере модель text-to-image (T2I_*) и какая. */
+  images?: { available: boolean; model: string | null }
 }
 
 export interface SkillInfo {

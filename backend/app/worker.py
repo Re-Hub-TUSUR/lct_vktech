@@ -3,6 +3,7 @@
 Запуск: arq app.worker.WorkerSettings
 """
 
+from arq import func
 from arq.connections import RedisSettings
 
 from app.core.config import settings
@@ -15,7 +16,15 @@ async def shutdown(ctx: dict) -> None:
 
 
 class WorkerSettings:
-    functions = [parse_template_job, run_generation_job, render_variant_job, review_variant_job]
+    # Генерация не повторяется сама: если воркер перезапустился или машина засыпала посреди прогона,
+    # arq запустил бы вторую попытку поверх ещё идущей первой — дубли вариантов и двойная нагрузка.
+    # Зависший прогон помечает ошибкой проверка heartbeat, пользователь запускает генерацию заново.
+    functions = [
+        parse_template_job,
+        func(run_generation_job, max_tries=1),
+        render_variant_job,
+        review_variant_job,
+    ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     on_shutdown = shutdown
     max_jobs = 4
