@@ -1,0 +1,8881 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API · Цифровой дизайнер презентаций</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <style>body { margin: 0; background: #fafafa; }</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    // Спецификация встроена в страницу: она открывается из файла, без запущенного сервиса.
+    const spec = {
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Цифровой дизайнер презентаций",
+  "description": "REST API сервиса «Цифровой дизайнер презентаций»: разбор шаблона, генерация трёх вариантов колоды по брифу\nи контент-пакету, аудит слайдов, правки и экспорт в .pptx, .pdf и .html. Устройство пайплайна — в\nARCHITECTURE.md репозитория.\n\n**Авторизация.** Сессия хранится в httpOnly-cookie: если войти в приложение в этом же браузере, запросы\nотсюда пойдут от вашего имени. Для скриптов `POST /api/auth/login` или `POST /api/auth/demo` (тестовый\nэксперт, без пароля) возвращают токен — его передают в заголовке `Authorization: Bearer <token>`\n(кнопка **Authorize**).\n\n**Сценарий генерации:**\n\n1. `POST /api/presentations` — презентация: шаблон, бриф, назначение, настройки генерации;\n2. `POST /api/presentations/{presentation_id}/files` — контент-пакет (необязательно);\n3. `POST /api/presentations/{presentation_id}/generate` — запуск пайплайна;\n4. `GET /api/presentations/{presentation_id}/generation` — ход стадий (или поток событий\n   `GET /api/presentations/{presentation_id}/events`);\n5. `GET /api/presentations/{presentation_id}/variants` — три варианта вёрстки;\n6. `GET /api/variants/{variant_id}/audit` и `POST /api/variants/{variant_id}/audit/resolve` — замечания\n   аудита и их исправление;\n7. `GET /api/variants/{variant_id}/export/{fmt}` — файл .pptx, .pdf или .html.\n",
+  "version": "1.0.0"
+ },
+ "paths": {
+  "/api/health": {
+   "get": {
+    "tags": [
+     "meta"
+    ],
+    "summary": "Health",
+    "operationId": "health_api_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": {
+          "type": "string"
+         },
+         "type": "object",
+         "title": "Response Health Api Health Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/meta/options": {
+   "get": {
+    "tags": [
+     "meta"
+    ],
+    "summary": "Options",
+    "operationId": "options_api_meta_options_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/OptionsOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/meta/skills": {
+   "get": {
+    "tags": [
+     "meta"
+    ],
+    "summary": "Skills",
+    "operationId": "skills_api_meta_skills_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SkillOut"
+         },
+         "type": "array",
+         "title": "Response Skills Api Meta Skills Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/fonts/css": {
+   "get": {
+    "tags": [
+     "fonts"
+    ],
+    "summary": "Fonts Css",
+    "description": "@font-face для гарнитур шаблона — превью рисуется теми же файлами, что и рендер LibreOffice.",
+    "operationId": "fonts_css_api_fonts_css_get",
+    "parameters": [
+     {
+      "name": "family",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "maxItems": 16,
+       "default": [],
+       "title": "Family"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/fonts/files/{key}": {
+   "get": {
+    "tags": [
+     "fonts"
+    ],
+    "summary": "Font File",
+    "operationId": "font_file_api_fonts_files__key__get",
+    "parameters": [
+     {
+      "name": "key",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Key"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/register": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Register",
+    "operationId": "register_api_auth_register_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegisterRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/login": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Login",
+    "operationId": "login_api_auth_login_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/LoginRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/demo": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Demo Login",
+    "description": "Создаёт технический аккаунт один раз и открывает для него новую сессию.",
+    "operationId": "demo_login_api_auth_demo_post",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuthResponse"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/auth/logout": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Logout",
+    "operationId": "logout_api_auth_logout_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    }
+   }
+  },
+  "/api/auth/me": {
+   "get": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Me",
+    "operationId": "me_api_auth_me_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/UserOut"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/notifications": {
+   "get": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "List Notifications",
+    "operationId": "list_notifications_api_notifications_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/NotificationOut"
+         },
+         "type": "array",
+         "title": "Response List Notifications Api Notifications Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/notifications/{notification_id}/read": {
+   "patch": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "Mark Notification Read",
+    "operationId": "mark_notification_read_api_notifications__notification_id__read_patch",
+    "parameters": [
+     {
+      "name": "notification_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Notification Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/NotificationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/notifications/read-all": {
+   "post": {
+    "tags": [
+     "notifications"
+    ],
+    "summary": "Mark All Notifications Read",
+    "operationId": "mark_all_notifications_read_api_notifications_read_all_post",
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     }
+    }
+   }
+  },
+  "/api/templates": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "List Templates",
+    "operationId": "list_templates_api_templates_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/TemplateSummary"
+         },
+         "type": "array",
+         "title": "Response List Templates Api Templates Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Upload Template",
+    "operationId": "upload_template_api_templates_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_template_api_templates_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateSummary"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates/{template_id}": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Get Template",
+    "operationId": "get_template_api_templates__template_id__get",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Template Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TemplateDetail"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Delete Template",
+    "operationId": "delete_template_api_templates__template_id__delete",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Template Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates/{template_id}/layouts/{image_name}": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Layout Image",
+    "description": "Рендер фона макета шаблона (подложка слайдов в превью).",
+    "operationId": "layout_image_api_templates__template_id__layouts__image_name__get",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Template Id"
+      }
+     },
+     {
+      "name": "image_name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Image Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates/{template_id}/icons/{image_name}": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Icon Image",
+    "description": "Пиктограмма из библиотеки иконок шаблона.",
+    "operationId": "icon_image_api_templates__template_id__icons__image_name__get",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Template Id"
+      }
+     },
+     {
+      "name": "image_name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Image Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/templates/{template_id}/slides/{image_name}": {
+   "get": {
+    "tags": [
+     "templates"
+    ],
+    "summary": "Slide Image",
+    "description": "Рендер слайда-примера шаблона (превью паттерна).",
+    "operationId": "slide_image_api_templates__template_id__slides__image_name__get",
+    "parameters": [
+     {
+      "name": "template_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Template Id"
+      }
+     },
+     {
+      "name": "image_name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Image Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "List Presentations",
+    "operationId": "list_presentations_api_presentations_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/PresentationListItem"
+         },
+         "type": "array",
+         "title": "Response List Presentations Api Presentations Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Create Presentation",
+    "operationId": "create_presentation_api_presentations_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PresentationCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PresentationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Get Presentation",
+    "operationId": "get_presentation_api_presentations__presentation_id__get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PresentationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "patch": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Update Presentation",
+    "operationId": "update_presentation_api_presentations__presentation_id__patch",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PresentationUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PresentationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Delete Presentation",
+    "operationId": "delete_presentation_api_presentations__presentation_id__delete",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/files": {
+   "post": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Upload Content Files",
+    "operationId": "upload_content_files_api_presentations__presentation_id__files_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_content_files_api_presentations__presentation_id__files_post"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ContentFileOut"
+         },
+         "title": "Response Upload Content Files Api Presentations  Presentation Id  Files Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/files/{file_id}/content": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Get Content File",
+    "operationId": "get_content_file_api_presentations__presentation_id__files__file_id__content_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "file_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "File Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/images/{filename}": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Get Generated Image",
+    "description": "Иллюстрация слайда, нарисованная моделью text-to-image. Как и файлы материалов, без сессии\nотдаётся по неугадываемому имени — ссылка на картинку работает в общем доступе к колоде.",
+    "operationId": "get_generated_image_api_presentations__presentation_id__images__filename__get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "filename",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Filename"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/files/{file_id}": {
+   "delete": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Delete Content File",
+    "operationId": "delete_content_file_api_presentations__presentation_id__files__file_id__delete",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "file_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "File Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/generate": {
+   "post": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Start Generation",
+    "operationId": "start_generation_api_presentations__presentation_id__generate_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GenerationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/events": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Presentation Events",
+    "description": "SSE: уведомляет участников о сохранениях в общей презентации (update), о комментариях\n(update с kind=comments) и о присутствии в Студии (presence).",
+    "operationId": "presentation_events_api_presentations__presentation_id__events_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/generation": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Latest Generation",
+    "operationId": "latest_generation_api_presentations__presentation_id__generation_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/GenerationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/generation/events": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Generation Events",
+    "description": "Server-Sent Events (SSE) поток со статусом генерации в реальном времени.",
+    "operationId": "generation_events_api_presentations__presentation_id__generation_events_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/variants": {
+   "get": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "List Variants",
+    "operationId": "list_variants_api_presentations__presentation_id__variants_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VariantsResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/select-variant": {
+   "post": {
+    "tags": [
+     "presentations"
+    ],
+    "summary": "Select Variant",
+    "operationId": "select_variant_api_presentations__presentation_id__select_variant_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SelectVariantRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PresentationOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}": {
+   "get": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Get Variant",
+    "operationId": "get_variant_api_variants__variant_id__get",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VariantDetailResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/renders/{revision}/{image_name}": {
+   "get": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Render Image",
+    "description": "Рендер слайда варианта из собранного .pptx (превью = экспорт).",
+    "operationId": "render_image_api_variants__variant_id__renders__revision___image_name__get",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     },
+     {
+      "name": "revision",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Revision"
+      }
+     },
+     {
+      "name": "image_name",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Image Name"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/audit": {
+   "get": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Get Audit",
+    "operationId": "get_audit_api_variants__variant_id__audit_get",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuditReport"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/audit/run": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Rerun Audit",
+    "description": "Перезапуск аудита: судья проверяет слайды без вердикта (новые, изменённые, прошлые неответы).\nЕсли превью ещё перерисовывается после правок, проверки по рендеру догонят, когда рендер закончится.",
+    "operationId": "rerun_audit_api_variants__variant_id__audit_run_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AuditReport"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/audit/resolve": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Resolve",
+    "operationId": "resolve_api_variants__variant_id__audit_resolve_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ResolveRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResolveResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/export/{fmt}": {
+   "get": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Export Variant",
+    "operationId": "export_variant_api_variants__variant_id__export__fmt__get",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     },
+     {
+      "name": "fmt",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "enum": [
+        "pptx",
+        "pdf",
+        "html"
+       ],
+       "type": "string",
+       "title": "Fmt"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/reroll": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Reroll Variant",
+    "description": "Рерол варианта: тот же профиль, но другие паттерны шаблона из равноценных и другой порядок тезисов.",
+    "operationId": "reroll_variant_api_variants__variant_id__reroll_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/VariantOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/upload-image": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Upload Variant Image",
+    "description": "Загрузка изображения в вариант (для плавающих картинок или ассетов).",
+    "operationId": "upload_variant_image_api_variants__variant_id__upload_image_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_upload_variant_image_api_variants__variant_id__upload_image_post"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "string"
+         },
+         "title": "Response Upload Variant Image Api Variants  Variant Id  Upload Image Post"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/animate": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Animate Slides",
+    "description": "Анимации и переходы по правилам генерации. Ничего не сохраняет: редактор кладёт ответ в историю\nправок (Ctrl+Z) и сохраняет обычным путём.",
+    "operationId": "animate_slides_api_variants__variant_id__animate_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/AnimateRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnimateResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/slides": {
+   "put": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Update All Slides",
+    "description": "Пакетное сохранение полного списка слайдов презентации (из полноэкранного редактора).",
+    "operationId": "update_all_slides_api_variants__variant_id__slides_put",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BatchSlidesUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ResolveResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/images/{filename}": {
+   "get": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Get Uploaded Image",
+    "description": "Раздача загруженного пользователем изображения для слайда (включая capability URLs для рендера).",
+    "operationId": "get_uploaded_image_api_variants__variant_id__images__filename__get",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     },
+     {
+      "name": "filename",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Filename"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/slides/{slide_id}/regenerate": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Regenerate Slide",
+    "description": "Правка слайда из чата редактора: модель переписывает слайд по инструкции (planning/editor.py).\nТип слайда и оформление сохраняются, текст укладывается в ёмкость слотов паттерна шаблона.",
+    "operationId": "regenerate_slide_api_variants__variant_id__slides__slide_id__regenerate_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     },
+     {
+      "name": "slide_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Slide Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RegenerateSlideRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegenerateSlideResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/variants/{variant_id}/slides/generate": {
+   "post": {
+    "tags": [
+     "variants"
+    ],
+    "summary": "Generate Slide From Prompt",
+    "description": "Студия › AI: новый слайд по описанию (после after_slide_id) или пересборка replace_slide_id.\n\nПодсказка вёрстки и включённые скиллы — параметры запроса; числа на слайде — только из описания,\nбрифа и контент-пакета (planning/single.py). Паттерн шаблона подбирается как после правки моделью.",
+    "operationId": "generate_slide_from_prompt_api_variants__variant_id__slides_generate_post",
+    "parameters": [
+     {
+      "name": "variant_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Variant Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/GenerateSlideRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/RegenerateSlideResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/shares/{token}/accept": {
+   "post": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "Accept Share Link",
+    "operationId": "accept_share_link_api_shares__token__accept_post",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShareAcceptOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/members": {
+   "get": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "List Members",
+    "operationId": "list_members_api_presentations__presentation_id__members_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/PresentationMemberOut"
+         },
+         "title": "Response List Members Api Presentations  Presentation Id  Members Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/members/{member_user_id}": {
+   "patch": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "Update Member Role",
+    "operationId": "update_member_role_api_presentations__presentation_id__members__member_user_id__patch",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "member_user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Member User Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShareLinkCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PresentationMemberOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "Remove Member",
+    "operationId": "remove_member_api_presentations__presentation_id__members__member_user_id__delete",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "member_user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Member User Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/share-links": {
+   "get": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "List Share Links",
+    "description": "Активные ссылки: не больше одной на каждую роль (наблюдатель, редактор, совладелец).",
+    "operationId": "list_share_links_api_presentations__presentation_id__share_links_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ShareLinkOut"
+         },
+         "title": "Response List Share Links Api Presentations  Presentation Id  Share Links Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "Create Share Link",
+    "description": "Возвращает активную ссылку на роль; если её нет — создаёт. Дубликатов не бывает.",
+    "operationId": "create_share_link_api_presentations__presentation_id__share_links_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShareLinkCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShareLinkOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/share-links/{share_link_id}": {
+   "patch": {
+    "tags": [
+     "sharing"
+    ],
+    "summary": "Update Share Link",
+    "operationId": "update_share_link_api_presentations__presentation_id__share_links__share_link_id__patch",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "share_link_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Share Link Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ShareLinkUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ShareLinkOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "List Projects",
+    "operationId": "list_projects_api_projects_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ProjectOut"
+         },
+         "type": "array",
+         "title": "Response List Projects Api Projects Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Create Project",
+    "operationId": "create_project_api_projects_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}": {
+   "patch": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Update Project",
+    "operationId": "update_project_api_projects__project_id__patch",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Delete Project",
+    "description": "Удаляет папку. Презентации внутри не удаляются — становятся «без проекта» (project_id -> NULL).",
+    "operationId": "delete_project_api_projects__project_id__delete",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/members": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "List Project Members",
+    "operationId": "list_project_members_api_projects__project_id__members_get",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ProjectMemberOut"
+         },
+         "title": "Response List Project Members Api Projects  Project Id  Members Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/members/{member_user_id}": {
+   "patch": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Update Project Member",
+    "operationId": "update_project_member_api_projects__project_id__members__member_user_id__patch",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "member_user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Member User Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectMemberUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectMemberOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Remove Project Member",
+    "operationId": "remove_project_member_api_projects__project_id__members__member_user_id__delete",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "member_user_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Member User Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/share-links": {
+   "get": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "List Project Share Links",
+    "description": "Активные ссылки: не больше одной на каждую роль (наблюдатель, редактор, совладелец).",
+    "operationId": "list_project_share_links_api_projects__project_id__share_links_get",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/ProjectShareLinkOut"
+         },
+         "title": "Response List Project Share Links Api Projects  Project Id  Share Links Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Create Project Share Link",
+    "description": "Возвращает активную ссылку на роль; если её нет — создаёт. Дубликатов не бывает.",
+    "operationId": "create_project_share_link_api_projects__project_id__share_links_post",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectShareLinkCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectShareLinkOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/projects/{project_id}/share-links/{share_link_id}": {
+   "patch": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Update Project Share Link",
+    "operationId": "update_project_share_link_api_projects__project_id__share_links__share_link_id__patch",
+    "parameters": [
+     {
+      "name": "project_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Project Id"
+      }
+     },
+     {
+      "name": "share_link_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Share Link Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ProjectShareLinkUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectShareLinkOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/project-shares/{token}/accept": {
+   "post": {
+    "tags": [
+     "projects"
+    ],
+    "summary": "Accept Project Share Link",
+    "operationId": "accept_project_share_link_api_project_shares__token__accept_post",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Token"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ProjectShareAcceptOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/skills": {
+   "get": {
+    "tags": [
+     "skills"
+    ],
+    "summary": "List Skills",
+    "operationId": "list_skills_api_skills_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/CustomSkillOut"
+         },
+         "type": "array",
+         "title": "Response List Skills Api Skills Get"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "skills"
+    ],
+    "summary": "Create Skill",
+    "operationId": "create_skill_api_skills_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomSkillCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CustomSkillOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/skills/presets": {
+   "get": {
+    "tags": [
+     "skills"
+    ],
+    "summary": "List Presets",
+    "operationId": "list_presets_api_skills_presets_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/SkillPresetOut"
+         },
+         "type": "array",
+         "title": "Response List Presets Api Skills Presets Get"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/skills/presets/{preset_id}/default": {
+   "put": {
+    "tags": [
+     "skills"
+    ],
+    "summary": "Set Preset Default",
+    "description": "Включить стандартный скилл по умолчанию: он подключается к новым презентациям и в Студии.",
+    "operationId": "set_preset_default_api_skills_presets__preset_id__default_put",
+    "parameters": [
+     {
+      "name": "preset_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Preset Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PresetDefaultUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/SkillPresetOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/skills/{skill_id}": {
+   "patch": {
+    "tags": [
+     "skills"
+    ],
+    "summary": "Update Skill",
+    "operationId": "update_skill_api_skills__skill_id__patch",
+    "parameters": [
+     {
+      "name": "skill_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Skill Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CustomSkillUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CustomSkillOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "skills"
+    ],
+    "summary": "Delete Skill",
+    "operationId": "delete_skill_api_skills__skill_id__delete",
+    "parameters": [
+     {
+      "name": "skill_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Skill Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/comments": {
+   "get": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "List Comments",
+    "operationId": "list_comments_api_presentations__presentation_id__comments_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/CommentThreadOut"
+         },
+         "title": "Response List Comments Api Presentations  Presentation Id  Comments Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Create Comment",
+    "operationId": "create_comment_api_presentations__presentation_id__comments_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CommentCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CommentThreadOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/comments/{thread_id}/replies": {
+   "post": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Reply Comment",
+    "operationId": "reply_comment_api_presentations__presentation_id__comments__thread_id__replies_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "thread_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Thread Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CommentReplyCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CommentThreadOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/comments/{comment_id}": {
+   "patch": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Update Comment",
+    "operationId": "update_comment_api_presentations__presentation_id__comments__comment_id__patch",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "comment_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Comment Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CommentUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CommentThreadOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Delete Comment",
+    "operationId": "delete_comment_api_presentations__presentation_id__comments__comment_id__delete",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     },
+     {
+      "name": "comment_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Comment Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/presence": {
+   "get": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Get Presence",
+    "operationId": "get_presence_api_presentations__presentation_id__presence_get",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/PresenceOut"
+         },
+         "title": "Response Get Presence Api Presentations  Presentation Id  Presence Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Post Presence",
+    "operationId": "post_presence_api_presentations__presentation_id__presence_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PresenceUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/presentations/{presentation_id}/presence/leave": {
+   "post": {
+    "tags": [
+     "collaboration"
+    ],
+    "summary": "Post Presence Leave",
+    "operationId": "post_presence_leave_api_presentations__presentation_id__presence_leave_post",
+    "parameters": [
+     {
+      "name": "presentation_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "format": "uuid",
+       "title": "Presentation Id"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Successful Response"
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "AnimateRequest": {
+    "properties": {
+     "slides": {
+      "items": {
+       "$ref": "#/components/schemas/Slide"
+      },
+      "type": "array",
+      "maxItems": 200,
+      "minItems": 1,
+      "title": "Slides"
+     },
+     "mode": {
+      "type": "string",
+      "enum": [
+       "none",
+       "subtle",
+       "lively"
+      ],
+      "title": "Mode",
+      "default": "subtle"
+     },
+     "slide_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slide Ids"
+     },
+     "overwrite": {
+      "type": "boolean",
+      "title": "Overwrite",
+      "default": true
+     }
+    },
+    "type": "object",
+    "required": [
+     "slides"
+    ],
+    "title": "AnimateRequest",
+    "description": "Автоанимации по правилам (pipeline/visuals/motion_rules.py) для слайдов редактора: всей колоды или\nвыбранных (slide_ids). Слайды приходят из редактора — с несохранёнными правками, ответ он применяет сам."
+   },
+   "AnimateResponse": {
+    "properties": {
+     "slides": {
+      "items": {
+       "$ref": "#/components/schemas/Slide"
+      },
+      "type": "array",
+      "title": "Slides"
+     },
+     "animated": {
+      "type": "integer",
+      "title": "Animated"
+     }
+    },
+    "type": "object",
+    "required": [
+     "slides",
+     "animated"
+    ],
+    "title": "AnimateResponse"
+   },
+   "AuditIssueOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "slide_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slide Id"
+     },
+     "slide_index": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slide Index"
+     },
+     "check_id": {
+      "type": "string",
+      "title": "Check Id"
+     },
+     "check_title": {
+      "type": "string",
+      "title": "Check Title"
+     },
+     "category": {
+      "type": "string",
+      "title": "Category"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "deterministic",
+       "contextual"
+      ],
+      "title": "Kind"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "error",
+       "warning",
+       "info"
+      ],
+      "title": "Severity"
+     },
+     "message": {
+      "type": "string",
+      "title": "Message"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     },
+     "evidence": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Evidence"
+     },
+     "fixable": {
+      "type": "boolean",
+      "title": "Fixable"
+     },
+     "fix_hint": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fix Hint"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "open",
+       "fixed",
+       "ignored"
+      ],
+      "title": "Status"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "resolved_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resolved At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "slide_id",
+     "slide_index",
+     "check_id",
+     "check_title",
+     "category",
+     "kind",
+     "severity",
+     "message",
+     "target",
+     "evidence",
+     "fixable",
+     "fix_hint",
+     "status",
+     "created_at",
+     "resolved_at"
+    ],
+    "title": "AuditIssueOut"
+   },
+   "AuditReport": {
+    "properties": {
+     "variant_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Variant Id"
+     },
+     "categories": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Categories"
+     },
+     "summary": {
+      "$ref": "#/components/schemas/AuditSummary"
+     },
+     "issues": {
+      "items": {
+       "$ref": "#/components/schemas/AuditIssueOut"
+      },
+      "type": "array",
+      "title": "Issues"
+     },
+     "checks": {
+      "items": {
+       "$ref": "#/components/schemas/CheckOut"
+      },
+      "type": "array",
+      "title": "Checks"
+     },
+     "judge": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Judge"
+     },
+     "stale": {
+      "type": "boolean",
+      "title": "Stale",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "variant_id",
+     "categories",
+     "summary",
+     "issues",
+     "checks"
+    ],
+    "title": "AuditReport"
+   },
+   "AuditSummary": {
+    "properties": {
+     "open": {
+      "type": "integer",
+      "title": "Open"
+     },
+     "fixed": {
+      "type": "integer",
+      "title": "Fixed"
+     },
+     "ignored": {
+      "type": "integer",
+      "title": "Ignored"
+     },
+     "by_severity": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object",
+      "title": "By Severity"
+     },
+     "by_category": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object",
+      "title": "By Category"
+     },
+     "by_kind": {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object",
+      "title": "By Kind"
+     },
+     "checks_run": {
+      "type": "integer",
+      "title": "Checks Run"
+     },
+     "checks_failed": {
+      "type": "integer",
+      "title": "Checks Failed"
+     },
+     "checks_pending": {
+      "type": "integer",
+      "title": "Checks Pending",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "open",
+     "fixed",
+     "ignored",
+     "by_severity",
+     "by_category",
+     "by_kind",
+     "checks_run",
+     "checks_failed"
+    ],
+    "title": "AuditSummary"
+   },
+   "AuthResponse": {
+    "properties": {
+     "user": {
+      "$ref": "#/components/schemas/UserOut"
+     },
+     "token": {
+      "type": "string",
+      "title": "Token"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user",
+     "token"
+    ],
+    "title": "AuthResponse"
+   },
+   "AxisInfo": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "description"
+    ],
+    "title": "AxisInfo"
+   },
+   "AxisOption": {
+    "properties": {
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "variants": {
+      "items": {
+       "$ref": "#/components/schemas/AxisVariantOption"
+      },
+      "type": "array",
+      "title": "Variants"
+     }
+    },
+    "type": "object",
+    "required": [
+     "value",
+     "label",
+     "variants"
+    ],
+    "title": "AxisOption"
+   },
+   "AxisVariantOption": {
+    "properties": {
+     "letter": {
+      "type": "string",
+      "title": "Letter"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     }
+    },
+    "type": "object",
+    "required": [
+     "letter",
+     "name",
+     "description"
+    ],
+    "title": "AxisVariantOption"
+   },
+   "BatchSlidesUpdate": {
+    "properties": {
+     "slides": {
+      "items": {
+       "$ref": "#/components/schemas/Slide"
+      },
+      "type": "array",
+      "title": "Slides"
+     }
+    },
+    "type": "object",
+    "required": [
+     "slides"
+    ],
+    "title": "BatchSlidesUpdate"
+   },
+   "Body_upload_content_files_api_presentations__presentation_id__files_post": {
+    "properties": {
+     "files": {
+      "items": {
+       "type": "string",
+       "contentMediaType": "application/octet-stream"
+      },
+      "type": "array",
+      "title": "Files"
+     }
+    },
+    "type": "object",
+    "required": [
+     "files"
+    ],
+    "title": "Body_upload_content_files_api_presentations__presentation_id__files_post"
+   },
+   "Body_upload_template_api_templates_post": {
+    "properties": {
+     "file": {
+      "type": "string",
+      "contentMediaType": "application/octet-stream",
+      "title": "File"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "file"
+    ],
+    "title": "Body_upload_template_api_templates_post"
+   },
+   "Body_upload_variant_image_api_variants__variant_id__upload_image_post": {
+    "properties": {
+     "file": {
+      "type": "string",
+      "contentMediaType": "application/octet-stream",
+      "title": "File"
+     }
+    },
+    "type": "object",
+    "required": [
+     "file"
+    ],
+    "title": "Body_upload_variant_image_api_variants__variant_id__upload_image_post"
+   },
+   "ChartData": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "enum": [
+       "bar",
+       "horizontal_bar",
+       "line",
+       "pie",
+       "donut"
+      ],
+      "title": "Type",
+      "default": "bar"
+     },
+     "caption": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Caption"
+     },
+     "unit": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Unit"
+     },
+     "categories": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Categories"
+     },
+     "series": {
+      "items": {
+       "$ref": "#/components/schemas/ChartSeries"
+      },
+      "type": "array",
+      "title": "Series"
+     },
+     "colors": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Colors"
+     },
+     "show_values": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Show Values",
+      "default": true
+     },
+     "show_legend": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Show Legend",
+      "default": true
+     },
+     "highlight": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Highlight"
+     }
+    },
+    "type": "object",
+    "title": "ChartData"
+   },
+   "ChartSeries": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name",
+      "default": ""
+     },
+     "values": {
+      "items": {
+       "type": "number"
+      },
+      "type": "array",
+      "title": "Values"
+     }
+    },
+    "type": "object",
+    "title": "ChartSeries"
+   },
+   "CheckOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "category": {
+      "type": "string",
+      "title": "Category"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "deterministic",
+       "contextual"
+      ],
+      "title": "Kind"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "error",
+       "warning",
+       "info"
+      ],
+      "title": "Severity"
+     },
+     "method": {
+      "type": "string",
+      "enum": [
+       "data",
+       "render",
+       "llm",
+       "vlm"
+      ],
+      "title": "Method"
+     },
+     "fallback": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "data",
+         "render",
+         "llm",
+         "vlm"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fallback"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "done",
+       "fallback",
+       "pending",
+       "unavailable"
+      ],
+      "title": "Status"
+     },
+     "note": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Note"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     },
+     "fixable": {
+      "type": "boolean",
+      "title": "Fixable"
+     },
+     "fix": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fix"
+     },
+     "open_findings": {
+      "type": "integer",
+      "title": "Open Findings"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "category",
+     "kind",
+     "severity",
+     "method",
+     "status",
+     "description",
+     "fixable",
+     "fix",
+     "open_findings"
+    ],
+    "title": "CheckOut"
+   },
+   "CollaboratorOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "full_name": {
+      "type": "string",
+      "title": "Full Name"
+     },
+     "initials": {
+      "type": "string",
+      "title": "Initials"
+     },
+     "color": {
+      "type": "string",
+      "title": "Color"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "full_name",
+     "initials",
+     "color"
+    ],
+    "title": "CollaboratorOut"
+   },
+   "Column": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "bullets": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Bullets"
+     }
+    },
+    "type": "object",
+    "title": "Column",
+    "description": "Колонка (two_columns) или карточка (cards): заголовок и тезисы."
+   },
+   "CommentCreate": {
+    "properties": {
+     "slide_id": {
+      "type": "string",
+      "maxLength": 64,
+      "minLength": 1,
+      "title": "Slide Id"
+     },
+     "x": {
+      "type": "number",
+      "maximum": 960.0,
+      "minimum": 0.0,
+      "title": "X"
+     },
+     "y": {
+      "type": "number",
+      "maximum": 540.0,
+      "minimum": 0.0,
+      "title": "Y"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 120
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     },
+     "text": {
+      "type": "string",
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text"
+     }
+    },
+    "type": "object",
+    "required": [
+     "slide_id",
+     "x",
+     "y",
+     "text"
+    ],
+    "title": "CommentCreate"
+   },
+   "CommentReplyCreate": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "CommentReplyCreate"
+   },
+   "CommentReplyOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "author": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/CollaboratorOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "author",
+     "text",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "CommentReplyOut"
+   },
+   "CommentThreadOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "slide_id": {
+      "type": "string",
+      "title": "Slide Id"
+     },
+     "x": {
+      "type": "number",
+      "title": "X"
+     },
+     "y": {
+      "type": "number",
+      "title": "Y"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     },
+     "author": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/CollaboratorOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "resolved": {
+      "type": "boolean",
+      "title": "Resolved"
+     },
+     "resolved_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resolved At"
+     },
+     "replies": {
+      "items": {
+       "$ref": "#/components/schemas/CommentReplyOut"
+      },
+      "type": "array",
+      "title": "Replies"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "slide_id",
+     "x",
+     "y",
+     "target",
+     "author",
+     "text",
+     "resolved",
+     "resolved_at",
+     "replies",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "CommentThreadOut"
+   },
+   "CommentUpdate": {
+    "properties": {
+     "text": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 4000,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     },
+     "resolved": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Resolved"
+     },
+     "x": {
+      "anyOf": [
+       {
+        "type": "number",
+        "maximum": 960.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X"
+     },
+     "y": {
+      "anyOf": [
+       {
+        "type": "number",
+        "maximum": 540.0,
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Y"
+     }
+    },
+    "type": "object",
+    "title": "CommentUpdate"
+   },
+   "ContentFileOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "filename": {
+      "type": "string",
+      "title": "Filename"
+     },
+     "content_type": {
+      "type": "string",
+      "title": "Content Type"
+     },
+     "size": {
+      "type": "integer",
+      "title": "Size"
+     },
+     "has_text": {
+      "type": "boolean",
+      "title": "Has Text"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "category": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Category"
+     },
+     "is_visual": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Visual"
+     },
+     "visual_description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Visual Description"
+     },
+     "tags": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Tags"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "filename",
+     "content_type",
+     "size",
+     "has_text",
+     "created_at"
+    ],
+    "title": "ContentFileOut"
+   },
+   "CustomSkillCreate": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "maxLength": 160,
+      "minLength": 1,
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "title": "Description",
+      "default": ""
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "all",
+       "text",
+       "design",
+       "audit"
+      ],
+      "title": "Kind",
+      "default": "all"
+     },
+     "instruction": {
+      "type": "string",
+      "maxLength": 12000,
+      "minLength": 1,
+      "title": "Instruction"
+     },
+     "example": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SkillExample"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     }
+    },
+    "type": "object",
+    "required": [
+     "title",
+     "instruction"
+    ],
+    "title": "CustomSkillCreate"
+   },
+   "CustomSkillOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "all",
+       "text",
+       "design",
+       "audit"
+      ],
+      "title": "Kind"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "instruction": {
+      "type": "string",
+      "title": "Instruction"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "example": {
+      "$ref": "#/components/schemas/SkillExample"
+     },
+     "history": {
+      "items": {
+       "$ref": "#/components/schemas/SkillVersion"
+      },
+      "type": "array",
+      "title": "History"
+     },
+     "versions": {
+      "items": {
+       "$ref": "#/components/schemas/SkillVersionOut"
+      },
+      "type": "array",
+      "title": "Versions"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "description",
+     "kind",
+     "version",
+     "instruction",
+     "enabled",
+     "example",
+     "history",
+     "versions",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "CustomSkillOut"
+   },
+   "CustomSkillUpdate": {
+    "properties": {
+     "title": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 160,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 1000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "kind": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "all",
+         "text",
+         "design",
+         "audit"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Kind"
+     },
+     "instruction": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 12000,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Instruction"
+     },
+     "example": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SkillExample"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     }
+    },
+    "type": "object",
+    "title": "CustomSkillUpdate"
+   },
+   "GenerateSlideRequest": {
+    "properties": {
+     "prompt": {
+      "type": "string",
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Prompt"
+     },
+     "pattern": {
+      "type": "string",
+      "enum": [
+       "auto",
+       "bullets",
+       "columns",
+       "cards",
+       "timeline",
+       "chart",
+       "case"
+      ],
+      "title": "Pattern",
+      "default": "auto"
+     },
+     "skills": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 20,
+      "title": "Skills"
+     },
+     "after_slide_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "After Slide Id"
+     },
+     "replace_slide_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Replace Slide Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "prompt"
+    ],
+    "title": "GenerateSlideRequest",
+    "description": "Новый слайд по описанию (Студия › AI): вставляется после after_slide_id или заменяет replace_slide_id."
+   },
+   "GenerationOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "presentation_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Presentation Id"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "queued",
+       "running",
+       "done",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "progress": {
+      "type": "integer",
+      "title": "Progress"
+     },
+     "current_stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Current Stage"
+     },
+     "stages": {
+      "items": {
+       "$ref": "#/components/schemas/StageOut"
+      },
+      "type": "array",
+      "title": "Stages"
+     },
+     "skills": {
+      "items": {
+       "$ref": "#/components/schemas/SkillRef"
+      },
+      "type": "array",
+      "title": "Skills"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "presentation_id",
+     "status",
+     "progress",
+     "current_stage",
+     "stages",
+     "skills",
+     "error",
+     "created_at",
+     "started_at",
+     "finished_at"
+    ],
+    "title": "GenerationOut"
+   },
+   "GenerationSettings": {
+    "properties": {
+     "slides_count": {
+      "type": "integer",
+      "maximum": 20.0,
+      "minimum": 5.0,
+      "title": "Slides Count",
+      "default": 12
+     },
+     "language": {
+      "type": "string",
+      "enum": [
+       "ru",
+       "en"
+      ],
+      "title": "Language",
+      "default": "ru"
+     },
+     "tone": {
+      "type": "string",
+      "enum": [
+       "business",
+       "neutral",
+       "inspiring"
+      ],
+      "title": "Tone",
+      "default": "business"
+     },
+     "audience": {
+      "type": "string",
+      "maxLength": 300,
+      "title": "Audience",
+      "default": ""
+     },
+     "variant_axis": {
+      "type": "string",
+      "enum": [
+       "density",
+       "visualization",
+       "structure",
+       "layouts"
+      ],
+      "title": "Variant Axis",
+      "default": "density"
+     },
+     "generate_images": {
+      "type": "boolean",
+      "title": "Generate Images",
+      "default": false
+     },
+     "speaker_notes": {
+      "type": "boolean",
+      "title": "Speaker Notes",
+      "default": true
+     },
+     "animations": {
+      "type": "string",
+      "enum": [
+       "none",
+       "subtle",
+       "lively"
+      ],
+      "title": "Animations",
+      "default": "subtle"
+     },
+     "custom_skills": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "maxItems": 20,
+      "title": "Custom Skills"
+     }
+    },
+    "type": "object",
+    "title": "GenerationSettings"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "ImageSpec": {
+    "properties": {
+     "prompt": {
+      "type": "string",
+      "title": "Prompt"
+     },
+     "url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Url"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "placeholder",
+       "generated"
+      ],
+      "title": "Status",
+      "default": "placeholder"
+     }
+    },
+    "type": "object",
+    "required": [
+     "prompt"
+    ],
+    "title": "ImageSpec"
+   },
+   "ImagesOption": {
+    "properties": {
+     "available": {
+      "type": "boolean",
+      "title": "Available"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     }
+    },
+    "type": "object",
+    "required": [
+     "available"
+    ],
+    "title": "ImagesOption",
+    "description": "Генерация иллюстраций: подключена ли модель text-to-image (T2I_*) и какая."
+   },
+   "Kpi": {
+    "properties": {
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "required": [
+     "value"
+    ],
+    "title": "Kpi"
+   },
+   "LayoutFrames": {
+    "properties": {
+     "title": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "number"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "subtitle": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "number"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subtitle"
+     },
+     "body": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "number"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Body"
+     }
+    },
+    "type": "object",
+    "title": "LayoutFrames",
+    "description": "Области макета в долях слайда: [left, top, width, height]."
+   },
+   "LayoutSkin": {
+    "properties": {
+     "background": {
+      "type": "string",
+      "title": "Background"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "muted": {
+      "type": "string",
+      "title": "Muted"
+     },
+     "surface": {
+      "type": "string",
+      "title": "Surface"
+     },
+     "image": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Image"
+     },
+     "frames": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/LayoutFrames"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "title": {
+      "$ref": "#/components/schemas/TitleSkin"
+     }
+    },
+    "type": "object",
+    "required": [
+     "background",
+     "text",
+     "muted",
+     "surface",
+     "title"
+    ],
+    "title": "LayoutSkin",
+    "description": "Оформление макета шаблона для превью: фон-рендер, цвета и области."
+   },
+   "LoginRequest": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "format": "email",
+      "title": "Email"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email",
+     "password"
+    ],
+    "title": "LoginRequest"
+   },
+   "NotFixed": {
+    "properties": {
+     "issue_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Issue Id"
+     },
+     "reason": {
+      "type": "string",
+      "title": "Reason"
+     }
+    },
+    "type": "object",
+    "required": [
+     "issue_id",
+     "reason"
+    ],
+    "title": "NotFixed",
+    "description": "Замечание, которое исправить не вышло: id открытого замечания после перепроверки и причина."
+   },
+   "NotificationOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "body": {
+      "type": "string",
+      "title": "Body"
+     },
+     "href": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Href"
+     },
+     "read_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Read At"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "kind",
+     "title",
+     "body",
+     "href",
+     "read_at",
+     "created_at"
+    ],
+    "title": "NotificationOut"
+   },
+   "Option": {
+    "properties": {
+     "value": {
+      "type": "string",
+      "title": "Value"
+     },
+     "label": {
+      "type": "string",
+      "title": "Label"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     }
+    },
+    "type": "object",
+    "required": [
+     "value",
+     "label"
+    ],
+    "title": "Option"
+   },
+   "OptionsOut": {
+    "properties": {
+     "purposes": {
+      "items": {
+       "$ref": "#/components/schemas/Option"
+      },
+      "type": "array",
+      "title": "Purposes"
+     },
+     "variant_axes": {
+      "items": {
+       "$ref": "#/components/schemas/AxisOption"
+      },
+      "type": "array",
+      "title": "Variant Axes"
+     },
+     "languages": {
+      "items": {
+       "$ref": "#/components/schemas/Option"
+      },
+      "type": "array",
+      "title": "Languages"
+     },
+     "tones": {
+      "items": {
+       "$ref": "#/components/schemas/Option"
+      },
+      "type": "array",
+      "title": "Tones"
+     },
+     "slides_count": {
+      "$ref": "#/components/schemas/SlidesCountRange"
+     },
+     "content_extensions": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Content Extensions"
+     },
+     "images": {
+      "$ref": "#/components/schemas/ImagesOption"
+     }
+    },
+    "type": "object",
+    "required": [
+     "purposes",
+     "variant_axes",
+     "languages",
+     "tones",
+     "slides_count",
+     "content_extensions",
+     "images"
+    ],
+    "title": "OptionsOut"
+   },
+   "PresenceOut": {
+    "properties": {
+     "user": {
+      "$ref": "#/components/schemas/CollaboratorOut"
+     },
+     "slide_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slide Id"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     },
+     "cursor": {
+      "anyOf": [
+       {
+        "prefixItems": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "number"
+         }
+        ],
+        "type": "array",
+        "maxItems": 2,
+        "minItems": 2
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cursor"
+     },
+     "updated_at": {
+      "type": "number",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user",
+     "slide_id",
+     "target",
+     "cursor",
+     "updated_at"
+    ],
+    "title": "PresenceOut"
+   },
+   "PresenceUpdate": {
+    "properties": {
+     "slide_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 64
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slide Id"
+     },
+     "target": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 120
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Target"
+     },
+     "cursor": {
+      "anyOf": [
+       {
+        "prefixItems": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "number"
+         }
+        ],
+        "type": "array",
+        "maxItems": 2,
+        "minItems": 2
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cursor"
+     }
+    },
+    "type": "object",
+    "title": "PresenceUpdate"
+   },
+   "PresentationBrief": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "status": {
+      "type": "string",
+      "title": "Status"
+     },
+     "selected_variant_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selected Variant Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "status",
+     "selected_variant_id"
+    ],
+    "title": "PresentationBrief"
+   },
+   "PresentationCreate": {
+    "properties": {
+     "title": {
+      "type": "string",
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Title"
+     },
+     "purpose": {
+      "type": "string",
+      "enum": [
+       "feature",
+       "product",
+       "project",
+       "initiative"
+      ],
+      "title": "Purpose",
+      "default": "product"
+     },
+     "brief": {
+      "type": "string",
+      "maxLength": 20000,
+      "title": "Brief",
+      "default": ""
+     },
+     "template_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Template Id"
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id"
+     },
+     "settings": {
+      "$ref": "#/components/schemas/GenerationSettings"
+     }
+    },
+    "type": "object",
+    "required": [
+     "title",
+     "template_id"
+    ],
+    "title": "PresentationCreate"
+   },
+   "PresentationListItem": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "purpose": {
+      "type": "string",
+      "enum": [
+       "feature",
+       "product",
+       "project",
+       "initiative"
+      ],
+      "title": "Purpose"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "draft",
+       "generating",
+       "ready",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "template_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Name"
+     },
+     "project": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ProjectSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "theme": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SlideTheme"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "cover": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Slide"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "cover_image": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Cover Image"
+     },
+     "slides_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slides Count"
+     },
+     "selected_variant_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selected Variant Id"
+     },
+     "access_role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Access Role"
+     },
+     "owner": {
+      "$ref": "#/components/schemas/PresentationUserOut"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     },
+     "people": {
+      "items": {
+       "$ref": "#/components/schemas/PresentationPersonOut"
+      },
+      "type": "array",
+      "title": "People"
+     },
+     "comments_open": {
+      "type": "integer",
+      "title": "Comments Open",
+      "default": 0
+     },
+     "issues_open": {
+      "type": "integer",
+      "title": "Issues Open",
+      "default": 0
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "purpose",
+     "status",
+     "template_name",
+     "project",
+     "theme",
+     "cover",
+     "slides_count",
+     "selected_variant_id",
+     "access_role",
+     "owner",
+     "updated_at"
+    ],
+    "title": "PresentationListItem"
+   },
+   "PresentationMemberOut": {
+    "properties": {
+     "user": {
+      "$ref": "#/components/schemas/PresentationUserOut"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Role"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user",
+     "role"
+    ],
+    "title": "PresentationMemberOut"
+   },
+   "PresentationOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "purpose": {
+      "type": "string",
+      "enum": [
+       "feature",
+       "product",
+       "project",
+       "initiative"
+      ],
+      "title": "Purpose"
+     },
+     "brief": {
+      "type": "string",
+      "title": "Brief"
+     },
+     "settings": {
+      "$ref": "#/components/schemas/GenerationSettings"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "draft",
+       "generating",
+       "ready",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "template_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Id"
+     },
+     "template": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TemplateSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id"
+     },
+     "project": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ProjectSummary"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "selected_variant_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Selected Variant Id"
+     },
+     "access_role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Access Role"
+     },
+     "owner": {
+      "$ref": "#/components/schemas/PresentationUserOut"
+     },
+     "files": {
+      "items": {
+       "$ref": "#/components/schemas/ContentFileOut"
+      },
+      "type": "array",
+      "title": "Files"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "purpose",
+     "brief",
+     "settings",
+     "status",
+     "template_id",
+     "template",
+     "project_id",
+     "project",
+     "selected_variant_id",
+     "access_role",
+     "owner",
+     "files",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "PresentationOut"
+   },
+   "PresentationPersonOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "full_name": {
+      "type": "string",
+      "title": "Full Name"
+     },
+     "initials": {
+      "type": "string",
+      "title": "Initials"
+     },
+     "color": {
+      "type": "string",
+      "title": "Color"
+     },
+     "role": {
+      "type": "string",
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "full_name",
+     "initials",
+     "color",
+     "role"
+    ],
+    "title": "PresentationPersonOut",
+    "description": "Участник презентации в списке «Мои презентации»: аватар на карточке и блок «Совместная работа»."
+   },
+   "PresentationUpdate": {
+    "properties": {
+     "title": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 300,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Title"
+     },
+     "purpose": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "feature",
+         "product",
+         "project",
+         "initiative"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Purpose"
+     },
+     "brief": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 20000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Brief"
+     },
+     "template_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Id"
+     },
+     "project_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "uuid"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Project Id"
+     },
+     "settings": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/GenerationSettings"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object",
+    "title": "PresentationUpdate"
+   },
+   "PresentationUserOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "full_name": {
+      "type": "string",
+      "title": "Full Name"
+     },
+     "email": {
+      "type": "string",
+      "title": "Email"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "full_name",
+     "email"
+    ],
+    "title": "PresentationUserOut"
+   },
+   "PresetDefaultUpdate": {
+    "properties": {
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     }
+    },
+    "type": "object",
+    "required": [
+     "enabled"
+    ],
+    "title": "PresetDefaultUpdate"
+   },
+   "ProjectCreate": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name"
+     },
+     "description": {
+      "type": "string",
+      "maxLength": 1000,
+      "title": "Description",
+      "default": ""
+     },
+     "color": {
+      "type": "string",
+      "enum": [
+       "blue",
+       "purple",
+       "pink",
+       "red",
+       "orange",
+       "yellow",
+       "green",
+       "mint",
+       "indigo",
+       "gray"
+      ],
+      "title": "Color",
+      "default": "blue"
+     },
+     "icon": {
+      "type": "string",
+      "enum": [
+       "folder",
+       "graduation-cap",
+       "book-open",
+       "cpu",
+       "brain",
+       "layers",
+       "rocket",
+       "briefcase",
+       "code",
+       "star",
+       "target",
+       "lightbulb",
+       "flame",
+       "users",
+       "megaphone",
+       "palette",
+       "flask-conical"
+      ],
+      "title": "Icon",
+      "default": "folder"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name"
+    ],
+    "title": "ProjectCreate"
+   },
+   "ProjectMemberOut": {
+    "properties": {
+     "user": {
+      "$ref": "#/components/schemas/PresentationUserOut"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Role"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "user",
+     "role"
+    ],
+    "title": "ProjectMemberOut"
+   },
+   "ProjectMemberUpdate": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "editor",
+       "coowner"
+      ],
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role"
+    ],
+    "title": "ProjectMemberUpdate"
+   },
+   "ProjectOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description",
+      "default": ""
+     },
+     "color": {
+      "type": "string",
+      "enum": [
+       "blue",
+       "purple",
+       "pink",
+       "red",
+       "orange",
+       "yellow",
+       "green",
+       "mint",
+       "indigo",
+       "gray"
+      ],
+      "title": "Color"
+     },
+     "icon": {
+      "type": "string",
+      "enum": [
+       "folder",
+       "graduation-cap",
+       "book-open",
+       "cpu",
+       "brain",
+       "layers",
+       "rocket",
+       "briefcase",
+       "code",
+       "star",
+       "target",
+       "lightbulb",
+       "flame",
+       "users",
+       "megaphone",
+       "palette",
+       "flask-conical"
+      ],
+      "title": "Icon"
+     },
+     "access_role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Access Role"
+     },
+     "owner": {
+      "$ref": "#/components/schemas/PresentationUserOut"
+     },
+     "presentations_count": {
+      "type": "integer",
+      "title": "Presentations Count",
+      "default": 0
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "color",
+     "icon",
+     "access_role",
+     "owner",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "ProjectOut"
+   },
+   "ProjectShareAcceptOut": {
+    "properties": {
+     "project_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Project Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "project_id",
+     "name",
+     "role"
+    ],
+    "title": "ProjectShareAcceptOut"
+   },
+   "ProjectShareLinkCreate": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "editor",
+       "coowner"
+      ],
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role"
+    ],
+    "title": "ProjectShareLinkCreate"
+   },
+   "ProjectShareLinkOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "token": {
+      "type": "string",
+      "title": "Token"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "editor",
+       "coowner"
+      ],
+      "title": "Role"
+     },
+     "is_active": {
+      "type": "boolean",
+      "title": "Is Active"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "token",
+     "role",
+     "is_active",
+     "created_at"
+    ],
+    "title": "ProjectShareLinkOut"
+   },
+   "ProjectShareLinkUpdate": {
+    "properties": {
+     "role": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "viewer",
+         "editor",
+         "coowner"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Role"
+     },
+     "is_active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Active"
+     }
+    },
+    "type": "object",
+    "title": "ProjectShareLinkUpdate"
+   },
+   "ProjectSummary": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "color": {
+      "type": "string",
+      "enum": [
+       "blue",
+       "purple",
+       "pink",
+       "red",
+       "orange",
+       "yellow",
+       "green",
+       "mint",
+       "indigo",
+       "gray"
+      ],
+      "title": "Color"
+     },
+     "icon": {
+      "type": "string",
+      "enum": [
+       "folder",
+       "graduation-cap",
+       "book-open",
+       "cpu",
+       "brain",
+       "layers",
+       "rocket",
+       "briefcase",
+       "code",
+       "star",
+       "target",
+       "lightbulb",
+       "flame",
+       "users",
+       "megaphone",
+       "palette",
+       "flask-conical"
+      ],
+      "title": "Icon"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "color",
+     "icon"
+    ],
+    "title": "ProjectSummary"
+   },
+   "ProjectUpdate": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 120,
+        "minLength": 1
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 1000
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "color": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "blue",
+         "purple",
+         "pink",
+         "red",
+         "orange",
+         "yellow",
+         "green",
+         "mint",
+         "indigo",
+         "gray"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color"
+     },
+     "icon": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "folder",
+         "graduation-cap",
+         "book-open",
+         "cpu",
+         "brain",
+         "layers",
+         "rocket",
+         "briefcase",
+         "code",
+         "star",
+         "target",
+         "lightbulb",
+         "flame",
+         "users",
+         "megaphone",
+         "palette",
+         "flask-conical"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Icon"
+     }
+    },
+    "type": "object",
+    "title": "ProjectUpdate"
+   },
+   "Quote": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "author": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Author"
+     }
+    },
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "Quote"
+   },
+   "RegenerateSlideRequest": {
+    "properties": {
+     "instruction": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Instruction"
+     },
+     "style": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Style"
+     },
+     "keep_pattern": {
+      "type": "boolean",
+      "title": "Keep Pattern",
+      "default": false
+     },
+     "skills": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "maxItems": 20,
+      "title": "Skills"
+     }
+    },
+    "type": "object",
+    "title": "RegenerateSlideRequest"
+   },
+   "RegenerateSlideResponse": {
+    "properties": {
+     "applied": {
+      "type": "integer",
+      "title": "Applied"
+     },
+     "report": {
+      "$ref": "#/components/schemas/AuditReport"
+     },
+     "variant": {
+      "$ref": "#/components/schemas/VariantOut"
+     },
+     "not_fixed": {
+      "items": {
+       "$ref": "#/components/schemas/NotFixed"
+      },
+      "type": "array",
+      "title": "Not Fixed"
+     },
+     "reply": {
+      "type": "string",
+      "title": "Reply"
+     },
+     "slide_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slide Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "applied",
+     "report",
+     "variant",
+     "reply"
+    ],
+    "title": "RegenerateSlideResponse",
+    "description": "Правка слайда моделью (Студия › AI): ответ для истории и состояние варианта после правки."
+   },
+   "RegisterRequest": {
+    "properties": {
+     "email": {
+      "type": "string",
+      "format": "email",
+      "title": "Email"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 128,
+      "minLength": 8,
+      "title": "Password"
+     },
+     "full_name": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Full Name"
+     }
+    },
+    "type": "object",
+    "required": [
+     "email",
+     "password",
+     "full_name"
+    ],
+    "title": "RegisterRequest"
+   },
+   "ResolveRequest": {
+    "properties": {
+     "issue_ids": {
+      "items": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "type": "array",
+      "minItems": 1,
+      "title": "Issue Ids"
+     },
+     "action": {
+      "type": "string",
+      "enum": [
+       "fix",
+       "ignore"
+      ],
+      "title": "Action",
+      "default": "fix"
+     }
+    },
+    "type": "object",
+    "required": [
+     "issue_ids"
+    ],
+    "title": "ResolveRequest"
+   },
+   "ResolveResponse": {
+    "properties": {
+     "applied": {
+      "type": "integer",
+      "title": "Applied"
+     },
+     "report": {
+      "$ref": "#/components/schemas/AuditReport"
+     },
+     "variant": {
+      "$ref": "#/components/schemas/VariantOut"
+     },
+     "not_fixed": {
+      "items": {
+       "$ref": "#/components/schemas/NotFixed"
+      },
+      "type": "array",
+      "title": "Not Fixed"
+     }
+    },
+    "type": "object",
+    "required": [
+     "applied",
+     "report",
+     "variant"
+    ],
+    "title": "ResolveResponse"
+   },
+   "SelectVariantRequest": {
+    "properties": {
+     "variant_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Variant Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "variant_id"
+    ],
+    "title": "SelectVariantRequest"
+   },
+   "ShareAcceptOut": {
+    "properties": {
+     "presentation_id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Presentation Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "owner",
+       "coowner",
+       "editor",
+       "viewer"
+      ],
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "presentation_id",
+     "title",
+     "role"
+    ],
+    "title": "ShareAcceptOut"
+   },
+   "ShareLinkCreate": {
+    "properties": {
+     "role": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "editor",
+       "coowner"
+      ],
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "role"
+    ],
+    "title": "ShareLinkCreate"
+   },
+   "ShareLinkOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "token": {
+      "type": "string",
+      "title": "Token"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "viewer",
+       "editor",
+       "coowner"
+      ],
+      "title": "Role"
+     },
+     "is_active": {
+      "type": "boolean",
+      "title": "Is Active"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "token",
+     "role",
+     "is_active",
+     "created_at"
+    ],
+    "title": "ShareLinkOut"
+   },
+   "ShareLinkUpdate": {
+    "properties": {
+     "role": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "viewer",
+         "editor",
+         "coowner"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Role"
+     },
+     "is_active": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Active"
+     }
+    },
+    "type": "object",
+    "title": "ShareLinkUpdate"
+   },
+   "SkillExample": {
+    "properties": {
+     "before": {
+      "type": "string",
+      "title": "Before",
+      "default": ""
+     },
+     "after": {
+      "type": "string",
+      "title": "After",
+      "default": ""
+     }
+    },
+    "type": "object",
+    "title": "SkillExample"
+   },
+   "SkillOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "kind": {
+      "type": "string",
+      "title": "Kind"
+     },
+     "runtime": {
+      "type": "string",
+      "title": "Runtime"
+     },
+     "stage": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Stage"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     },
+     "file": {
+      "type": "string",
+      "title": "File"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "title",
+     "version",
+     "kind",
+     "runtime",
+     "stage",
+     "model",
+     "description",
+     "file"
+    ],
+    "title": "SkillOut"
+   },
+   "SkillPresetOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "all",
+       "text",
+       "design",
+       "audit"
+      ],
+      "title": "Kind"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "instruction": {
+      "type": "string",
+      "title": "Instruction"
+     },
+     "example": {
+      "$ref": "#/components/schemas/SkillExample"
+     },
+     "versions": {
+      "items": {
+       "$ref": "#/components/schemas/SkillVersionOut"
+      },
+      "type": "array",
+      "title": "Versions"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "description",
+     "kind",
+     "version",
+     "instruction",
+     "example",
+     "versions"
+    ],
+    "title": "SkillPresetOut"
+   },
+   "SkillRef": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "runtime": {
+      "type": "string",
+      "title": "Runtime"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "source": {
+      "type": "string",
+      "title": "Source",
+      "default": "builtin"
+     },
+     "skill_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Skill Id"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "title",
+     "version",
+     "runtime"
+    ],
+    "title": "SkillRef"
+   },
+   "SkillVersion": {
+    "properties": {
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "instruction": {
+      "type": "string",
+      "title": "Instruction"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "version",
+     "instruction"
+    ],
+    "title": "SkillVersion"
+   },
+   "SkillVersionOut": {
+    "properties": {
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "current": {
+      "type": "boolean",
+      "title": "Current",
+      "default": false
+     }
+    },
+    "type": "object",
+    "required": [
+     "version"
+    ],
+    "title": "SkillVersionOut",
+    "description": "Строка списка «Версии»: номер и дата (текущая версия — первой)."
+   },
+   "Slide": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "title",
+       "section",
+       "agenda",
+       "bullets",
+       "two_columns",
+       "cards",
+       "chart",
+       "table",
+       "kpi",
+       "timeline",
+       "quote",
+       "image_text",
+       "closing"
+      ],
+      "title": "Kind"
+     },
+     "ref": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Ref"
+     },
+     "group": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Group"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "subtitle": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Subtitle"
+     },
+     "summary": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Summary"
+     },
+     "bullets": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Bullets"
+     },
+     "columns": {
+      "items": {
+       "$ref": "#/components/schemas/Column"
+      },
+      "type": "array",
+      "title": "Columns"
+     },
+     "chart": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ChartData"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "table": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/TableData"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "kpis": {
+      "items": {
+       "$ref": "#/components/schemas/Kpi"
+      },
+      "type": "array",
+      "title": "Kpis"
+     },
+     "timeline": {
+      "items": {
+       "$ref": "#/components/schemas/TimelineItem"
+      },
+      "type": "array",
+      "title": "Timeline"
+     },
+     "quote": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/Quote"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "image": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ImageSpec"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "shapes": {
+      "items": {
+       "$ref": "#/components/schemas/SlideShape"
+      },
+      "type": "array",
+      "title": "Shapes"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notes"
+     },
+     "layout_key": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Layout Key"
+     },
+     "layout_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Layout Name"
+     },
+     "pattern_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pattern Id"
+     },
+     "font_family": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Font Family"
+     },
+     "font_size_scale": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Font Size Scale"
+     },
+     "element_fonts": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Element Fonts"
+     },
+     "element_scales": {
+      "additionalProperties": {
+       "type": "number"
+      },
+      "type": "object",
+      "title": "Element Scales"
+     },
+     "element_boxes": {
+      "additionalProperties": {
+       "items": {
+        "type": "number"
+       },
+       "type": "array"
+      },
+      "type": "object",
+      "title": "Element Boxes"
+     },
+     "element_crops": {
+      "additionalProperties": {
+       "items": {
+        "type": "number"
+       },
+       "type": "array"
+      },
+      "type": "object",
+      "title": "Element Crops"
+     },
+     "block_density": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "compact",
+         "normal",
+         "spacious"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Block Density"
+     },
+     "background_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Background Color"
+     },
+     "text_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text Color"
+     },
+     "text_background_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text Background Color"
+     },
+     "accent_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Accent Color"
+     },
+     "element_colors": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Element Colors"
+     },
+     "element_backgrounds": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Element Backgrounds"
+     },
+     "is_bold": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Is Bold"
+     },
+     "element_bolds": {
+      "additionalProperties": {
+       "type": "boolean"
+      },
+      "type": "object",
+      "title": "Element Bolds"
+     },
+     "element_aligns": {
+      "additionalProperties": {
+       "type": "string"
+      },
+      "type": "object",
+      "title": "Element Aligns"
+     },
+     "element_radii": {
+      "additionalProperties": {
+       "type": "number"
+      },
+      "type": "object",
+      "title": "Element Radii"
+     },
+     "animations": {
+      "items": {
+       "$ref": "#/components/schemas/SlideAnimation"
+      },
+      "type": "array",
+      "title": "Animations"
+     },
+     "transition": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SlideTransition"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "hidden_elements": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Hidden Elements"
+     },
+     "locked_elements": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Locked Elements"
+     }
+    },
+    "type": "object",
+    "required": [
+     "kind"
+    ],
+    "title": "Slide"
+   },
+   "SlideAnimation": {
+    "properties": {
+     "target": {
+      "type": "string",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Target"
+     },
+     "type": {
+      "type": "string",
+      "enum": [
+       "fade",
+       "up",
+       "zoom",
+       "left",
+       "wipe"
+      ],
+      "title": "Type",
+      "default": "fade"
+     },
+     "duration_ms": {
+      "type": "integer",
+      "maximum": 5000.0,
+      "minimum": 100.0,
+      "title": "Duration Ms",
+      "default": 600
+     },
+     "delay_ms": {
+      "type": "integer",
+      "maximum": 10000.0,
+      "minimum": 0.0,
+      "title": "Delay Ms",
+      "default": 0
+     },
+     "trigger": {
+      "type": "string",
+      "enum": [
+       "click",
+       "with",
+       "after"
+      ],
+      "title": "Trigger",
+      "default": "click"
+     }
+    },
+    "type": "object",
+    "required": [
+     "target"
+    ],
+    "title": "SlideAnimation",
+    "description": "Анимация появления элемента. Порядок в Slide.animations — порядок показа.\n\ntarget — адрес элемента, как в element_boxes и аудите (title, subtitle, bullets.1, columns.0, image,\nchart…), или shape:<id> для фигуры слайда. Сборка переносит анимацию в .pptx (export/motion.py)."
+   },
+   "SlideRender": {
+    "properties": {
+     "image": {
+      "type": "string",
+      "title": "Image"
+     },
+     "targets": {
+      "additionalProperties": {
+       "items": {
+        "type": "number"
+       },
+       "type": "array"
+      },
+      "type": "object",
+      "title": "Targets",
+      "default": {}
+     }
+    },
+    "type": "object",
+    "required": [
+     "image"
+    ],
+    "title": "SlideRender",
+    "description": "Рендер слайда из собранного .pptx и рамки его элементов (доли слайда) для подсветки аудита."
+   },
+   "SlideShape": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "template_shape_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Template Shape Id"
+     },
+     "kind": {
+      "type": "string",
+      "enum": [
+       "circle",
+       "rect",
+       "badge",
+       "pill",
+       "line",
+       "image"
+      ],
+      "title": "Kind",
+      "default": "circle"
+     },
+     "x": {
+      "type": "number",
+      "title": "X",
+      "default": 0.5
+     },
+     "y": {
+      "type": "number",
+      "title": "Y",
+      "default": 0.5
+     },
+     "width": {
+      "type": "number",
+      "title": "Width",
+      "default": 0.15
+     },
+     "height": {
+      "type": "number",
+      "title": "Height",
+      "default": 0.15
+     },
+     "color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Color"
+     },
+     "opacity": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Opacity",
+      "default": 1.0
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     },
+     "border": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Border",
+      "default": false
+     },
+     "font_family": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Font Family"
+     },
+     "font_size": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Font Size"
+     },
+     "bold": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Bold"
+     },
+     "image_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Image Url"
+     },
+     "crop": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "number"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Crop"
+     },
+     "radius": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Radius"
+     }
+    },
+    "type": "object",
+    "title": "SlideShape"
+   },
+   "SlideTheme": {
+    "properties": {
+     "background": {
+      "type": "string",
+      "title": "Background"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     },
+     "muted": {
+      "type": "string",
+      "title": "Muted"
+     },
+     "surface": {
+      "type": "string",
+      "title": "Surface"
+     },
+     "accent": {
+      "type": "string",
+      "title": "Accent"
+     },
+     "accents": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Accents"
+     },
+     "cover": {
+      "$ref": "#/components/schemas/SurfaceColors"
+     },
+     "section": {
+      "$ref": "#/components/schemas/SurfaceColors"
+     },
+     "closing": {
+      "$ref": "#/components/schemas/SurfaceColors"
+     },
+     "heading_font": {
+      "type": "string",
+      "title": "Heading Font"
+     },
+     "body_font": {
+      "type": "string",
+      "title": "Body Font"
+     },
+     "fonts": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Fonts",
+      "default": []
+     },
+     "aspect": {
+      "type": "number",
+      "title": "Aspect"
+     },
+     "layouts": {
+      "additionalProperties": {
+       "$ref": "#/components/schemas/LayoutSkin"
+      },
+      "type": "object",
+      "title": "Layouts",
+      "default": {}
+     },
+     "roles": {
+      "additionalProperties": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "type": "object",
+      "title": "Roles",
+      "default": {}
+     },
+     "patterns": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Patterns",
+      "default": []
+     },
+     "palette": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Palette",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "background",
+     "text",
+     "muted",
+     "surface",
+     "accent",
+     "accents",
+     "cover",
+     "section",
+     "closing",
+     "heading_font",
+     "body_font",
+     "aspect"
+    ],
+    "title": "SlideTheme",
+    "description": "Цвета и шрифты для отрисовки слайдов, вычисленные из токенов шаблона."
+   },
+   "SlideTransition": {
+    "properties": {
+     "type": {
+      "type": "string",
+      "enum": [
+       "none",
+       "fade",
+       "push",
+       "zoom",
+       "wipe"
+      ],
+      "title": "Type",
+      "default": "fade"
+     },
+     "duration_ms": {
+      "type": "integer",
+      "maximum": 5000.0,
+      "minimum": 100.0,
+      "title": "Duration Ms",
+      "default": 600
+     }
+    },
+    "type": "object",
+    "title": "SlideTransition",
+    "description": "Переход к слайду (при показе и в .pptx)."
+   },
+   "SlidesCountRange": {
+    "properties": {
+     "min": {
+      "type": "integer",
+      "title": "Min"
+     },
+     "max": {
+      "type": "integer",
+      "title": "Max"
+     },
+     "default": {
+      "type": "integer",
+      "title": "Default"
+     }
+    },
+    "type": "object",
+    "required": [
+     "min",
+     "max",
+     "default"
+    ],
+    "title": "SlidesCountRange"
+   },
+   "StageOut": {
+    "properties": {
+     "key": {
+      "type": "string",
+      "title": "Key"
+     },
+     "title": {
+      "type": "string",
+      "title": "Title"
+     },
+     "skill": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Skill"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "pending",
+       "running",
+       "done",
+       "skipped",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "detail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Detail"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "finished_at": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Finished At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "key",
+     "title",
+     "skill",
+     "status"
+    ],
+    "title": "StageOut"
+   },
+   "SurfaceColors": {
+    "properties": {
+     "background": {
+      "type": "string",
+      "title": "Background"
+     },
+     "text": {
+      "type": "string",
+      "title": "Text"
+     }
+    },
+    "type": "object",
+    "required": [
+     "background",
+     "text"
+    ],
+    "title": "SurfaceColors"
+   },
+   "TableData": {
+    "properties": {
+     "columns": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Columns"
+     },
+     "rows": {
+      "items": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "type": "array",
+      "title": "Rows"
+     }
+    },
+    "type": "object",
+    "title": "TableData"
+   },
+   "TemplateDetail": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "is_builtin": {
+      "type": "boolean",
+      "title": "Is Builtin"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "processing",
+       "ready",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "slides_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slides Count"
+     },
+     "layouts_count": {
+      "type": "integer",
+      "title": "Layouts Count"
+     },
+     "aspect_ratio": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Aspect Ratio"
+     },
+     "palette": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Palette"
+     },
+     "fonts": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Fonts"
+     },
+     "theme": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SlideTheme"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "file_size": {
+      "type": "integer",
+      "title": "File Size"
+     },
+     "parser_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parser Version"
+     },
+     "tokens": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Tokens"
+     },
+     "layouts": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Layouts"
+     },
+     "layout_roles": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Layout Roles"
+     },
+     "patterns": {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array",
+      "title": "Patterns"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "description",
+     "is_builtin",
+     "status",
+     "error",
+     "slides_count",
+     "layouts_count",
+     "aspect_ratio",
+     "palette",
+     "fonts",
+     "theme",
+     "created_at",
+     "file_size",
+     "parser_version",
+     "tokens",
+     "layouts",
+     "layout_roles",
+     "patterns"
+    ],
+    "title": "TemplateDetail"
+   },
+   "TemplateSummary": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "is_builtin": {
+      "type": "boolean",
+      "title": "Is Builtin"
+     },
+     "status": {
+      "type": "string",
+      "enum": [
+       "processing",
+       "ready",
+       "failed"
+      ],
+      "title": "Status"
+     },
+     "error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error"
+     },
+     "slides_count": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Slides Count"
+     },
+     "layouts_count": {
+      "type": "integer",
+      "title": "Layouts Count"
+     },
+     "aspect_ratio": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Aspect Ratio"
+     },
+     "palette": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Palette"
+     },
+     "fonts": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Fonts"
+     },
+     "theme": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/SlideTheme"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "description",
+     "is_builtin",
+     "status",
+     "error",
+     "slides_count",
+     "layouts_count",
+     "aspect_ratio",
+     "palette",
+     "fonts",
+     "theme",
+     "created_at"
+    ],
+    "title": "TemplateSummary"
+   },
+   "TimelineItem": {
+    "properties": {
+     "date": {
+      "type": "string",
+      "title": "Date",
+      "default": ""
+     },
+     "title": {
+      "type": "string",
+      "title": "Title",
+      "default": ""
+     },
+     "text": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Text"
+     }
+    },
+    "type": "object",
+    "title": "TimelineItem"
+   },
+   "TitleSkin": {
+    "properties": {
+     "color": {
+      "type": "string",
+      "title": "Color"
+     },
+     "size": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Size"
+     },
+     "anchor": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Anchor"
+     },
+     "align": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Align"
+     },
+     "bold": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Bold"
+     }
+    },
+    "type": "object",
+    "required": [
+     "color"
+    ],
+    "title": "TitleSkin"
+   },
+   "UserOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "email": {
+      "type": "string",
+      "title": "Email"
+     },
+     "full_name": {
+      "type": "string",
+      "title": "Full Name"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "email",
+     "full_name",
+     "created_at"
+    ],
+    "title": "UserOut"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   },
+   "VariantDetailResponse": {
+    "properties": {
+     "theme": {
+      "$ref": "#/components/schemas/SlideTheme"
+     },
+     "presentation": {
+      "$ref": "#/components/schemas/PresentationBrief"
+     },
+     "variant": {
+      "$ref": "#/components/schemas/VariantOut"
+     }
+    },
+    "type": "object",
+    "required": [
+     "theme",
+     "presentation",
+     "variant"
+    ],
+    "title": "VariantDetailResponse"
+   },
+   "VariantOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "format": "uuid",
+      "title": "Id"
+     },
+     "position": {
+      "type": "integer",
+      "title": "Position"
+     },
+     "letter": {
+      "type": "string",
+      "title": "Letter"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "description": {
+      "type": "string",
+      "title": "Description"
+     },
+     "axis": {
+      "type": "string",
+      "title": "Axis"
+     },
+     "profile": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Profile"
+     },
+     "slides": {
+      "items": {
+       "$ref": "#/components/schemas/Slide"
+      },
+      "type": "array",
+      "title": "Slides"
+     },
+     "stats": {
+      "$ref": "#/components/schemas/VariantStats"
+     },
+     "is_selected": {
+      "type": "boolean",
+      "title": "Is Selected"
+     },
+     "renders": {
+      "$ref": "#/components/schemas/VariantRenders"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "position",
+     "letter",
+     "name",
+     "description",
+     "axis",
+     "profile",
+     "slides",
+     "stats",
+     "is_selected",
+     "renders"
+    ],
+    "title": "VariantOut"
+   },
+   "VariantRenders": {
+    "properties": {
+     "status": {
+      "type": "string",
+      "enum": [
+       "ready",
+       "pending",
+       "failed",
+       "unavailable"
+      ],
+      "title": "Status"
+     },
+     "slides": {
+      "items": {
+       "$ref": "#/components/schemas/SlideRender"
+      },
+      "type": "array",
+      "title": "Slides",
+      "default": []
+     }
+    },
+    "type": "object",
+    "required": [
+     "status"
+    ],
+    "title": "VariantRenders"
+   },
+   "VariantStats": {
+    "properties": {
+     "slides": {
+      "type": "integer",
+      "title": "Slides"
+     },
+     "visuals": {
+      "type": "integer",
+      "title": "Visuals"
+     },
+     "words": {
+      "type": "integer",
+      "title": "Words"
+     },
+     "avg_words": {
+      "type": "integer",
+      "title": "Avg Words"
+     },
+     "issues_open": {
+      "type": "integer",
+      "title": "Issues Open"
+     },
+     "errors": {
+      "type": "integer",
+      "title": "Errors"
+     },
+     "warnings": {
+      "type": "integer",
+      "title": "Warnings"
+     }
+    },
+    "type": "object",
+    "required": [
+     "slides",
+     "visuals",
+     "words",
+     "avg_words",
+     "issues_open",
+     "errors",
+     "warnings"
+    ],
+    "title": "VariantStats"
+   },
+   "VariantsResponse": {
+    "properties": {
+     "theme": {
+      "$ref": "#/components/schemas/SlideTheme"
+     },
+     "axis": {
+      "$ref": "#/components/schemas/AxisInfo"
+     },
+     "variants": {
+      "items": {
+       "$ref": "#/components/schemas/VariantOut"
+      },
+      "type": "array",
+      "title": "Variants"
+     }
+    },
+    "type": "object",
+    "required": [
+     "theme",
+     "axis",
+     "variants"
+    ],
+    "title": "VariantsResponse"
+   }
+  },
+  "securitySchemes": {
+   "session": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "Токен сессии из POST /api/auth/login или /api/auth/demo. В браузере вместо него работает cookie сессии."
+   }
+  }
+ },
+ "tags": [
+  {
+   "name": "meta",
+   "description": "Служебное: здоровье сервиса, варианты настроек генерации, каталог скиллов и агентов с версиями."
+  },
+  {
+   "name": "auth",
+   "description": "Регистрация, вход, демо-вход тестового эксперта, выход, текущий пользователь."
+  },
+  {
+   "name": "templates",
+   "description": "Шаблоны: загрузка своего файла, результат декомпозиции — макеты, паттерны слайдов, токены дизайн-системы, рендеры, пиктограммы."
+  },
+  {
+   "name": "presentations",
+   "description": "Презентации: бриф и настройки, контент-пакет, запуск генерации и её ход, варианты, иллюстрации модели, выбор варианта."
+  },
+  {
+   "name": "variants",
+   "description": "Варианты вёрстки: слайды и их правка, рерол, аудит и исправления, правка слайда из чата, слайд по описанию, автоанимации, экспорт."
+  },
+  {
+   "name": "skills",
+   "description": "Пользовательские скиллы: библиотека с версиями и стандартные скиллы."
+  },
+  {
+   "name": "collaboration",
+   "description": "Студия: комментарии к слайдам и присутствие участников."
+  },
+  {
+   "name": "sharing",
+   "description": "Общий доступ к презентации: участники, роли, ссылки-приглашения."
+  },
+  {
+   "name": "projects",
+   "description": "Папки проектов и совместный доступ к ним."
+  },
+  {
+   "name": "notifications",
+   "description": "Уведомления пользователя."
+  },
+  {
+   "name": "fonts",
+   "description": "Шрифты шаблонов для превью в браузере — те же файлы, которыми LibreOffice рендерит слайды."
+  }
+ ],
+ "security": [
+  {
+   "session": []
+  }
+ ],
+ "servers": [
+  {
+   "url": "http://localhost:8080",
+   "description": "локальный запуск: docker compose up"
+  }
+ ]
+};
+    window.ui = SwaggerUIBundle({ spec, dom_id: "#swagger-ui", deepLinking: true, docExpansion: "none" });
+  </script>
+</body>
+</html>
