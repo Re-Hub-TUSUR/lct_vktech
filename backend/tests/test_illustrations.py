@@ -457,3 +457,13 @@ def test_generated_picture_replaces_example_picture(parsed, monkeypatch, tmp_pat
     if pattern["images"][0]["id"] in example_ids and pattern["images"][0]["id"] in {s.shape_id for s, _ in pictures(slide.shapes)}:
         assert ours[0].shape_id == pattern["images"][0]["id"], "картинка встаёт в фигуру фото слайда-примера"
     assert any(picture["user"] for picture in deck.facts[0]["pictures"]), "аудит видит картинку как содержимое слайда"
+
+
+def test_unfinished_images_are_counted_as_late():
+    from app.pipeline.visuals.illustrations import ImageJob, ImagePlan, unfinished_result
+
+    job = dict(ratio="1:1", seed=1, title="T", summary="", bullets=[], idea="")
+    plan = ImagePlan(jobs=[ImageJob(ref="a", url="/api/presentations/p/images/x.jpg", **job), ImageJob(ref="b", **job)])
+    result = unfinished_result(plan, STYLE, seconds=60)
+    assert (result.requested, result.generated, result.late) == (2, 1, 1)
+    assert "не дождались" in result.detail()

@@ -354,6 +354,8 @@ class IllustrationResult:
     generated: int = 0
     failed: int = 0
     over_limit: int = 0
+    # Не дождались к сроку T2I_WAIT_SECONDS: слайды верстаются без этих картинок.
+    late: int = 0
     seconds: float = 0.0
     model: str | None = None
     medium: str = ""
@@ -372,9 +374,28 @@ class IllustrationResult:
             parts.append("сюжеты — арт-директор")
         if self.failed:
             parts.append(f"не получились: {self.failed}")
+        if self.late:
+            parts.append(f"не дождались за {settings.t2i_wait_seconds:.0f} с: {self.late}")
         if self.over_limit:
             parts.append(f"сверх лимита T2I_MAX_IMAGES: {self.over_limit}")
         return " · ".join(parts)
+
+
+def unfinished_result(plan: ImagePlan, style: dict[str, Any], seconds: float) -> IllustrationResult:
+    """Итог, если модель не успела к сроку: считаются картинки, которые уже готовы."""
+    refs = {job.ref for job in plan.jobs}
+    done = {job.ref for job in plan.jobs if job.url}
+    return IllustrationResult(
+        requested=len(refs),
+        generated=len(done),
+        late=len(refs - done),
+        over_limit=plan.over_limit,
+        seconds=seconds,
+        model=t2i.t2i_config().model,
+        medium=str(style.get("medium") or ""),
+        style_source=str(style.get("source") or ""),
+        director="llm" if any(job.subject and job.subject != job.idea for job in plan.jobs) else "fallback",
+    )
 
 
 def _subjects(

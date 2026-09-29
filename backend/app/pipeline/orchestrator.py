@@ -44,6 +44,7 @@ from app.pipeline.visuals.illustrations import (
     remember_images,
     run_images,
     slide_aspect,
+    unfinished_result,
 )
 from app.pipeline.visuals.visualizer import VisualsReport, refine_variant
 from app.schemas.presentation import GenerationSettings
@@ -317,8 +318,10 @@ async def _run_stages(
         aspect = slide_aspect(template.tokens)
         image_plan: ImagePlan | None = plan_images(drafts, template.patterns, aspect=aspect) if illustrate else None
         images_task = None
+        images_started = time.monotonic()
         if image_plan is not None and image_plan.jobs:
             style = await style_task
+            images_started = time.monotonic()
             # Модель рисует, пока тексты подгоняются под слоты и строятся визуализации.
             images_task = _background(
                 asyncio.to_thread(
@@ -369,7 +372,14 @@ async def _run_stages(
         stage.detail = visuals.detail()
 
     async with tracker.stage("images") as stage:
-        result = await _keep_alive(tracker.generation.id, images_task) if images_task is not None else None
+        result = None
+        if images_task is not None:
+            # Ждём не дольше T2I_WAIT_SECONDS с начала рисования: зависший запрос провайдера не должен
+            # выводить колоду за 5 минут. Не успевшие картинки — слайды тезисами.
+            deadline = images_started + settings.t2i_wait_seconds
+            [result] = await _within(tracker.generation.id, [images_task], deadline)
+            if result is None:
+                result = unfinished_result(image_plan, style, time.monotonic() - images_started)
         # Слайды «текст и изображение» без картинки верстаются тезисами — пустой рамки на слайде не будет.
         dropped = apply_images(
             drafts,

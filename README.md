@@ -75,7 +75,7 @@ cd frontend && npm install && npm run dev
 | `COOKIE_SECURE` | `false` | флаг Secure у cookie сессии — включить за HTTPS |
 | `MAX_UPLOAD_MB` | `100` | максимальный размер загружаемого файла, МБ |
 | `TEMPLATE_CACHE_DIR` | `/cache` | кэш разбора встроенных шаблонов (каталог `cache/`, см. `cache/README.md`); пусто — разбирать их с нуля при каждом запуске |
-| `RENDER_TIMEOUT_SECONDS`, `RENDER_CONCURRENCY` | `420`, `1` | лимит времени и число параллельных процессов LibreOffice на рендер |
+| `RENDER_TIMEOUT_SECONDS`, `RENDER_CONCURRENCY` | `420`, `2` | лимит времени и число параллельных процессов LibreOffice на рендер (два — примерно на 40% быстрее одного, пик памяти воркера ~1,3 ГБ; больше двух не ускоряет) |
 | `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | пусто | модель для плана колоды, текстов слайдов и правки слайда из чата (OpenAI-совместимый API); пусто — колода из тезисов брифа, правка из чата недоступна |
 | `LLM_CONCURRENCY`, `LLM_MAX_TOKENS`, `LLM_TEMPERATURE` | `4`, `1600`, `0.3` | сколько слайдов пишется параллельно, лимит ответа и температура |
 | `LLM_SOURCE_CHARS`, `LLM_SOURCES_TOTAL_CHARS` | `4000`, `12000` | сколько знаков контент-пакета уходит в промпт: на файл и суммарно |
@@ -87,7 +87,8 @@ cd frontend && npm install && npm run dev
 | `VLM_MAX_TOKENS`, `VLM_DISABLE_REASONING`, `VLM_EXTRA_BODY` | `900`, `true`, пусто | лимит ответа в токенах; выключение рассуждений гибридных моделей (Qwen3.x); доп. поля запроса JSON-строкой (для vLLM: `{"chat_template_kwargs": {"enable_thinking": false}}`) |
 | `T2I_BASE_URL`, `T2I_API_KEY`, `T2I_MODEL` | пусто | text-to-image для иллюстраций слайдов (FLUX.2 [klein] 4B); пусто — слайды с иллюстрацией не планируются. Пустой ключ — `LLM_API_KEY`, если модель у того же провайдера |
 | `T2I_API` | `chat` | `chat` — `/chat/completions` с `modalities` (RouterAI, OpenRouter); `images` — OpenAI Images API (свой сервер) |
-| `T2I_TIMEOUT_SECONDS`, `T2I_CONCURRENCY`, `T2I_MAX_IMAGES`, `T2I_SEED` | `90`, `4`, `8`, `2026` | лимит ожидания, параллельность, картинок на колоду (три варианта вместе), сид первой картинки |
+| `T2I_TIMEOUT_SECONDS`, `T2I_WAIT_SECONDS` | `40`, `60` | лимит одного запроса; сколько генерация ждёт картинки с начала рисования — не успевшие верстаются тезисами |
+| `T2I_CONCURRENCY`, `T2I_MAX_IMAGES`, `T2I_SEED` | `4`, `8`, `2026` | параллельность, картинок на колоду (три варианта вместе), сид первой картинки |
 | `POSTGRES_PORT`, `REDIS_PORT`, `BACKEND_PORT`, `FRONTEND_DEV_PORT` | `5432`, `6379`, `8000`, `5173` | порты в режиме разработки |
 
 ## О приложении

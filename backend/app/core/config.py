@@ -89,7 +89,11 @@ class Settings(BaseSettings):
     t2i_api_key: str | None = None
     t2i_model: str | None = None
     t2i_api: Literal["chat", "images"] = "chat"
-    t2i_timeout_seconds: float = 90
+    # Картинка рисуется 6–14 с: запрос дольше — зависший, его лучше повторить.
+    t2i_timeout_seconds: float = 40
+    # Сколько генерация ждёт картинки с момента, как модель начала их рисовать. Не успела картинка —
+    # её слайд верстается тезисами: колода укладывается в 5 минут и при сбое провайдера.
+    t2i_wait_seconds: float = 60
     t2i_concurrency: int = 4
     # Не больше стольких картинок на одну генерацию (три варианта вместе; один слайд плана — одна картинка).
     t2i_max_images: int = 8
