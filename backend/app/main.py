@@ -5,6 +5,7 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
 
+from app.api.openapi import VERSION, install_openapi
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.db import engine
@@ -26,10 +27,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version=VERSION,
     lifespan=lifespan,
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
-    redoc_url=None,
+    redoc_url="/api/redoc",
 )
 app.include_router(api_router, prefix="/api")
+# Swagger UI (/api/docs): разделы, сценарий генерации и авторизация — app/api/openapi.py.
+install_openapi(app)

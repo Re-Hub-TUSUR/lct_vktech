@@ -4,6 +4,14 @@
 Запуск и переменные окружения — в [README](README.md), модели — в [MODELS.md](MODELS.md),
 проверки аудита и автотесты — в [AUDIT.md](AUDIT.md).
 
+> **API — Swagger:** **[открыть Swagger UI онлайн](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/maratsaratov/lct_vktech/main/docs/openapi.json)**
+> (запасная ссылка — [та же документация страницей из репозитория](https://htmlpreview.github.io/?https://github.com/maratsaratov/lct_vktech/blob/main/docs/swagger.html)).
+> Живая документация с выполнением запросов — **http://localhost:8080/api/docs**
+> (после `docker compose up`; ReDoc — http://localhost:8080/api/redoc).
+> Без запуска сервиса: **[docs/swagger.html](docs/swagger.html)** — Swagger UI со встроенной спецификацией,
+> открывается в браузере из файла; спецификация OpenAPI 3.1 — **[docs/openapi.json](docs/openapi.json)**
+> (80 операций в 11 разделах, импортируется в [Swagger Editor](https://editor.swagger.io)). Подробнее — раздел [«API»](#api).
+
 ## Принципы
 
 1. **Шаблон — набор правил, а не картинка.** Дизайн корпоративного шаблона живёт в основном в
@@ -35,6 +43,33 @@
 
 Файлы — в томе `storage`: контент-пакеты, рендеры шаблонов и вариантов, пиктограммы шаблонов,
 картинки пользователей и иллюстрации модели (`generated/<id презентации>/`).
+
+## API
+
+Интерфейс работает с бэкендом только через REST API и поток событий SSE, поэтому всё, что делает
+пользователь, доступно и скриптам. Документация — Swagger UI (OpenAPI 3.1), генерируется FastAPI из
+кода роутов и схем Pydantic, описание разделов, сценария генерации и авторизации — `backend/app/api/openapi.py`.
+
+| Где | Что |
+|---|---|
+| [Swagger UI онлайн](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/maratsaratov/lct_vktech/main/docs/openapi.json) | публичная ссылка: Swagger UI от swagger.io со спецификацией из `docs/openapi.json` ветки `main` |
+| [страница из репозитория](https://htmlpreview.github.io/?https://github.com/maratsaratov/lct_vktech/blob/main/docs/swagger.html) | запасная публичная ссылка: `docs/swagger.html` со встроенной спецификацией |
+| http://localhost:8080/api/docs | Swagger UI на запущенном сервисе: запросы выполняются прямо из браузера |
+| http://localhost:8080/api/redoc | та же спецификация в ReDoc |
+| [docs/swagger.html](docs/swagger.html) | Swagger UI со встроенной спецификацией — открыть в браузере без запуска сервиса |
+| [docs/openapi.json](docs/openapi.json) | спецификация OpenAPI 3.1 для Swagger Editor, Postman и генераторов клиентов |
+
+Разделы API: `meta` (здоровье сервиса, настройки, каталог скиллов), `auth`, `templates`, `presentations`
+(в том числе запуск генерации и её ход), `variants` (слайды, рерол, аудит, чат-правка, экспорт), `skills`,
+`collaboration`, `sharing`, `projects`, `notifications`, `fonts`. Авторизация — cookie сессии в браузере
+или `Authorization: Bearer <token>` для скриптов (`POST /api/auth/login`, `POST /api/auth/demo`).
+
+Спецификация в `docs/` выгружается из кода; после изменения роутов её обновляют командами:
+
+```bash
+docker compose run --rm -T backend python -m app.api.openapi json > docs/openapi.json
+docker compose run --rm -T backend python -m app.api.openapi html > docs/swagger.html
+```
 
 ## Пайплайн генерации
 
