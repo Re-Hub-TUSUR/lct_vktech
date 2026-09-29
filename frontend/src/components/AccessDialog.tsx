@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useAuth } from '../auth/AuthProvider'
 import { api } from '../api/client'
 import type { PresentationAccessRole, ShareRole } from '../api/types'
+import { copyText } from '../lib/clipboard'
 import { formatDate } from '../lib/format'
 import { canManageAccess, ROLE_HINT, ROLE_LABEL, ROLE_TONE } from '../lib/roles'
 import { Modal } from './Modal'
@@ -80,8 +81,15 @@ export function AccessDialog({
   const manage = canManageAccess(myRole)
   const [role, setRole] = useState<ShareRole>('editor')
 
-  const copyLink = async (token: string) => {
-    await navigator.clipboard.writeText(`${window.location.origin}${sharePath}/${token}`)
+  const copyLink = (token: string) => copyText(`${window.location.origin}${sharePath}/${token}`)
+
+  const copyWithToast = async (token: string) => {
+    try {
+      await copyLink(token)
+      notify('Ссылка скопирована в буфер обмена')
+    } catch {
+      notify('Не удалось скопировать ссылку', 'error')
+    }
   }
 
   const existingLink = links.data?.find((link) => link.is_active && link.role === role)
@@ -137,7 +145,8 @@ export function AccessDialog({
               <Button
                 icon={existingLink ? <Copy size={16} /> : <UserRoundPlus size={16} />}
                 loading={createLink.isPending}
-                onClick={() => createLink.mutate()}
+                // Уже готовую ссылку копируем сразу, пока браузер считает это действием пользователя.
+                onClick={() => (existingLink ? void copyWithToast(existingLink.token) : createLink.mutate())}
                 className="share-dialog__create-btn"
               >
                 {existingLink ? 'Скопировать ссылку' : 'Создать и скопировать ссылку'}
@@ -225,14 +234,7 @@ export function AccessDialog({
                       type="button"
                       title="Скопировать ссылку"
                       aria-label="Скопировать ссылку"
-                      onClick={async () => {
-                        try {
-                          await copyLink(link.token)
-                          notify('Ссылка скопирована')
-                        } catch {
-                          notify('Не удалось скопировать ссылку', 'error')
-                        }
-                      }}
+                      onClick={() => void copyWithToast(link.token)}
                     >
                       <Copy size={16} />
                     </button>
