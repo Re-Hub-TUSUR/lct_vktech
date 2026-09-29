@@ -183,8 +183,11 @@ async def _run_stages(
         if template is None:
             raise PipelineError("Для презентации не выбран шаблон")
         if needs_analysis(template):
-            parsed = await asyncio.to_thread(
-                analyze_template, template.id, template.file_path, template.is_builtin
+            # Повторный разбор (новая версия парсера) идёт минутами: без heartbeat API сочло бы генерацию
+            # зависшей и пометило failed, хотя она продолжает работать.
+            parsed = await _keep_alive(
+                tracker.generation.id,
+                asyncio.to_thread(analyze_template, template.id, template.file_path, template.is_builtin),
             )
             apply_parsed(template, parsed)
         fonts = ", ".join(font["name"] for font in (template.tokens.get("fonts") or [])[:2]) or "—"
@@ -205,7 +208,10 @@ async def _run_stages(
                     if meta and (meta.get("source") == "fallback" or "source" not in meta) and (vlm_enabled() or settings.llm_base_url):
                         needs_extract = True
             if needs_extract:
-                file.extracted_text = await asyncio.to_thread(extract_text, Path(file.path), file.filename) or ""
+                file.extracted_text = (
+                    await _keep_alive(tracker.generation.id, asyncio.to_thread(extract_text, Path(file.path), file.filename))
+                    or ""
+                )
             chars += len(file.extracted_text)
         theses = split_sentences(presentation.brief)
         # Выдержки из материалов уходят в промпты плана и текстов слайдов.
