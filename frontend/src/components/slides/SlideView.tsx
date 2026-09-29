@@ -13,7 +13,7 @@ import {
 } from 'react'
 
 import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
-import { capacity, exportView, frameTarget } from '../../lib/exportSupport'
+import { capacity, defaultBold, exportView, frameTarget, hasDefaultWeight, titleBold } from '../../lib/exportSupport'
 import { slideMotionCss, type PlayItem } from '../../lib/motion'
 import { fitFontSize } from '../../lib/fit'
 import { ensureFonts } from '../../lib/templateFonts'
@@ -231,8 +231,9 @@ function placed(rect: FrameRect | undefined, container: FrameRect, zIndex = 12):
   return rect ? { position: 'absolute', ...boxInContainer(rect, container), zIndex } : {}
 }
 
-/** Оформление элемента из правок слайда (слайд уже приведён к exportView). */
-function getElementStyle(target: string, slide: Slide): CSSProperties {
+/** Оформление элемента из правок слайда (слайд уже приведён к exportView). Жирность без правки — та же,
+ * что показывает кнопка «Жирный» и собирает экспорт (defaultBold), а не начертание тега по умолчанию. */
+function getElementStyle(target: string, slide: Slide, theme: SlideTheme): CSSProperties {
   const style: CSSProperties = {}
   const font = slide.element_fonts?.[target]
   const scale = slide.element_scales?.[target]
@@ -242,7 +243,7 @@ function getElementStyle(target: string, slide: Slide): CSSProperties {
   if (font) style.fontFamily = `"${font}", var(--slide-heading-font)`
   if (scale && scale !== 1) style.fontSize = `calc(1em * ${scale})`
   if (color) style.color = color
-  if (bold != null) style.fontWeight = bold ? 700 : 400
+  if (bold != null || hasDefaultWeight(target)) style.fontWeight = (bold ?? defaultBold(slide, theme, target)) ? 700 : 400
   if (align) style.textAlign = align
   return style
 }
@@ -677,7 +678,7 @@ function InteractiveSlideView({
     onListItem,
     focusRef,
     overflowFrom: cap?.unit === 'items' && cap.used > cap.max ? cap.max : undefined,
-    styleOf: (field) => getElementStyle(field, slide),
+    styleOf: (field) => getElementStyle(field, slide, theme),
   }
   const framed = skin?.frames?.title ? skin : undefined
   // Кегль заголовка — как у сборки. Своя рамка на слайде-примере: текст ужимается под исходный слот,
@@ -919,7 +920,7 @@ function FramedSlide({
           color: slide.text_color || skin.title?.color,
           justifyContent: ANCHOR[skin.title?.anchor ?? ''] ?? 'flex-start',
           textAlign: ALIGN[skin.title?.align ?? ''] ?? 'left',
-          fontWeight: skin.title?.bold === false ? 400 : 700,
+          fontWeight: titleBold(slide, theme) ? 700 : 400,
           // В своей рамке текст не обрезается: в .pptx он тоже выйдет за её край, пусть это будет видно сразу.
           overflow: titleFit === undefined ? 'hidden' : 'visible',
         }}
@@ -932,7 +933,7 @@ function FramedSlide({
           placeholder="Заголовок"
           edit={edit}
           className={flag('title')}
-          style={getElementStyle('title', slide)}
+          style={getElementStyle('title', slide, theme)}
         />
       </div>
       {cover ? (
@@ -950,7 +951,7 @@ function FramedSlide({
               placeholder="Подзаголовок"
               edit={edit}
               className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
-              style={getElementStyle('subtitle', slide)}
+              style={getElementStyle('subtitle', slide, theme)}
             />
           </div>
         )
@@ -1001,7 +1002,7 @@ function FlowSlide({ slide, theme, flag, render, edit, onImageClick, onDeleteCha
         placeholder="Заголовок"
         edit={edit}
         className={clsx('slide__cover-title', flag('title'))}
-        style={getElementStyle('title', slide)}
+        style={getElementStyle('title', slide, theme)}
       />
     )
     const subtitleNode = (slide.subtitle || edit.editable) && (
@@ -1013,7 +1014,7 @@ function FlowSlide({ slide, theme, flag, render, edit, onImageClick, onDeleteCha
         placeholder={slide.kind === 'section' ? 'Номер раздела' : 'Подзаголовок'}
         edit={edit}
         className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
-        style={getElementStyle('subtitle', slide)}
+        style={getElementStyle('subtitle', slide, theme)}
       />
     )
     // У разделителя номер раздела стоит над заголовком.
@@ -1044,7 +1045,7 @@ function FlowSlide({ slide, theme, flag, render, edit, onImageClick, onDeleteCha
       placeholder="Заголовок"
       edit={edit}
       className={clsx('slide__title', flag('title'))}
-      style={getElementStyle('title', slide)}
+      style={getElementStyle('title', slide, theme)}
     />
   )
 
@@ -1116,7 +1117,7 @@ function BulletList({
             style={placed(itemBox, listBox || containerBox)}
           >
             <span className="slide__agenda-num">{String(i + 1).padStart(2, '0')}</span>
-            <EditableText field={field} value={item} placeholder="Пункт" edit={edit} style={getElementStyle(field, slide)} />
+            <EditableText field={field} value={item} placeholder="Пункт" edit={edit} style={edit.styleOf?.(field)} />
           </li>
         ) : (
           <EditableText
@@ -1128,7 +1129,7 @@ function BulletList({
             placeholder="Тезис"
             edit={edit}
             className={clsx(flag(field), itemBox && 'slide__bullet--custom')}
-            style={{ ...getElementStyle(field, slide), ...placed(itemBox, listBox || containerBox) }}
+            style={{ ...edit.styleOf?.(field), ...placed(itemBox, listBox || containerBox) }}
           />
         )
       })}
@@ -1148,7 +1149,7 @@ function SlideContent({
   onDeleteChart,
 }: Omit<LayoutProps, 'slide'> & { slide: Slide; containerBox?: FrameRect }): ReactNode {
   const { editable } = edit
-  const elStyle = (target: string) => getElementStyle(target, slide)
+  const elStyle = (target: string) => getElementStyle(target, slide, theme)
   const custom = (target: string) => slide.element_boxes?.[target] as FrameRect | undefined
 
   const imageElement = (

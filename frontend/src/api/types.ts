@@ -344,6 +344,8 @@ export interface PatternSlot {
   role: string
   bbox: FrameRect
   size: number | null
+  /** Текст примера набран жирным — сборка сохраняет это начертание. */
+  bold?: boolean
   /** Ёмкость слота в знаках при его кегле. */
   chars: number
   paragraphs: number
