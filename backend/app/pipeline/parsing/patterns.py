@@ -262,6 +262,8 @@ def _slot(leaf: Leaf, role: str, width: int, height: int) -> dict[str, Any]:
         "role": role,
         "bbox": [round(v, 4) for v in leaf.bbox],
         "size": leaf.size,
+        # Жирность текста примера: сборка (pattern_fill) сохраняет её, превью и редактор должны показывать так же.
+        "bold": leaf.bold,
         "chars": _capacity(leaf, width, height),
         "paragraphs": len(leaf.paragraphs),
         "sample": leaf.text[:60],

@@ -388,7 +388,7 @@ async def start_generation(presentation_id: uuid.UUID, user: CurrentUser, db: Db
         presentation_id=presentation.id,
         status="queued",
         progress=0,
-        stages=initial_stages(generate_images=options.generate_images),
+        stages=initial_stages(generate_images=options.generate_images, animations=options.animations),
     )
     db.add(generation)
     presentation.status = "generating"

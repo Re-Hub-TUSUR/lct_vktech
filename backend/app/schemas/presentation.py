@@ -32,6 +32,8 @@ class GenerationSettings(BaseModel):
     # Задача со звёздочкой: генерация изображений моделью text-to-image.
     generate_images: bool = False
     speaker_notes: bool = True
+    # Автоанимации колоды по правилам (pipeline/visuals/motion_rules.py): без / сдержанные / живые.
+    animations: Literal["none", "subtle", "lively"] = "subtle"
     custom_skills: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
 
 

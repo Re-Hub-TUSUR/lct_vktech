@@ -59,13 +59,6 @@ export const ALL_CONTENT_EXTENSIONS = [
 
 export type ContentCategory = 'image' | 'data' | 'document'
 
-export interface CategoryInfo {
-  category: ContentCategory
-  label: string
-  badgeClass: string
-  badgeTone: 'purple' | 'warning' | 'info'
-}
-
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.svg'])
 const DATA_EXTENSIONS = new Set(['.json', '.yaml', '.yml'])
 
@@ -85,17 +78,6 @@ export function getContentCategory(filename: string, contentType?: string): Cont
     return 'data'
   }
   return 'document'
-}
-
-export function getCategoryInfo(category: ContentCategory): CategoryInfo {
-  switch (category) {
-    case 'image':
-      return { category: 'image', label: 'Изображение', badgeClass: 'badge-purple', badgeTone: 'purple' }
-    case 'data':
-      return { category: 'data', label: 'Данные', badgeClass: 'badge-warning', badgeTone: 'warning' }
-    case 'document':
-      return { category: 'document', label: 'Документ', badgeClass: 'badge-info', badgeTone: 'info' }
-  }
 }
 
 export function getImageKindLabel(category?: string | null): string {

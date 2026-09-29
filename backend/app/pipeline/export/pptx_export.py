@@ -103,6 +103,10 @@ class _Ctx:
     surface: str = "#E6F1FF"
     background: str = "#FFFFFF"
     font_family: str | None = None
+    # Гарнитуры шаблона по умолчанию — те же, что у превью (theme.heading_font / body_font): без них новый
+    # текст наследовал бы шрифт темы, а он в шаблонах часто формальный Arial вместо фирменной гарнитуры.
+    heading_font: str | None = None
+    body_font: str | None = None
 
     @property
     def scale(self) -> float:
@@ -166,7 +170,13 @@ def build_deck(
     }
     fallback_key = roles.get("content") if roles.get("content") in layouts else next(iter(layouts))
     theme_colors = extract_theme(prs)["colors"]
-    ctx = _Ctx(width=int(prs.slide_width), height=int(prs.slide_height), theme=theme)
+    ctx = _Ctx(
+        width=int(prs.slide_width),
+        height=int(prs.slide_height),
+        theme=theme,
+        heading_font=theme.get("heading_font"),
+        body_font=theme.get("body_font"),
+    )
 
     chrome = ctx.design.get("chrome") or {}
     # Ряды диаграмм — цветами диаграмм шаблона, если они есть, иначе акцентами темы.
@@ -603,8 +613,13 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     elem_bolds = getattr(spec, "element_bolds", {}) or {}
 
     title_color = elem_colors.get("title") or getattr(spec, "text_color", None)
-    title_bold = elem_bolds.get("title") if "title" in elem_bolds else (spec.is_bold if spec.is_bold is not None else True)
-    title_font = elem_fonts.get("title") or spec.font_family
+    # Жирность заголовка по умолчанию — из стиля заголовка макета, как в превью (SlideView: skin.title.bold).
+    skins, theme_roles = ctx.theme.get("layouts") or {}, ctx.theme.get("roles") or {}
+    role_key = theme_roles.get(spec.kind) or theme_roles.get("content") or ""
+    skin_title = (skins.get(spec.layout_key or "") or skins.get(role_key) or {}).get("title") or {}
+    default_bold = spec.is_bold if spec.is_bold is not None else skin_title.get("bold") is not False
+    title_bold = elem_bolds.get("title") if "title" in elem_bolds else default_bold
+    title_font = elem_fonts.get("title") or spec.font_family or ctx.heading_font
     title_scale = elem_scales.get("title", 1.0)
     if "title" in elem_boxes:
         tx, ty, tw, th = elem_boxes["title"]
@@ -612,7 +627,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         box = slide.shapes.add_textbox(*rect)
         _write(
             # Кегль заголовка шаблона (как показывает редактор), а не условные 30 pt.
-            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font
+            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font, heading=True
         )
         targets["title"] = _fraction(rect, ctx)
         _styled_frame(box.text_frame, spec, "title", scale=False)
@@ -641,7 +656,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
         rect = (int(ctx.width * 0.06), int(ctx.height * 0.07), int(ctx.width * 0.88), int(ctx.height * 0.14))
         box = slide.shapes.add_textbox(*rect)
         _write(
-            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font
+            box.text_frame, [spec.title], ctx, size=ctx.role_size("title", 30) * title_scale, bold=bool(title_bold), color=title_color, font_name=title_font, heading=True
         )
         _styled_frame(box.text_frame, spec, "title", scale=False)
         targets["title"] = _fraction(rect, ctx)
@@ -765,7 +780,7 @@ def _render(slide, spec: Slide, ctx: _Ctx) -> Targets:
     elif kind == "quote" and spec.quote:
         x, y, w, h = area
         box = slide.shapes.add_textbox(x, y, w, h)
-        _write(box.text_frame, [f"«{spec.quote.text}»"], ctx, size=30, italic=True)
+        _write(box.text_frame, [f"«{spec.quote.text}»"], ctx, size=30, italic=True, heading=True)
         _styled(box.text_frame.paragraphs[0], spec, "quote.text")
         if spec.quote.author:
             paragraph = box.text_frame.add_paragraph()
@@ -803,14 +818,16 @@ def _run(
     color: str | None = None,
     styled: bool = False,
     font_name: str | None = None,
+    heading: bool = False,
 ):
-    """styled=True — цвет текста задаёт стиль объекта (таблицы), а не фон слайда."""
+    """styled=True — цвет текста задаёт стиль объекта (таблицы), а не фон слайда.
+    heading=True — заголовочный текст (заголовок, карточки, показатели): гарнитура заголовков шаблона."""
     run = paragraph.add_run()
     run.text = text
     run.font.size = ctx.pt(size)
     run.font.bold = bold
     run.font.italic = italic
-    fn = font_name or ctx.font_family
+    fn = font_name or ctx.font_family or (ctx.heading_font if heading else ctx.body_font)
     if fn:
         run.font.name = fn
     if not styled:
@@ -829,11 +846,13 @@ def _styled_frame(text_frame, spec: Slide, field: str, *, scale: bool = True) ->
         _styled(paragraph, spec, field, scale=scale)
 
 
-def _write(text_frame, lines: list[str], ctx: _Ctx, *, size: float, bold=False, italic=False, color=None, font_name=None):
+def _write(
+    text_frame, lines: list[str], ctx: _Ctx, *, size: float, bold=False, italic=False, color=None, font_name=None, heading=False
+):
     text_frame.word_wrap = True
     for i, line in enumerate(lines):
         paragraph = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
-        _run(paragraph, line, ctx, size=size, bold=bold, italic=italic, color=color, font_name=font_name)
+        _run(paragraph, line, ctx, size=size, bold=bold, italic=italic, color=color, font_name=font_name, heading=heading)
 
 
 def _set_bullet(paragraph, ctx: _Ctx) -> None:
@@ -921,7 +940,7 @@ def _two_columns(slide, spec: Slide, area, ctx: _Ctx) -> None:
             cx, cy, cw, ch = elem_boxes[col_key]
             left, top, cur_w, cur_h = int(cx * ctx.width), int(cy * ctx.height), int(cw * ctx.width), int(ch * ctx.height)
         header = slide.shapes.add_textbox(left, top, cur_w, int(cur_h * 0.16))
-        _write(header.text_frame, [column.title], ctx, size=22, bold=True, color=ctx.theme["accent"])
+        _write(header.text_frame, [column.title], ctx, size=22, bold=True, color=ctx.theme["accent"], heading=True)
         _styled_frame(header.text_frame, spec, f"columns.{i}.title")
         _bullets_box(
             slide,
@@ -970,7 +989,7 @@ def _cards(slide, spec: Slide, area, ctx: _Ctx) -> None:
         frame = card.text_frame
         frame.word_wrap = True
         frame.vertical_anchor = MSO_ANCHOR.TOP
-        _run(frame.paragraphs[0], card_spec.title, ctx, size=20, bold=True, color=ctx.theme["accent"])
+        _run(frame.paragraphs[0], card_spec.title, ctx, size=20, bold=True, color=ctx.theme["accent"], heading=True)
         _styled(frame.paragraphs[0], spec, f"columns.{i}.title")
         for j, bullet in enumerate(card_spec.bullets):
             paragraph = frame.add_paragraph()
@@ -1145,7 +1164,7 @@ def _kpis(slide, spec: Slide, area, ctx: _Ctx) -> None:
         frame = card.text_frame
         frame.word_wrap = True
         frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        _run(frame.paragraphs[0], kpi.value, ctx, size=44, bold=True, color=ctx.theme["accent"])
+        _run(frame.paragraphs[0], kpi.value, ctx, size=44, bold=True, color=ctx.theme["accent"], heading=True)
         _styled(frame.paragraphs[0], spec, f"kpis.{i}.value")
         label = frame.add_paragraph()
         _run(label, kpi.label, ctx, size=16, color=ctx.fg)

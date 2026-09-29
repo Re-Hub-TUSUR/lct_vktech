@@ -215,6 +215,8 @@ export interface SlideTheme {
   closing: SurfaceColors
   heading_font: string
   body_font: string
+  /** Все гарнитуры шаблона: заголовков, текста и остальные из его слайдов. */
+  fonts?: string[]
   aspect: number
   /** Ключ макета → оформление (только макеты, назначенные ролям). */
   layouts: Record<string, LayoutSkin>
@@ -351,6 +353,8 @@ export interface PatternSlot {
   role: string
   bbox: FrameRect
   size: number | null
+  /** Текст примера набран жирным — сборка сохраняет это начертание. */
+  bold?: boolean
   /** Ёмкость слота в знаках при его кегле. */
   chars: number
   paragraphs: number
@@ -467,7 +471,16 @@ export interface GenerationSettings {
   variant_axis: VariantAxis
   generate_images: boolean
   speaker_notes: boolean
+  /** Автоанимации колоды по правилам: без / сдержанные / живые (backend visuals/motion_rules.py). */
+  animations?: MotionMode
   custom_skills: CustomSkill[]
+}
+
+export type MotionMode = 'none' | 'subtle' | 'lively'
+
+export interface AnimateResponse {
+  slides: Slide[]
+  animated: number
 }
 
 export interface ContentFile {

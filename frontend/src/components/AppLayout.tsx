@@ -58,7 +58,14 @@ export function AppLayout() {
           <NavLink to="/" end onClick={closeMenu}>
             Главная
           </NavLink>
-          <NavLink to="/presentations" onClick={closeMenu}>Мои презентации</NavLink>
+          {/* «Новая презентация» — отдельная кнопка справа: вкладка списка на её странице не подсвечивается. */}
+          <NavLink
+            to="/presentations"
+            onClick={closeMenu}
+            className={({ isActive }) => (isActive && location.pathname !== '/presentations/new' ? 'active' : undefined)}
+          >
+            Мои презентации
+          </NavLink>
           <NavLink to="/templates" onClick={closeMenu}>Шаблоны</NavLink>
           <NavLink to="/skills" onClick={closeMenu}>Скиллы</NavLink>
         </nav>

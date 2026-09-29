@@ -1,20 +1,21 @@
 import clsx from 'clsx'
 import { CircleAlert, Check } from 'lucide-react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 import type { Slide, TemplateSummary } from '../api/types'
 import { countLabel } from '../lib/format'
 import { Spinner } from './ui'
 import { SlideView } from './slides/SlideView'
 
-function coverSlide(template: TemplateSummary): Slide {
+/** Обложка шаблона: титульный макет с названием шаблона или переданным заголовком. */
+export function coverSlide(template: TemplateSummary, title?: string): Slide {
   return {
     id: `cover-${template.id}`,
     kind: 'title',
     ref: null,
     group: null,
-    title: template.name,
-    subtitle: template.fonts.length ? `Шрифт: ${template.fonts[0]}` : null,
+    title: title ?? template.name,
+    subtitle: title !== undefined ? null : template.fonts.length ? `Шрифт: ${template.fonts[0]}` : null,
     summary: null,
     bullets: [],
     columns: [],
@@ -32,20 +33,30 @@ function coverSlide(template: TemplateSummary): Slide {
   }
 }
 
-export function TemplatePreview({ template }: { template: TemplateSummary }) {
+/** Рамка обложки 16:9 и вписанный в неё слайд: в сетке все обложки одного размера, даже у шаблонов 4:3 или 16:10. */
+const COVER_ASPECT = 16 / 9
+
+export function TemplatePreview({ template, title }: { template: TemplateSummary; title?: string }) {
   if (template.status === 'processing' || !template.theme) {
     return (
-      <div
-        className="template-preview template-preview--pending"
-        role={template.status === 'failed' ? 'alert' : 'status'}
-        aria-live={template.status === 'failed' ? undefined : 'polite'}
-      >
-        {template.status === 'failed' ? <CircleAlert /> : <Spinner />}
-        <span>{template.status === 'failed' ? 'Не удалось разобрать' : 'Разбираем шаблон…'}</span>
+      <div className="template-cover">
+        <div
+          className="template-preview template-preview--pending"
+          role={template.status === 'failed' ? 'alert' : 'status'}
+          aria-live={template.status === 'failed' ? undefined : 'polite'}
+        >
+          {template.status === 'failed' ? <CircleAlert /> : <Spinner />}
+          <span>{template.status === 'failed' ? 'Не удалось разобрать' : 'Разбираем шаблон…'}</span>
+        </div>
       </div>
     )
   }
-  return <SlideView slide={coverSlide(template)} theme={template.theme} />
+  const fit = Math.min(1, (template.theme.aspect || COVER_ASPECT) / COVER_ASPECT)
+  return (
+    <div className="template-cover" style={{ '--cover-fit': fit } as CSSProperties}>
+      <SlideView slide={coverSlide(template, title)} theme={template.theme} />
+    </div>
+  )
 }
 
 export function TemplateCard({

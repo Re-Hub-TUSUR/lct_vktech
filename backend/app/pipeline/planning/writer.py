@@ -177,8 +177,24 @@ def _shorten(text: Any, words: int) -> str:
     return " ".join(parts[:words]) if len(parts) > words else " ".join(parts)
 
 
+def _items(value: Any) -> list[Any]:
+    """Список из ответа модели. Модели иногда присылают словарь вместо списка ({"left": …, "right": …}),
+    строку вместо списка из одной строки или число — это не должно ронять генерацию."""
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    if isinstance(value, dict):
+        return list(value.values())
+    if isinstance(value, str) and value.strip():
+        return [value]
+    return []
+
+
+def _obj(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _lines(values: Any, count: int, words: int) -> list[str]:
-    return [line for line in (_shorten(value, words) for value in (values or [])[:count]) if line]
+    return [line for line in (_shorten(value, words) for value in _items(values)[:count]) if line]
 
 
 def _as_cards(spec: dict[str, Any], kpis: list[dict[str, str]]) -> bool:
@@ -203,11 +219,11 @@ def _apply_data(spec: dict[str, Any], data: Any, limits: dict[str, int]) -> bool
         return False
     categories = _lines(data.get("categories"), 6, 4)
     series = []
-    for row in (data.get("series") or [])[:2]:
+    for row in _items(data.get("series"))[:2]:
         if not isinstance(row, dict):
             continue
         try:
-            values = [float(value) for value in (row.get("values") or [])][: len(categories)]
+            values = [float(value) for value in _items(row.get("values"))][: len(categories)]
         except (TypeError, ValueError):
             continue
         if values:
@@ -221,7 +237,7 @@ def _apply_data(spec: dict[str, Any], data: Any, limits: dict[str, int]) -> bool
         row["values"] = row["values"][:width]
     kpis = [
         {"value": _shorten(kpi.get("value"), 3), "label": _shorten(kpi.get("label"), 6)}
-        for kpi in (data.get("kpis") or [])[:3]
+        for kpi in _items(data.get("kpis"))[:3]
         if isinstance(kpi, dict) and str(kpi.get("value") or "").strip()
     ]
     unit = _shorten(data.get("unit"), 2)
@@ -255,6 +271,8 @@ def _apply(spec: dict[str, Any], answer: dict[str, Any], limits: dict[str, int])
     kind = spec.get("plan_kind") or "text"
     words, bullets_limit = limits["max_words"], limits["max_bullets"]
     filled = False
+    # Ответ не объектом (число, строка, список): слайд останется тезисами из плана, генерация не падает.
+    answer = _obj(answer)
 
     if insight := _shorten(answer.get("insight"), 14).rstrip(".").strip():
         spec["insight"] = insight
@@ -266,7 +284,7 @@ def _apply(spec: dict[str, Any], answer: dict[str, Any], limits: dict[str, int])
         filled = True
     cards = [
         {"title": _shorten(card.get("title"), 3), "text": _shorten(card.get("text"), words)}
-        for card in (answer.get("cards") or [])[: limits["max_cards"]]
+        for card in _items(answer.get("cards"))[: limits["max_cards"]]
         if isinstance(card, dict) and str(card.get("title") or "").strip()
     ]
     if len(cards) >= 3:
@@ -274,7 +292,7 @@ def _apply(spec: dict[str, Any], answer: dict[str, Any], limits: dict[str, int])
         filled = True
     columns = [
         {"title": _shorten(column.get("title"), 4), "bullets": _lines(column.get("bullets"), 3, words)}
-        for column in (answer.get("columns") or [])[:2]
+        for column in _items(answer.get("columns"))[:2]
         if isinstance(column, dict)
     ]
     if len(columns) == 2 and all(column["bullets"] for column in columns):
@@ -292,22 +310,22 @@ def _apply(spec: dict[str, Any], answer: dict[str, Any], limits: dict[str, int])
                 "title": _shorten(item.get("title"), 4),
                 "text": _shorten(item.get("text"), words),
             }
-            for item in (answer.get("timeline") or [])[:5]
+            for item in _items(answer.get("timeline"))[:5]
             if isinstance(item, dict) and str(item.get("title") or "").strip()
         ]
         if len(timeline) >= 2:
             spec["timeline"] = timeline
             filled = True
     elif kind == "table":
-        table = answer.get("table") or {}
+        table = _obj(answer.get("table"))
         columns_row = _lines(table.get("columns"), 4, 3)
-        rows = [_lines(row, len(columns_row), 5) for row in (table.get("rows") or [])[:5]]
+        rows = [_lines(row, len(columns_row), 5) for row in _items(table.get("rows"))[:5]]
         rows = [row for row in rows if len(row) == len(columns_row)]
         if columns_row and rows:
             spec["table"] = {"columns": columns_row, "rows": rows}
             filled = True
     elif kind == "quote":
-        quote = answer.get("quote") or {}
+        quote = _obj(answer.get("quote"))
         if text := _shorten(quote.get("text"), 30):
             spec["quote"] = {"text": text, "author": _shorten(quote.get("author"), 6) or None}
             filled = True

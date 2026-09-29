@@ -19,16 +19,17 @@ STAGES: tuple[StageDef, ...] = (
     StageDef("layout", "Вёрстка трёх вариантов", "layout_composer"),
     StageDef("visuals", "Графики, таблицы и инфографика", "visualizer"),
     StageDef("images", "Генерация изображений", "image_generator"),
+    StageDef("motion", "Анимации и переходы", None),
     StageDef("render", "Сборка слайдов по шаблону", None),
     StageDef("audit", "Аудит слайдов", "auditor"),
 )
 STAGE_BY_KEY = {stage.key: stage for stage in STAGES}
 
 
-def initial_stages(*, generate_images: bool) -> list[dict[str, Any]]:
+def initial_stages(*, generate_images: bool, animations: str = "subtle") -> list[dict[str, Any]]:
     stages = []
     for stage in STAGES:
-        skipped = stage.key == "images" and not generate_images
+        skipped = (stage.key == "images" and not generate_images) or (stage.key == "motion" and animations == "none")
         stages.append(
             {
                 "key": stage.key,

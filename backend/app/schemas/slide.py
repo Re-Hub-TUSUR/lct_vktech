@@ -219,6 +219,21 @@ class RegenerateSlideRequest(BaseModel):
 PatternHint = Literal["auto", "bullets", "columns", "cards", "timeline", "chart", "case"]
 
 
+class AnimateRequest(BaseModel):
+    """Автоанимации по правилам (pipeline/visuals/motion_rules.py) для слайдов редактора: всей колоды или
+    выбранных (slide_ids). Слайды приходят из редактора — с несохранёнными правками, ответ он применяет сам."""
+
+    slides: list[Slide] = Field(min_length=1, max_length=200)
+    mode: Literal["none", "subtle", "lively"] = "subtle"
+    slide_ids: list[str] | None = None
+    overwrite: bool = True
+
+
+class AnimateResponse(BaseModel):
+    slides: list[Slide]
+    animated: int
+
+
 class GenerateSlideRequest(BaseModel):
     """Новый слайд по описанию (Студия › AI): вставляется после after_slide_id или заменяет replace_slide_id."""
 

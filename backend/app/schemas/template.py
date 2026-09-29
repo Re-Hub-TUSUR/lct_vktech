@@ -54,6 +54,8 @@ class SlideTheme(BaseModel):
     closing: SurfaceColors
     heading_font: str
     body_font: str
+    # Все гарнитуры шаблона: заголовков, текста и остальные, что встречаются в его слайдах.
+    fonts: list[str] = []
     aspect: float
     # Ключ макета → оформление; только макеты, назначенные ролям.
     layouts: dict[str, LayoutSkin] = {}

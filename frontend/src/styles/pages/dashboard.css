@@ -181,12 +181,12 @@ a:hover > .template-card,
   overflow: hidden;
 }
 .presentation-card .slide,
-.template-card > .slide {
+.template-card .template-cover > .slide {
   transition: transform 0.5s var(--ease-out);
 }
 .presentation-card:hover .slide,
-a:hover > .template-card > .slide,
-.template-card.is-selectable:hover:not(.is-disabled) > .slide {
+a:hover > .template-card .template-cover > .slide,
+.template-card.is-selectable:hover:not(.is-disabled) .template-cover > .slide {
   transform: scale(1.03);
 }
 .template-card__body {
@@ -268,8 +268,24 @@ a:hover > .template-card > .slide,
 .template-card__check {
   color: var(--color-primary);
 }
-.template-preview--pending {
+/* Обложка шаблона: рамка 16:9, слайд других пропорций вписан по центру (--cover-fit — доля ширины). */
+.template-cover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   aspect-ratio: 16 / 9;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-surface-muted);
+}
+.template-cover > .slide {
+  flex-shrink: 0;
+  width: calc(var(--cover-fit, 1) * 100%);
+}
+.template-preview--pending {
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;

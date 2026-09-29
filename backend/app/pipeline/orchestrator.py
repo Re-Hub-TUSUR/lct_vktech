@@ -46,6 +46,7 @@ from app.pipeline.visuals.illustrations import (
     slide_aspect,
     unfinished_result,
 )
+from app.pipeline.visuals.motion_rules import MOTION_LABELS, animate_deck
 from app.pipeline.visuals.visualizer import VisualsReport, refine_variant
 from app.schemas.presentation import GenerationSettings
 from app.services.audit import build_audit_context, refresh_audit, review_variant
@@ -202,8 +203,11 @@ async def _run_stages(
         if template is None:
             raise PipelineError("Для презентации не выбран шаблон")
         if needs_analysis(template):
-            parsed = await asyncio.to_thread(
-                analyze_template, template.id, template.file_path, template.is_builtin
+            # Повторный разбор (новая версия парсера) идёт минутами: без heartbeat API сочло бы генерацию
+            # зависшей и пометило failed, хотя она продолжает работать.
+            parsed = await _keep_alive(
+                tracker.generation.id,
+                asyncio.to_thread(analyze_template, template.id, template.file_path, template.is_builtin),
             )
             apply_parsed(template, parsed)
         fonts = ", ".join(font["name"] for font in (template.tokens.get("fonts") or [])[:2]) or "—"
@@ -228,7 +232,10 @@ async def _run_stages(
                     if meta and (meta.get("source") == "fallback" or "source" not in meta) and (vlm_enabled() or settings.llm_base_url):
                         needs_extract = True
             if needs_extract:
-                file.extracted_text = await asyncio.to_thread(extract_text, Path(file.path), file.filename) or ""
+                file.extracted_text = (
+                    await _keep_alive(tracker.generation.id, asyncio.to_thread(extract_text, Path(file.path), file.filename))
+                    or ""
+                )
             chars += len(file.extracted_text)
         theses = split_sentences(presentation.brief)
         # Выдержки из материалов уходят в промпты плана и текстов слайдов.
@@ -412,6 +419,14 @@ async def _run_stages(
         if dropped:
             stage.detail += f" · без картинки свёрстано тезисами: {dropped}"
         logger.info("Картинки: %s · фото из материалов %s", stage.detail, photo_stats)
+
+    async with tracker.stage("motion") as stage:
+        # После картинок: обложке с фото достаётся и её появление. Правила, без модели — мгновенно.
+        for draft in drafts:
+            draft.slides = animate_deck(draft.slides, options.animations)
+        animated = sum(1 for draft in drafts for slide in draft.slides if slide.animations)
+        total = sum(len(draft.slides) for draft in drafts)
+        stage.detail = f"{MOTION_LABELS[options.animations]} · с анимациями {animated} из {total} слайдов"
 
     variants = [
         Variant(

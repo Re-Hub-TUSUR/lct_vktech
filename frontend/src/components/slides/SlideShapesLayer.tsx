@@ -99,6 +99,11 @@ function ShapeText({
       style={style}
       onPointerDown={(e) => editing && e.stopPropagation()}
       onKeyDown={(e) => {
+        // Как в полях слайда: хранится только текст, оформление тегами (Ctrl+B/I/U) после сохранения пропало бы.
+        if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+          e.preventDefault()
+          return
+        }
         if (e.key === 'Enter' || e.key === 'Escape') {
           e.preventDefault()
           e.currentTarget.blur()

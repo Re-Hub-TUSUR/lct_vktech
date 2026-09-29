@@ -29,11 +29,13 @@ import { useNavigate, useParams, useSearchParams } from 'react-router'
 import { api } from '../api/client'
 import { queryKeys, useComments, useCustomSkills, usePresentation, useSkillPresets, useVariant } from '../api/queries'
 import type {
+  AnimateResponse,
   AnimationType,
   Collaborator,
   CommentThread,
   ContentFile,
   GenerateSlideRequest,
+  MotionMode,
   PatternHint,
   Presentation,
   RegenerateSlideRequest,
@@ -88,6 +90,7 @@ import { boxForImage, loadImageSize } from '../lib/imageCrop'
 import {
   defaultAnimation,
   EDITOR_TRANSITION_MS,
+  MOTION_MODE_LABELS,
   playAll,
   playOne,
   transitionClass,
@@ -103,6 +106,7 @@ import {
   setSlideImage,
   type SlidePatch,
 } from '../lib/slideEdits'
+import { ensureFonts } from '../lib/templateFonts'
 import { useTheme } from '../lib/theme'
 
 export function PresentationEditorPage() {
@@ -327,6 +331,8 @@ function StudioEditor({ presentation, detail, initialIndex, initialThread, canEd
   const labelOf = (target: string) => elements.find((element) => element.target === target)?.label ?? getElementLabel(target)
   const palette = useMemo(() => templatePalette(theme), [theme])
   const fonts = useMemo(() => templateFonts(theme), [theme])
+  // Названия шрифтов в выборе рисуются самими гарнитурами — их файлы нужны до открытия списка.
+  useEffect(() => ensureFonts(fonts), [fonts])
 
   // --- Текст, фигуры, блоки ------------------------------------------------------------------
 
@@ -620,11 +626,43 @@ function StudioEditor({ presentation, detail, initialIndex, initialThread, canEd
     }
   }
 
-  const autoAnimate = () => {
-    const order = [...elements].reverse().filter((element) => element.target !== 'title' && !element.template && element.kind !== 'line')
-    const animations: SlideAnimation[] = order.map((element) => ({ ...defaultAnimation(element.target, 'up'), duration_ms: 500, trigger: 'after' }))
-    updateCurrentSlide({ animations })
-    setPlay((p) => ({ key: p.key + 1, items: playAll({ ...currentSlide, animations }) }))
+  // Автоанимации — по правилам генерации (backend visuals/motion_rules.py), режим по умолчанию — из настроек.
+  const motionMode: MotionMode = presentation.settings?.animations ?? 'subtle'
+  const [autoBusy, setAutoBusy] = useState(false)
+  const autoAnimate = async (mode: MotionMode = motionMode, scope: 'slide' | 'deck' = 'slide') => {
+    if (!currentSlide || autoBusy) return
+    setAutoBusy(true)
+    try {
+      const result = await api.post<AnimateResponse>(`/variants/${variant.id}/animate`, {
+        slides,
+        mode,
+        slide_ids: scope === 'slide' ? [currentSlide.id] : null,
+        overwrite: true,
+      })
+      const byId = new Map(result.slides.map((slide) => [slide.id, slide]))
+      // Из ответа — только анимации и переход: правки, сделанные пока шёл запрос, не теряются.
+      commit((prev) =>
+        prev.map((slide) => {
+          const next = byId.get(slide.id)
+          return next ? { ...slide, animations: next.animations, transition: next.transition ?? null } : slide
+        }),
+      )
+      const updated = byId.get(currentSlide.id)
+      if (updated?.animations?.length) setPlay((p) => ({ key: p.key + 1, items: playAll({ ...currentSlide, animations: updated.animations }) }))
+      const label = MOTION_MODE_LABELS[mode].toLowerCase()
+      pushHistory(scope === 'deck' ? `Анимации презентации: ${label}` : `Анимации слайда ${currentIndex + 1}: ${label}`)
+      notify(
+        mode === 'none'
+          ? 'Анимации и переходы сняты — Ctrl+Z вернёт прежние'
+          : scope === 'deck'
+            ? `Анимации расставлены на ${result.animated} слайдах — Ctrl+Z вернёт прежние`
+            : 'Анимации расставлены — Ctrl+Z вернёт прежние',
+      )
+    } catch (error) {
+      notify((error as Error).message, 'error')
+    } finally {
+      setAutoBusy(false)
+    }
   }
 
   const quickEdit = async (kind: QuickEdit) => {
@@ -641,9 +679,7 @@ function StudioEditor({ presentation, detail, initialIndex, initialThread, canEd
       return
     }
     if (kind === 'anim') {
-      autoAnimate()
-      pushHistory(`Анимации расставлены · слайд ${number}`)
-      notify('Анимации расставлены по порядку появления')
+      await autoAnimate()
       return
     }
     setAiBusy(kind)
@@ -1324,6 +1360,9 @@ function StudioEditor({ presentation, detail, initialIndex, initialThread, canEd
                   onSelectTarget={selectTarget}
                   onTransition={setTransition}
                   onTransitionAll={transitionAll}
+                  defaultMode={motionMode}
+                  autoBusy={autoBusy}
+                  onAutoAnimate={(mode, scope) => void autoAnimate(mode, scope)}
                 />
               )}
               {inspectorTab === 'ai' && (

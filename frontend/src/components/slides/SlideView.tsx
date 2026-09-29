@@ -13,9 +13,10 @@ import {
 } from 'react'
 
 import type { FrameRect, LayoutSkin, Severity, Slide, SlidePattern, SlideRender, SlideShape, SlideTheme, Variant } from '../../api/types'
-import { capacity, exportView, frameTarget } from '../../lib/exportSupport'
+import { capacity, defaultBold, exportView, frameTarget, hasDefaultWeight, titleBold } from '../../lib/exportSupport'
 import { slideMotionCss, type PlayItem } from '../../lib/motion'
 import { fitFontSize } from '../../lib/fit'
+import { ensureFonts } from '../../lib/templateFonts'
 import { applyFrameCrop, frameAspect, knownSize, visibleRegion } from '../../lib/imageCrop'
 import { CroppedImage } from './CroppedImage'
 import { SlideChart } from './SlideChart'
@@ -230,8 +231,9 @@ function placed(rect: FrameRect | undefined, container: FrameRect, zIndex = 12):
   return rect ? { position: 'absolute', ...boxInContainer(rect, container), zIndex } : {}
 }
 
-/** Оформление элемента из правок слайда (слайд уже приведён к exportView). */
-function getElementStyle(target: string, slide: Slide): CSSProperties {
+/** Оформление элемента из правок слайда (слайд уже приведён к exportView). Жирность без правки — та же,
+ * что показывает кнопка «Жирный» и собирает экспорт (defaultBold), а не начертание тега по умолчанию. */
+function getElementStyle(target: string, slide: Slide, theme: SlideTheme): CSSProperties {
   const style: CSSProperties = {}
   const font = slide.element_fonts?.[target]
   const scale = slide.element_scales?.[target]
@@ -241,7 +243,7 @@ function getElementStyle(target: string, slide: Slide): CSSProperties {
   if (font) style.fontFamily = `"${font}", var(--slide-heading-font)`
   if (scale && scale !== 1) style.fontSize = `calc(1em * ${scale})`
   if (color) style.color = color
-  if (bold != null) style.fontWeight = bold ? 700 : 400
+  if (bold != null || hasDefaultWeight(target)) style.fontWeight = (bold ?? defaultBold(slide, theme, target)) ? 700 : 400
   if (align) style.textAlign = align
   return style
 }
@@ -375,6 +377,12 @@ function EditableText({ as: Tag = 'span', field, value, placeholder, edit, child
       onFocus={select}
       onClick={select}
       onKeyDown={(e: React.KeyboardEvent<HTMLElement>) => {
+        // Ctrl+B/I/U браузер оформил бы тегом внутри поля, но хранится только текст: после сохранения
+        // жирность пропала бы и в .pptx не попала. Жирность поля — кнопкой «Жирный» (element_bolds).
+        if ((e.ctrlKey || e.metaKey) && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+          e.preventDefault()
+          return
+        }
         const text = itemText(e.currentTarget)
         // В пунктах списков Enter добавляет следующий пункт, Backspace в пустом — удаляет пункт.
         if (onListItem && ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Backspace' && text === ''))) {
@@ -439,6 +447,8 @@ export function SlideView(props: SlideViewProps) {
         highlights={props.highlights}
         activeTarget={props.activeTarget}
         className={props.className}
+        play={props.play}
+        underlay={props.play?.length ? slideUnderlay(props.slide, props.theme) : undefined}
       />
     )
   }
@@ -475,6 +485,15 @@ function InteractiveSlideView({
   onCropTargetChange,
 }: SlideViewProps) {
   const slide = useMemo(() => exportView(rawSlide, theme), [rawSlide, theme])
+  // Гарнитуры шаблона и правок: без их файлов браузер молча рисует шрифтом интерфейса.
+  const usedFonts = [
+    theme.heading_font,
+    theme.body_font,
+    slide.font_family,
+    ...Object.values(slide.element_fonts ?? {}),
+    ...(slide.shapes ?? []).map((shape) => shape.font_family),
+  ].join('|')
+  useLayoutEffect(() => ensureFonts(usedFonts.split('|')), [usedFonts])
   const [ownCrop, setOwnCrop] = useState<string | null>(null)
   // Кадрирование: в Студии им управляет плавающая панель, иначе — кнопка рамки.
   const cropping = onCropTargetChange ? (cropTarget ?? null) : ownCrop
@@ -661,7 +680,7 @@ function InteractiveSlideView({
     onListItem,
     focusRef,
     overflowFrom: cap?.unit === 'items' && cap.used > cap.max ? cap.max : undefined,
-    styleOf: (field) => getElementStyle(field, slide),
+    styleOf: (field) => getElementStyle(field, slide, theme),
   }
   const framed = skin?.frames?.title ? skin : undefined
   // Кегль заголовка — как у сборки. Своя рамка на слайде-примере: текст ужимается под исходный слот,
@@ -807,6 +826,45 @@ function InteractiveSlideView({
 }
 
 /** Слайд как картинка из собранного .pptx; проблемы аудита — рамками поверх элементов. */
+/** Подложка макета слайда (рендер макета без содержимого и цвет фона) — на неё «проявляются» анимируемые куски рендера. */
+function slideUnderlay(slide: Slide, theme: SlideTheme): { image?: string | null; color: string } {
+  const pattern = slide.pattern_id ? theme.patterns?.find((item) => item.id === slide.pattern_id) : undefined
+  const layoutKey = slide.layout_key || pattern?.layout_key
+  const roleKey = theme.roles?.[slide.kind] || theme.roles?.['content']
+  const skin = (layoutKey && theme.layouts?.[layoutKey]) || (roleKey && theme.layouts?.[roleKey]) || undefined
+  return { image: skin?.image, color: skin?.background ?? theme.background }
+}
+
+/**
+ * Рамка анимируемого элемента на рендере. У пункта списка на макете своей рамки нет (все тезисы — абзацы
+ * одного плейсхолдера): её дают строки текста рендера внутри блока, сгруппированные по абзацам.
+ */
+function pieceRect(render: SlideRender, target: string): FrameRect | undefined {
+  if (render.targets[target]) return render.targets[target]
+  const item = target.match(/^(bullets)\.(\d+)$/)
+  const parent = item ? render.targets[item[1]] : undefined
+  if (!item || !parent) return undefined
+  const [px, py, pw, ph] = parent
+  const inside = (render.facts?.lines ?? []).filter(({ bbox: [x, y, w, h] }) => {
+    const cx = x + w / 2
+    const cy = y + h / 2
+    return cx >= px && cx <= px + pw && cy >= py && cy <= py + ph
+  })
+  const blocks = new Map<number, FrameRect[]>()
+  for (const line of inside) blocks.set(line.block, [...(blocks.get(line.block) ?? []), line.bbox])
+  const paragraphs = [...blocks.values()].map((rects) => unionRects(...rects)!).sort((a, b) => a[1] - b[1])
+  const rect = paragraphs[Number(item[2])]
+  // Небольшой запас: маркер пункта и выносные элементы букв не должны обрезаться.
+  return rect && [Math.max(px, rect[0] - 0.03), rect[1] - 0.006, Math.min(rect[2] + 0.04, px + pw - Math.max(px, rect[0] - 0.03)), rect[3] + 0.012]
+}
+
+/** SVG-маска «слайд без анимируемых кусков»: evenodd-дыры по рамкам (координаты в долях слайда). */
+function holesMask(rects: FrameRect[]): string {
+  const holes = rects.map(([x, y, w, h]) => `M${x} ${y}h${w}v${h}h${-w}z`).join('')
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1' preserveAspectRatio='none'><path fill='white' fill-rule='evenodd' d='M0 0H1V1H0z${holes}'/></svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
 function RenderedSlide({
   slide,
   render,
@@ -815,6 +873,8 @@ function RenderedSlide({
   highlights,
   activeTarget,
   className,
+  play,
+  underlay,
 }: {
   slide: Slide
   render: SlideRender
@@ -823,7 +883,23 @@ function RenderedSlide({
   highlights?: Highlights
   activeTarget?: string | null
   className?: string
+  /** Анимации показа: куски рендера по рамкам элементов появляются поверх подложки макета. */
+  play?: PlayItem[]
+  underlay?: { image?: string | null; color: string }
 }) {
+  const scopeId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  // Каждый кусок — один раз: несколько анимаций с общей рамкой (нет своей) не должны дублировать картинку.
+  const pieces: { target: string; rect: FrameRect }[] = []
+  for (const item of play ?? []) {
+    const rect = pieceRect(render, item.target)
+    if (rect && !pieces.some((piece) => piece.rect.join() === rect.join())) pieces.push({ target: item.target, rect })
+  }
+  const animated = new Set(pieces.map((piece) => piece.target))
+  const motionCss = pieces.length
+    ? slideMotionCss(`[data-sv="${scopeId}"]`, undefined, false, (play ?? []).filter((item) => animated.has(item.target)))
+    : ''
+  const mask = pieces.length ? holesMask(pieces.map((piece) => piece.rect)) : undefined
+
   const marks = Object.entries(highlights ?? {}).flatMap(([target, severity]) => {
     if (target === 'slide') return []
     const rect = targetRect(render.targets, target)
@@ -838,9 +914,29 @@ function RenderedSlide({
         slideSeverity && ['flagged', `flag-${slideSeverity}`, activeTarget === 'slide' && 'flag-active'],
         className,
       )}
-      style={{ aspectRatio: String(aspect) }}
+      style={{ aspectRatio: String(aspect), ...(underlay && pieces.length ? { background: underlay.color } : {}) }}
+      data-sv={pieces.length ? scopeId : undefined}
     >
-      <img className="slide__render" src={render.image} alt={slide.title} draggable={false} loading="lazy" />
+      {motionCss && <style>{motionCss}</style>}
+      {pieces.length > 0 && underlay?.image && <img className="slide__render" src={underlay.image} alt="" draggable={false} />}
+      <img
+        className="slide__render"
+        src={render.image}
+        alt={slide.title}
+        draggable={false}
+        loading="lazy"
+        style={mask ? { maskImage: mask, WebkitMaskImage: mask, maskSize: '100% 100%', WebkitMaskSize: '100% 100%' } : undefined}
+      />
+      {pieces.map(({ target, rect: [x, y, w, h] }) => (
+        <div key={target} data-element-id={target} className="slide__piece" style={box([x, y, w, h])}>
+          <img
+            src={render.image}
+            alt=""
+            draggable={false}
+            style={{ width: `${100 / w}%`, height: `${100 / h}%`, left: `${(-x / w) * 100}%`, top: `${(-y / h) * 100}%` }}
+          />
+        </div>
+      ))}
       {marks.map(({ target, severity, rect }) => (
         <span
           key={target}
@@ -903,7 +999,7 @@ function FramedSlide({
           color: slide.text_color || skin.title?.color,
           justifyContent: ANCHOR[skin.title?.anchor ?? ''] ?? 'flex-start',
           textAlign: ALIGN[skin.title?.align ?? ''] ?? 'left',
-          fontWeight: skin.title?.bold === false ? 400 : 700,
+          fontWeight: titleBold(slide, theme) ? 700 : 400,
           // В своей рамке текст не обрезается: в .pptx он тоже выйдет за её край, пусть это будет видно сразу.
           overflow: titleFit === undefined ? 'hidden' : 'visible',
         }}
@@ -916,7 +1012,7 @@ function FramedSlide({
           placeholder="Заголовок"
           edit={edit}
           className={flag('title')}
-          style={getElementStyle('title', slide)}
+          style={getElementStyle('title', slide, theme)}
         />
       </div>
       {cover ? (
@@ -934,7 +1030,7 @@ function FramedSlide({
               placeholder="Подзаголовок"
               edit={edit}
               className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
-              style={getElementStyle('subtitle', slide)}
+              style={getElementStyle('subtitle', slide, theme)}
             />
           </div>
         )
@@ -985,7 +1081,7 @@ function FlowSlide({ slide, theme, flag, render, edit, onImageClick, onDeleteCha
         placeholder="Заголовок"
         edit={edit}
         className={clsx('slide__cover-title', flag('title'))}
-        style={getElementStyle('title', slide)}
+        style={getElementStyle('title', slide, theme)}
       />
     )
     const subtitleNode = (slide.subtitle || edit.editable) && (
@@ -997,7 +1093,7 @@ function FlowSlide({ slide, theme, flag, render, edit, onImageClick, onDeleteCha
         placeholder={slide.kind === 'section' ? 'Номер раздела' : 'Подзаголовок'}
         edit={edit}
         className={clsx(slide.kind === 'section' ? 'slide__section-number' : 'slide__subtitle', flag('subtitle'))}
-        style={getElementStyle('subtitle', slide)}
+        style={getElementStyle('subtitle', slide, theme)}
       />
     )
     // У разделителя номер раздела стоит над заголовком.
@@ -1028,7 +1124,7 @@ function FlowSlide({ slide, theme, flag, render, edit, onImageClick, onDeleteCha
       placeholder="Заголовок"
       edit={edit}
       className={clsx('slide__title', flag('title'))}
-      style={getElementStyle('title', slide)}
+      style={getElementStyle('title', slide, theme)}
     />
   )
 
@@ -1100,7 +1196,7 @@ function BulletList({
             style={placed(itemBox, listBox || containerBox)}
           >
             <span className="slide__agenda-num">{String(i + 1).padStart(2, '0')}</span>
-            <EditableText field={field} value={item} placeholder="Пункт" edit={edit} style={getElementStyle(field, slide)} />
+            <EditableText field={field} value={item} placeholder="Пункт" edit={edit} style={edit.styleOf?.(field)} />
           </li>
         ) : (
           <EditableText
@@ -1112,7 +1208,7 @@ function BulletList({
             placeholder="Тезис"
             edit={edit}
             className={clsx(flag(field), itemBox && 'slide__bullet--custom')}
-            style={{ ...getElementStyle(field, slide), ...placed(itemBox, listBox || containerBox) }}
+            style={{ ...edit.styleOf?.(field), ...placed(itemBox, listBox || containerBox) }}
           />
         )
       })}
@@ -1132,7 +1228,7 @@ function SlideContent({
   onDeleteChart,
 }: Omit<LayoutProps, 'slide'> & { slide: Slide; containerBox?: FrameRect }): ReactNode {
   const { editable } = edit
-  const elStyle = (target: string) => getElementStyle(target, slide)
+  const elStyle = (target: string) => getElementStyle(target, slide, theme)
   const custom = (target: string) => slide.element_boxes?.[target] as FrameRect | undefined
 
   const imageElement = (
